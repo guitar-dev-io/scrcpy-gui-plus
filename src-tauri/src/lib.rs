@@ -128,6 +128,8 @@ pub fn run() {
             commands::get_scrcpy_bin_dir,
             commands::run_terminal_command,
             commands::check_scrcpy_update,
+            commands::generate_pairing_qr,
+            commands::poll_qr_pairing,
             screenshot::capture_screenshot,
             screenshot::capture_preview_frame,
             screenshot::get_default_screenshot_dir,

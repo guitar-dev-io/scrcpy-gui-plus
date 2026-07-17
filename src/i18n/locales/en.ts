@@ -905,11 +905,14 @@ export const en = {
     title: 'Wireless Pairing Wizard',
     subtitle: 'Connect an Android device over Wi-Fi',
     methodPair: 'Pair',
+    methodQr: 'QR',
     methodIp: 'IP',
     methodScan: 'Scan',
     methodRecent: 'Recent',
     hint_pair:
       'On the device, open Developer Options > Wireless debugging > Pair device with pairing code. Enter the IP:port and 6-digit code shown there.',
+    hint_qr:
+      'On your phone, go to Developer Options > Wireless debugging > Pair device with QR code. Then scan the QR code shown below.',
     hint_ip:
       'If already paired, enter the device IP:port from Wireless debugging to connect directly.',
     hint_scan:
@@ -944,6 +947,34 @@ export const en = {
         'Paired, but the connection port could not be auto-detected. Enter the IP:Port shown under Wireless debugging in the IP tab.',
       unknown: 'Something went wrong. Please try again.',
     },
+    qrStartCamera: 'Use Webcam to Scan',
+    qrStopCamera: 'Stop Camera',
+    qrCameraPermissionDenied:
+      'Camera access was denied. Allow camera permission to scan QR codes.',
+    qrNoCameraFound: 'No camera detected on this device.',
+    qrCameraError: 'Failed to start camera. Try again.',
+    qrUnrecognizedFormat:
+      'QR code scanned but not recognized as an ADB pairing code.',
+    qrManualInput: 'Or paste QR content manually',
+    qrManualPlaceholder:
+      'Paste the QR code content here (e.g. WIFI:T:ADB;S:192.168.1.5:37000;P:123456;)',
+    qrParse: 'Parse & Connect',
+    qrDropImage: 'Drop QR image here or click to browse',
+    qrDropImageHint:
+      "Screenshot the QR code from your phone's Wireless Debugging screen",
+    qrImageDecodeError:
+      'Could not decode QR code from this image. Try a clearer screenshot.',
+    qrInvalidFileType: 'Please drop an image file (PNG, JPG, etc.)',
+    qrGenerating: 'Generating QR code...',
+    qrWaitingForPhone: 'Waiting for phone to scan QR code...',
+    qrPairingInProgress: 'Pairing in progress...',
+    qrPairedAndConnected: 'Paired and connected to {address}',
+    qrPairedNotConnected: 'Paired with {address}. Connect manually via IP tab.',
+    qrInstructions: 'How to use',
+    qrStep1: 'On your phone, open Developer Options > Wireless Debugging',
+    qrStep2: 'Tap "Pair device with QR code"',
+    qrStep3: 'Point the phone camera at the QR code above',
+    qrRegenerate: 'Generate New QR Code',
   },
   connectionHealth: {
     title: 'Connection Health',

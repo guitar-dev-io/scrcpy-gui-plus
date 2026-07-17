@@ -1661,6 +1661,234 @@ pub async fn run_scrcpy(
     Ok(())
 }
 
+/// Generate a QR pairing payload and SVG for the "Pair device with QR code"
+/// flow. The frontend displays the SVG QR code. The phone scans it, advertises
+/// the `_adb-tls-pairing._tcp` mDNS service with the embedded service name,
+/// and we poll `adb mdns services` to detect and pair automatically.
+///
+/// Returns JSON: { serviceName, password, payload, svg }
+#[tauri::command]
+pub fn generate_pairing_qr(_custom_path: Option<String>) -> serde_json::Value {
+    use qrcode::render::svg;
+    use qrcode::{EcLevel, QrCode};
+    use rand::Rng;
+
+    let mut rng = rand::rng();
+    let service_name: String = format!("adb-gui-{:06}", rng.random_range(0..999999u32));
+    let password: String = (0..6)
+        .map(|_| char::from(b'0' + rng.random_range(0..10u8)))
+        .collect();
+    let payload = format!("WIFI:T:ADB;S:{};P:{};;", service_name, password);
+
+    let svg_result =
+        QrCode::with_error_correction_level(payload.as_bytes(), EcLevel::M).map(|code| {
+            code.render::<svg::Color>()
+                .min_dimensions(280, 280)
+                .dark_color(svg::Color("#e4e4e7"))
+                .light_color(svg::Color("#09090b"))
+                .quiet_zone(true)
+                .build()
+        });
+
+    match svg_result {
+        Ok(svg) => json!({
+            "success": true,
+            "serviceName": service_name,
+            "password": password,
+            "payload": payload,
+            "svg": svg
+        }),
+        Err(e) => json!({
+            "success": false,
+            "message": e.to_string()
+        }),
+    }
+}
+
+/// Poll `adb mdns services` looking for a specific pairing service name.
+/// When found, automatically run `adb pair` with the address and password.
+/// Returns the result of the pairing attempt.
+#[tauri::command]
+pub async fn poll_qr_pairing(
+    window: Window,
+    service_name: String,
+    password: String,
+    custom_path: Option<String>,
+) -> serde_json::Value {
+    let adb_path = get_binary_path("adb", custom_path.clone());
+    let _ = window.emit(
+        "scrcpy-log",
+        format!(
+            "[SYSTEM] Waiting for phone to scan QR code (service: {})...",
+            service_name
+        ),
+    );
+
+    // Poll for up to 120 seconds (every 1.5s)
+    for _attempt in 0..80 {
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+
+        let output = create_command(&adb_path)
+            .arg("mdns")
+            .arg("services")
+            .output()
+            .await;
+
+        if let Ok(o) = output {
+            if o.status.success() {
+                let out_str = String::from_utf8_lossy(&o.stdout);
+                // Look for our service name in the pairing services
+                for line in out_str.lines() {
+                    if line.contains(&service_name) && line.contains("adb-tls-pairing") {
+                        // Found! Extract the address
+                        let parts: Vec<&str> = line.split('\t').collect();
+                        let address = if parts.len() >= 3 {
+                            parts[2].trim().to_string()
+                        } else {
+                            // Try to extract IP:port from the line
+                            let re_like: Vec<&str> = line.split_whitespace().collect();
+                            re_like.last().unwrap_or(&"").to_string()
+                        };
+
+                        if address.is_empty() {
+                            continue;
+                        }
+
+                        let _ = window.emit(
+                            "scrcpy-log",
+                            format!("[SYSTEM] Phone detected at {}! Pairing...", address),
+                        );
+
+                        // Run adb pair
+                        let pair_output = create_command(&adb_path)
+                            .arg("pair")
+                            .arg(&address)
+                            .arg(&password)
+                            .output()
+                            .await;
+
+                        match pair_output {
+                            Ok(po) => {
+                                let out_text =
+                                    String::from_utf8_lossy(&po.stdout).trim().to_string();
+                                let err_text =
+                                    String::from_utf8_lossy(&po.stderr).trim().to_string();
+                                let success = po.status.success()
+                                    && (out_text.contains("Successfully paired")
+                                        || err_text.contains("Successfully paired"));
+
+                                if success {
+                                    let _ = window.emit(
+                                        "scrcpy-log",
+                                        format!(
+                                            "[SYSTEM] Successfully paired via QR code! ({})",
+                                            address
+                                        ),
+                                    );
+
+                                    // Try to discover connect port
+                                    tokio::time::sleep(Duration::from_millis(1000)).await;
+                                    let ip_only = address.split(':').next().unwrap_or(&address);
+
+                                    // Poll for connect service
+                                    let mut connect_addr: Option<String> = None;
+                                    for _ in 0..10 {
+                                        tokio::time::sleep(Duration::from_millis(800)).await;
+                                        let mdns_out = create_command(&adb_path)
+                                            .arg("mdns")
+                                            .arg("services")
+                                            .output()
+                                            .await;
+                                        if let Ok(mo) = mdns_out {
+                                            if mo.status.success() {
+                                                let mdns_str = String::from_utf8_lossy(&mo.stdout);
+                                                for mline in mdns_str.lines() {
+                                                    if mline.contains("adb-tls-connect")
+                                                        && mline.contains(ip_only)
+                                                    {
+                                                        let mparts: Vec<&str> =
+                                                            mline.split('\t').collect();
+                                                        if mparts.len() >= 3 {
+                                                            connect_addr =
+                                                                Some(mparts[2].trim().to_string());
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        if connect_addr.is_some() {
+                                            break;
+                                        }
+                                    }
+
+                                    // Connect if found
+                                    if let Some(ref caddr) = connect_addr {
+                                        let connect_out = create_command(&adb_path)
+                                            .arg("connect")
+                                            .arg(caddr)
+                                            .output()
+                                            .await;
+                                        if let Ok(co) = connect_out {
+                                            let co_text = String::from_utf8_lossy(&co.stdout)
+                                                .trim()
+                                                .to_string();
+                                            let _ = window.emit(
+                                                "scrcpy-log",
+                                                format!("[SYSTEM] Connected to {}", caddr),
+                                            );
+                                            return json!({
+                                                "success": true,
+                                                "paired": true,
+                                                "connected": true,
+                                                "address": caddr,
+                                                "message": co_text
+                                            });
+                                        }
+                                    }
+
+                                    return json!({
+                                        "success": true,
+                                        "paired": true,
+                                        "connected": false,
+                                        "address": address,
+                                        "message": "Paired but could not auto-discover connect port"
+                                    });
+                                } else {
+                                    let msg = if !out_text.is_empty() {
+                                        out_text
+                                    } else {
+                                        err_text
+                                    };
+                                    let _ = window.emit(
+                                        "scrcpy-log",
+                                        format!("[SYSTEM] Pairing failed: {}", msg),
+                                    );
+                                    return json!({
+                                        "success": false,
+                                        "message": msg
+                                    });
+                                }
+                            }
+                            Err(e) => {
+                                return json!({
+                                    "success": false,
+                                    "message": e.to_string()
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    json!({
+        "success": false,
+        "message": "Timed out waiting for phone to scan QR code (120s)"
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

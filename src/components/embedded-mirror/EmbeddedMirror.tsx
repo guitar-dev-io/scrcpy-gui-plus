@@ -270,7 +270,7 @@ export default function EmbeddedMirror({
             <div
               className={`w-3 h-3 rounded-full shadow-sm transition-all duration-300 ${
                 enabled
-                  ? 'bg-[var(--text-on-primary)] translate-x-4'
+                  ? 'bg-(--text-on-primary) translate-x-4'
                   : 'bg-white translate-x-0'
               }`}
             />

@@ -82,10 +82,16 @@ export default function Sidebar({
   const [pairIp, setPairIp] = React.useState('')
   const [pairCode, setPairCode] = React.useState('')
   const pairCodeRef = React.useRef<HTMLInputElement>(null)
+  const [isConnecting, setIsConnecting] = React.useState(false)
 
   const handleConnect = async (ip: string) => {
-    if (!ip) return
-    await onConnect(ip)
+    if (!ip || isConnecting) return
+    setIsConnecting(true)
+    try {
+      await onConnect(ip)
+    } finally {
+      setIsConnecting(false)
+    }
   }
 
   return (
@@ -210,13 +216,13 @@ export default function Sidebar({
           <div className="bg-black/40 p-1 rounded-lg flex gap-1 border border-zinc-800/50">
             <button
               onClick={() => setActiveTab('usb')}
-              className={`flex-1 py-1.5 text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-2 rounded-md transition-all ${activeTab === 'usb' ? 'bg-primary text-on-primary shadow-lg translate-y-[-1px]' : 'text-zinc-500 hover:text-zinc-300'}`}
+              className={`flex-1 py-1.5 text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-2 rounded-md transition-all ${activeTab === 'usb' ? 'bg-primary text-on-primary shadow-lg -translate-y-px' : 'text-zinc-500 hover:text-zinc-300'}`}
             >
               <Usb size={11} /> {t('sidebar.usb')}
             </button>
             <button
               onClick={() => setActiveTab('wireless')}
-              className={`flex-1 py-1.5 text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-2 rounded-md transition-all ${activeTab === 'wireless' ? 'bg-primary text-on-primary shadow-lg translate-y-[-1px]' : 'text-zinc-500 hover:text-zinc-300'}`}
+              className={`flex-1 py-1.5 text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-2 rounded-md transition-all ${activeTab === 'wireless' ? 'bg-primary text-on-primary shadow-lg -translate-y-px' : 'text-zinc-500 hover:text-zinc-300'}`}
             >
               <Wifi size={11} /> {t('sidebar.wireless')}
             </button>
@@ -305,10 +311,10 @@ export default function Sidebar({
                   </div>
                   <button
                     onClick={() => handleConnect(connectIp)}
-                    disabled={isRefreshing}
-                    className={`px-4 bg-zinc-800 hover:bg-primary text-zinc-400 hover:text-on-primary rounded-lg text-[10px] font-black uppercase transition-all active:scale-95 ${isRefreshing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    disabled={isConnecting}
+                    className={`px-4 bg-zinc-800 hover:bg-primary text-zinc-400 hover:text-on-primary rounded-lg text-[10px] font-black uppercase transition-all active:scale-95 ${isConnecting ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
-                    {isRefreshing
+                    {isConnecting
                       ? t('sidebar.connecting')
                       : t('sidebar.connect')}
                   </button>

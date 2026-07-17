@@ -146,6 +146,13 @@ export function useScrcpy() {
     if (savedConfig) {
       try {
         const parsed = JSON.parse(savedConfig)
+        // Ensure audio is enabled by default even for older saved configs
+        if (parsed.audioEnabled === undefined || parsed.audioEnabled === null) {
+          parsed.audioEnabled = true
+        }
+        if (!parsed.audioCodec) {
+          parsed.audioCodec = 'auto'
+        }
         setConfig((prev) => ({ ...prev, ...parsed }))
         // Initial check with saved path if it exists
         if (parsed.scrcpyPath) {
@@ -269,6 +276,65 @@ export function useScrcpy() {
     }
   }, [t])
 
+  // Auto-scan USB devices every 3 seconds when auto-connect is enabled.
+  // This detects newly plugged-in USB devices without requiring a manual refresh.
+  // Runs silently in the background without affecting the isRefreshing UI state.
+  useEffect(() => {
+    if (!isTauri() || !isAutoConnect) return
+    let polling = true
+    const poll = async () => {
+      if (!polling) return
+      try {
+        const res: any = await invoke('get_devices', {
+          customPath: config.scrcpyPath || undefined,
+        })
+        if (!polling) return
+        if (!res.error) {
+          const newDevices = res.devices as string[]
+          const prevDevices = prevDevicesRef.current
+
+          // Only update state if there's a change
+          const added = newDevices.filter((d) => !prevDevices.includes(d))
+          const removed = prevDevices.filter((d) => !newDevices.includes(d))
+
+          if (added.length > 0 || removed.length > 0) {
+            added.forEach((device) => {
+              setLogs((prev) => [
+                ...prev.slice(-100),
+                t('logs.newDeviceDiscovered', { device }),
+              ])
+            })
+            removed.forEach((device) => {
+              setLogs((prev) => [
+                ...prev.slice(-100),
+                t('logs.deviceDisconnected', { device }),
+              ])
+            })
+            setDevices(newDevices)
+            prevDevicesRef.current = newDevices
+
+            if (newDevices.length > 0) {
+              setActiveDevice((current) => {
+                if (!current || !newDevices.includes(current)) {
+                  return newDevices[0]
+                }
+                return current
+              })
+            }
+          }
+        }
+      } catch {
+        // Silent failure for background polling
+      }
+    }
+    const id = setInterval(poll, 3000)
+    return () => {
+      polling = false
+      clearInterval(id)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAutoConnect, config.scrcpyPath, t])
+
   const [historyDevices, setHistoryDevices] = useState<string[]>([])
 
   // Load history on mount
@@ -300,8 +366,9 @@ export function useScrcpy() {
   const refreshDevices = async (
     customPath?: string,
     silent: boolean = false,
+    force: boolean = false,
   ) => {
-    if (isRefreshing) return
+    if (isRefreshing && !force) return
     setIsRefreshing(true)
     try {
       const res: any = await invoke('get_devices', {
@@ -585,7 +652,7 @@ export function useScrcpy() {
         await new Promise((r) => setTimeout(r, 1000))
 
         setIsRefreshing(false) // Enable refreshDevices to run
-        await refreshDevices(customPath || config.scrcpyPath, true)
+        await refreshDevices(customPath || config.scrcpyPath, true, true)
       } else {
         setLogs((prev) => {
           const msgs = [

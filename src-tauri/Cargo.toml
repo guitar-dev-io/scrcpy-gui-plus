@@ -34,3 +34,4 @@ tauri-plugin-dialog = "2.7.0"
 chrono = "0.4.43"
 base64 = "0.22"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+rand = "0.9"

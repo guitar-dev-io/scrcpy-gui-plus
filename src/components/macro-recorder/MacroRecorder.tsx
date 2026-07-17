@@ -158,6 +158,11 @@ export default function MacroRecorder({
   const [lastSelector, setLastSelector] = useState<ElementSelector | null>(null)
   const [waitTimeout, setWaitTimeout] = useState('5000')
 
+  const handleImgLoad = useCallback(() => {
+    const el = imgRef.current
+    if (el) setNatural({ w: el.naturalWidth, h: el.naturalHeight })
+  }, [])
+
   if (!isOpen) return null
 
   const f = (key: string) => fields[key] ?? ''
@@ -395,11 +400,6 @@ export default function MacroRecorder({
     macro.addStep({ kind: 'screenshot' })
   }
 
-  const handleImgLoad = useCallback(() => {
-    const el = imgRef.current
-    if (el) setNatural({ w: el.naturalWidth, h: el.naturalHeight })
-  }, [])
-
   const numInput = (key: string, placeholder: string) => (
     <input
       type="number"
@@ -488,7 +488,7 @@ export default function MacroRecorder({
   )
 
   return (
-    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 sm:p-6">
+    <div className="fixed inset-0 z-300 flex items-center justify-center p-4 sm:p-6">
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-md"
         onClick={onClose}
