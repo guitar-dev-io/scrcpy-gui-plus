@@ -18,12 +18,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.RELEASE_TOKEN }} # Use a PAT to allow triggering other workflows
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -46,29 +44,14 @@ jobs:
 
       - name: Update tauri.conf.json
         run: |
-          # Use jq to update version in tauri.conf.json
           jq ".version = \"${{ env.NEW_VERSION }}\"" src-tauri/tauri.conf.json > src-tauri/tauri.conf.json.tmp && mv src-tauri/tauri.conf.json.tmp src-tauri/tauri.conf.json
 
       - name: Update Cargo.toml
         run: |
-          # Use sed to update version in Cargo.toml [package] section
           sed -i "s/^version = \".*\"/version = \"${{ env.NEW_VERSION }}\"/" src-tauri/Cargo.toml
 
-      - name: Create Pull Request
-        id: cpr
-        uses: peter-evans/create-pull-request@v6
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "chore: bump version to v${{ env.NEW_VERSION }}"
-          committer: "github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
-          author: "github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
-          branch: "chore/version-bump-v${{ env.NEW_VERSION }}"
-          title: "chore: bump version to v${{ env.NEW_VERSION }}"
-          body: |
-            Bumping version to v${{ env.NEW_VERSION }}
-            - Bump type: ${{ github.event.inputs.bump_type }}
-            - Updated: `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`
-          labels: |
-            version-bump
-            automated-pr
-
+      - name: Commit and push
+        run: |
+          git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml
+          git commit -m "chore: bump version to v${{ env.NEW_VERSION }}"
+          git push
