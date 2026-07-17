@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mobile Device Studio Loading</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #09090b;
+        /* zinc-950 */
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        overflow: hidden;
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica,
+          Arial, sans-serif;
+        color: white;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+
+      .container {
+        position: relative;
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 24px;
+      }
+
+      .glow {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 300px;
+        height: 300px;
+        background: radial-gradient(
+          circle at center,
+          rgba(139, 92, 246, 0.15),
+          transparent 70%
+        );
+        /* primary/purple */
+        pointer-events: none;
+        z-index: -1;
+      }
+
+      h1 {
+        font-size: 32px;
+        font-weight: 900;
+        font-style: italic;
+        text-transform: uppercase;
+        letter-spacing: -0.05em;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .gui {
+        color: #8b5cf6;
+        /* primary */
+        font-style: normal;
+      }
+
+      .loader-container {
+        width: 40px;
+        height: 40px;
+        position: relative;
+      }
+
+      .loader {
+        width: 100%;
+        height: 100%;
+        border: 3px solid rgba(139, 92, 246, 0.1);
+        border-top: 3px solid #8b5cf6;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+
+      .loading-text {
+        font-size: 10px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.2em;
+        color: #52525b;
+        /* zinc-500 */
+        margin-top: 8px;
+        animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+
+        50% {
+          opacity: 0.5;
+        }
+      }
+
+      .version {
+        position: absolute;
+        bottom: -40px;
+        font-size: 8px;
+        font-weight: 900;
+        color: #27272a;
+        /* zinc-800 */
+        letter-spacing: 0.3em;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="glow"></div>
+    <div class="container">
+      <h1>MOBILE DEVICE <span class="gui">STUDIO</span></h1>
+
+      <div class="loader-container">
+        <div class="loader"></div>
+      </div>
+
+      <div class="loading-text">Initializing Engine</div>
+
+      <div class="version" id="version-text">VERSION ...</div>
+    </div>
+
+    <script>
+      // Update version using global Tauri API
+      async function init() {
+        if (window.__TAURI__) {
+          try {
+            const version =
+              await window.__TAURI__.core.invoke('get_app_version')
+            document.getElementById('version-text').textContent =
+              `VERSION ${version}`
+          } catch (e) {
+            console.error('Failed to get version:', e)
+          }
+        }
+      }
+      init()
+    </script>
+  </body>
+</html>

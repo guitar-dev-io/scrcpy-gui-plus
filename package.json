@@ -1,0 +1,43 @@
+{
+  "name": "scrcpy-gui-plus-v3",
+  "private": true,
+  "version": "4.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "test": "vitest run",
+    "lint": "tsc --noEmit",
+    "build:linux": "NO_STRIP=1 APPIMAGE_EXTRACT_AND_RUN=1 LINUXDEPLOY_EXCLUDE_LIBS=libwayland-client.so.0:libwayland-cursor.so.0:libwayland-egl.so.1:libwayland-server.so.0 npm run tauri build"
+  },
+  "dependencies": {
+    "@tailwindcss/postcss": "4.2.4",
+    "@tauri-apps/api": "2.10.1",
+    "@tauri-apps/plugin-dialog": "2.7.0",
+    "browserslist": "4.28.2",
+    "caniuse-lite": "1.0.30001791",
+    "lucide-react": "0.564.0",
+    "react": "19.2.5",
+    "react-dom": "19.2.5"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.10.1",
+    "@testing-library/dom": "10.4.1",
+    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/react": "16.3.2",
+    "@testing-library/user-event": "14.6.1",
+    "@types/jest": "30.0.0",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.1",
+    "autoprefixer": "10.5.0",
+    "jsdom": "29.1.0",
+    "postcss": "8.5.12",
+    "tailwindcss": "4.2.4",
+    "typescript": "6.0.3",
+    "vite": "8.0.10",
+    "vitest": "4.1.5"
+  }
+}

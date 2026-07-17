@@ -1,0 +1,365 @@
+import type { DeepPartialTranslations } from './en'
+
+// Russian translations.
+export const ru: DeepPartialTranslations = {
+  languages: {
+    en: 'English',
+    fr: 'Français',
+    'pt-BR': 'Português (Brasil)',
+    'zh-CN': '简体中文',
+    'zh-TW': '繁體中文',
+    ru: 'Русский',
+    id: 'Bahasa Indonesia',
+  },
+
+  common: {
+    ok: 'OK',
+    cancel: 'Отмена',
+    close: 'Закрыть',
+    clear: 'Очистить',
+    change: 'Изменить',
+    refresh: 'Обновить',
+    connect: 'Подключить',
+    confirm: 'Подтвердить',
+    loading: 'Загрузка...',
+  },
+
+  header: {
+    themeLabel: 'Тема',
+    themes: {
+      ultraviolet: 'Ультрафиолет',
+      astro: 'Астро-синий',
+      carbon: 'Карбоновый стелс',
+      emerald: 'Изумруд',
+      bloodmoon: 'Кровавая луна',
+    },
+    colorModes: {
+      light: 'Светлая',
+      dark: 'Тёмная',
+      system: 'Системная',
+    },
+    languageLabel: 'Язык',
+    tagline:
+      'Трансляция и управление Android-устройствами без лишних сложностей',
+    scrcpyEngine: 'Движок scrcpy',
+    scrcpyReady: 'scrcpy готов',
+    syncingComponents: 'Синхронизация компонентов {progress}%',
+    installCore: 'Установить ядро',
+    selectFolder: 'Выбрать папку',
+    resetPath: 'Сбросить путь',
+    setupHelp: 'Помощь с настройкой',
+    setupHelpTitle: 'Получить помощь с настройкой scrcpy',
+    manualSetupGuide: 'Руководство по ручной настройке',
+    manualSetupIntro:
+      'Если автоматическая загрузка не удалась или вы хотите использовать свою версию scrcpy:',
+    manualStep1: 'Скачайте последнюю версию для вашей ОС из',
+    manualStep1Link: 'GitHub Releases',
+    manualStep2: 'Распакуйте скачанный архив в папку на компьютере.',
+    manualStep3Before: 'Нажмите на иконку',
+    manualStep3Browse: 'Обзор',
+    manualStep3After: 'в заголовке.',
+    manualStep4Before:
+      'Выберите распакованную папку, содержащую исполняемый файл',
+    manualStep4Executable: 'scrcpy',
+    manualStep4After: '.',
+    manualNote:
+      'Примечание: Mobile Device Studio запомнит этот пользовательский путь для следующих запусков.',
+    gotIt: 'Понятно',
+  },
+
+  sidebar: {
+    deviceHub: 'Центр устройств',
+    killAdb: 'Остановить ADB',
+    killAdbTitle: 'Принудительно завершить все операции adb',
+    syncing: 'Синхронизация...',
+    refresh: 'Обновить',
+    noDevicesDetected: 'Устройства не обнаружены',
+    live: 'Онлайн',
+    ready: 'Готово',
+    wifi: 'Wi‑Fi',
+    usb: 'USB',
+    wireless: 'Беспроводное',
+    usbSetupTip: 'Совет по настройке USB',
+    usbSetupTipTextBefore: 'Включите',
+    usbSetupTipDeveloperOptions: 'Параметры разработчика',
+    usbSetupTipAnd: 'и',
+    usbSetupTipUsbDebugging: 'Отладку по USB',
+    usbSetupTipTextAfter: 'на телефоне.',
+    wirelessSetupTip: 'Совет по беспроводной настройке',
+    wirelessSetupTipTextBefore: 'Подключите устройство к',
+    wirelessSetupTipSameWifi: 'той же Wi‑Fi сети',
+    wirelessSetupTipAnd: 'и включите',
+    wirelessSetupTipWirelessDebugging: 'Беспроводную отладку',
+    wirelessSetupTipTextAfter: '.',
+    ipConnect: 'Подключение по IP',
+    auto: 'Авто',
+    ipPlaceholder: '192.168.x.x:5555',
+    connect: 'Подключить',
+    connecting: '...',
+    recentDevices: 'Недавние устройства',
+    discoveredDevices: 'Обнаруженные устройства (mDNS)',
+    clear: 'Очистить',
+    pairDeviceTitle: '2. Сопряжение устройства (Android 11+)',
+    ipPortPlaceholder: 'IP:Порт',
+    pairingCodePlaceholder: 'Код сопряжения',
+    startPairing: 'Начать сопряжение',
+    synchronizing: 'Синхронизация...',
+    flashPushFiles: 'Прошивка / отправка файлов',
+    flashPushSubtitle: 'Перетащите ЛЮБОЙ ФАЙЛ ИЛИ APK',
+  },
+
+  controlPanel: {
+    captureSource: 'Источник захвата',
+    screen: 'Экран',
+    camera: 'Камера',
+    desktop: 'Рабочий стол',
+    engineConfiguration: 'Конфигурация движка',
+    otgOnly: 'Только OTG',
+    active: 'Активно',
+    ready: 'Готово',
+    inputEnhancements: 'Улучшения ввода',
+    inputEnhancementsDescription:
+      'Управляйте телефоном с помощью мыши и клавиатуры компьютера (режим OTG).',
+    hidKeyboard: 'HID-клавиатура',
+    hidKeyboardTooltip:
+      'Имитирует физическую клавиатуру.\nДобавляет поддержку специальных символов и международных раскладок (например, польской).',
+    hidMouse: 'HID-мышь',
+    hidMouseTooltip:
+      'Имитирует физическую мышь. Обеспечивает высокую точность курсора и устраняет задержку ввода.',
+    pureHid: 'Только HID (без трансляции)',
+    pureHidTooltip:
+      'Скрывает трансляцию экрана.\nИспользуйте ПК только как клавиатуру и мышь для телефона.',
+    bitrate: 'Битрейт',
+    resolution: 'Разрешение',
+    resolutionOriginal: 'Оригинальное',
+    fps: 'FPS',
+    rotation: 'Поворот',
+    graphicsRenderer: 'Графический рендерер',
+    vsync: 'VSync',
+    vsyncHint: 'Без разрывов',
+    vsyncTooltip:
+      'Синхронизирует вывод кадров с частотой обновления монитора, устраняя разрывы изображения (включено по умолчанию). scrcpy 4.0 (SDL3) отключает это по умолчанию. Выключите для немного меньшей задержки ввода.',
+    rendererAuto: 'Авто',
+    custom: 'Пользовательское',
+    webcamProTip: 'Совет для веб-камеры',
+    getObs: 'Скачать OBS',
+    webcamProTipTextBefore:
+      'Используйте телефон как качественную веб-камеру в Zoom/Teams, захватив это окно Scrcpy в',
+    webcamProTipObs: 'OBS Studio',
+    webcamProTipAndStart: 'и запустив',
+    webcamProTipVirtualCamera: 'виртуальную камеру',
+    webcamProTipTextAfter: '.',
+    facing: 'Камера',
+    facingBack: 'Задняя',
+    facingFront: 'Фронтальная',
+    facingExternal: 'Внешняя',
+    cameraDevice: 'Устройство камеры',
+    cameraDeviceTooltip:
+      'Выберите конкретный объектив (например, сверхширокий или фронтальный) из списка.',
+    refreshLensesTooltip: 'Нажмите, чтобы найти доступные объективы камеры.',
+    refreshLenses: 'Обновить объективы',
+    autoSelect: 'Автовыбор',
+    codec: 'Кодек',
+    aspect: 'Соотношение',
+    aspectDefault: 'По умолчанию',
+    virtualDisplayEngine: 'Движок виртуального дисплея',
+    ratioLock: 'Фиксация пропорций',
+    ratioLockTitle: 'Зафиксировать соотношение сторон',
+    width: 'Ширина',
+    height: 'Высота',
+    uiScaling: 'Масштаб интерфейса (DPI)',
+    uiScalingTooltip:
+      'Ниже DPI = вид как на десктопе/планшете (крупнее интерфейс).\nВыше DPI = вид как на телефоне (меньше и плотнее интерфейс).',
+    quickPresets: 'Быстрые пресеты',
+    preset1080p: '1080p стандарт',
+    preset1440p: '1440p высокое качество',
+    preset4k: '4K Ultra',
+    presetUltrawide: '21:9 сверхширокий',
+    initializeOtg: 'Инициализировать OTG',
+    startMission: 'Начать миссию',
+    engageCamera: 'Включить камеру',
+    ejectToDesktop: 'Перейти на рабочий стол',
+    stopSession: 'Остановить сессию',
+    // v4 features
+    flexDisplay: 'Гибкий дисплей',
+    flexDisplayTooltip:
+      'Динамически изменяет размер виртуального дисплея вместе с окном scrcpy (scrcpy v4+).',
+    cameraTorch: 'Фонарик камеры',
+    cameraTorchTooltip:
+      'Включает фонарик устройства во время трансляции камеры (scrcpy v4+).',
+    cameraZoom: 'Приближение камеры',
+    cameraZoomTooltip:
+      'Уровень приближения для захвата камеры. 1.0 = без приближения. (scrcpy v4+)',
+    backgroundColor: 'Цвет фона',
+    backgroundColorTooltip:
+      'HEX-цвет фона/полос окна (ex. #1a1a1a). Оставьте пустым для тёмно-серого по умолчанию. (scrcpy v4+)',
+    backgroundColorNone: 'По умолчанию',
+    badgeNew: 'НОВОЕ',
+  },
+
+  sessionBehavior: {
+    title: 'Поведение сессии',
+    stayAwake: 'Не выключать экран',
+    stayAwakeTooltip: 'Не давать устройству засыпать во время трансляции.',
+    screenOff: 'Экран выключен',
+    screenOffTooltip:
+      'Выключить экран устройства во время трансляции для экономии батареи.',
+    forwardAudio: 'Передавать аудио',
+    forwardAudioTooltip:
+      'Требуется Android 11 или новее.\nAndroid 12+ обычно работает сразу.\nНа Android 11 устройство должно быть разблокировано перед запуском, но захват аудио всё равно может быть недоступен на некоторых устройствах Android TV.',
+    audioCodec: 'Аудиокодек',
+    audioCodecTooltip:
+      'Автоматически пробует совместимые аудиокодеки, если кодек по умолчанию не сработал.',
+    audioCodecAuto: 'Автоматически',
+    audioCodecOpus: 'Opus',
+    audioCodecAac: 'AAC',
+    audioCodecFlac: 'FLAC',
+    audioCodecRaw: 'Raw',
+    alwaysOnTop: 'Поверх всех окон',
+    alwaysOnTopTooltip: 'Держать окно scrcpy поверх других окон.',
+    fullScreen: 'Полный экран',
+    fullScreenTooltip: 'Запускать scrcpy в полноэкранном режиме.',
+    borderless: 'Без рамок',
+    borderlessTooltip: 'Запускать scrcpy без рамки окна.',
+    recordFeed: 'Записывать поток',
+    recordFeedTooltip: 'Записывать экран/камеру в файл.',
+    recordPath: 'Путь записи',
+    change: 'Изменить',
+    defaultVideosFolder: 'По умолчанию (папка Видео)',
+    selectRecordingFolderTitle: 'Выберите папку для записи',
+    // v4 features
+    keepActive: 'Держать активным',
+    keepActiveTooltip:
+      'Имитирует активность пользователя, чтобы экран не отключался (scrcpy v4+).',
+  },
+
+  shortcuts: {
+    title: 'Горячие клавиши (Alt +)',
+    full: 'Полный',
+    home: 'Домой',
+    back: 'Назад',
+    recents: 'Недавние',
+    power: 'Питание',
+    rotate: 'Поворот',
+    paste: 'Вставить',
+    off: 'Выкл.',
+  },
+
+  logPanel: {
+    systemConsole: 'Системная консоль',
+    report: 'Отчёт',
+    reportTitle: 'Экспортировать диагностический отчёт в Загрузки',
+    clear: 'Очистить',
+    waitingForSequence: 'Ожидание последовательности...',
+    terminalPlaceholder:
+      'Введите команду (например, adb shell, scrcpy --help)...',
+    diagnosticReportSaved:
+      'Диагностический отчёт сохранён в Загрузки: {fileName}',
+    reportSavedAlert: 'Отчёт сохранён в Загрузки: {fileName}',
+  },
+
+  onboarding: {
+    coreInitialization: 'Инициализация ядра',
+    introQuote:
+      '"Для связи с устройством нужны бинарные файлы scrcpy и ADB.\nДавайте установим их."',
+    setupCoreComponents: 'Настройка основных компонентов',
+    setupCoreSubtitle: 'Требуется автоматическая или ручная установка.',
+    binariesAndDrivers: 'Бинарные файлы и драйверы',
+    binariesDescription: 'Нужно скачать движок Scrcpy для трансляции экрана.',
+    downloadingProgress: 'Загрузка...\n{progress}%',
+    downloadCoreBinaries: 'Скачать основные бинарные файлы',
+    manualSetupFallback: 'Ручная настройка',
+    manualSetupBefore:
+      'Если автозагрузка не удалась, попробуйте запустить приложение от имени',
+    manualSetupAdministrator: 'администратора',
+    manualSetupAfter:
+      '.\nТакже можно скачать файлы вручную и указать путь через иконку папки в правом верхнем углу.',
+    githubReleases: 'GitHub Releases',
+    successBinariesActive: 'Готово! Бинарные файлы активны',
+    continueToApp: 'Перейти к приложению',
+  },
+
+  footer: {
+    aboutScrcpyGui: 'О Mobile Device Studio',
+    github: 'GitHub',
+    youtube: 'YouTube',
+    website: 'Сайт',
+    support: 'Поддержка',
+    core: 'Ядро',
+    client: 'Клиент',
+    ui: 'UI',
+    assets: 'Ресурсы',
+    appVersion: 'ВЕРСИЯ ПРИЛОЖЕНИЯ v{version} • СОЗДАНО С',
+    byKb: 'ОТ KB',
+  },
+
+  errorBoundary: {
+    title: 'Обнаружен системный сбой',
+    subtitle:
+      'Неожиданная ошибка привела к сбою интерфейса управления миссией.',
+    errorSignature: 'Сигнатура ошибки',
+    criticalSystemFailure: 'Критический системный сбой',
+    reboot: 'Перезапустить',
+    exportLogs: 'Экспорт логов',
+    recoveryEngine: 'Движок антигравитационного восстановления v1.0',
+    diagnosticSavedAlert:
+      'Диагностический отчёт сохранён в Загрузки как: {fileName}',
+  },
+
+  alerts: {
+    noDeviceSelectedTitle: 'Устройство не выбрано',
+    noDeviceSelectedMessage:
+      'Выберите устройство на боковой панели, чтобы продолжить.\nПодсказка: если вы только что подключили телефон, нажмите «Обновить» на боковой панели, чтобы обновить список.',
+    updateAvailableTitle: 'Доступно обновление',
+    updateAvailableMessage:
+      'Доступна новая версия Scrcpy (v{latest}). Ваша установленная версия — v{local}. Хотите обновить сейчас?',
+    updateBtn: 'Обновить сейчас',
+    cancelBtn: 'Позже',
+  },
+
+  logs: {
+    noDeviceForDragDrop:
+      '[WARN] Устройство не выбрано для операции drag-and-drop.',
+    customScrcpyPathSet:
+      '[SYSTEM] Пользовательский путь к scrcpy задан: {path}',
+    customScrcpyPathCleared:
+      '[SYSTEM] Пользовательский путь к scrcpy сброшен.\nИспользуется системное значение по умолчанию.',
+    newDeviceDiscovered: '[SYSTEM] Обнаружено новое устройство: {device}',
+    deviceDisconnected: '[SYSTEM] Устройство отключено: {device}',
+    discoveryActive:
+      '[SYSTEM] Обнаружение активно: найдено устройств: {count}.',
+    discoveryError: '[SYSTEM] Ошибка обнаружения: {error}',
+    errorRefreshingDevices: '[SYSTEM] Ошибка при обновлении устройств: {error}',
+    initializingScrcpy: '[SYSTEM] Инициализация сессии scrcpy для {device}...',
+    failedToStartScrcpy: '[ERROR] Не удалось запустить scrcpy: {error}',
+    downloadError: 'Ошибка загрузки: {error}',
+    downloadComplete: 'Загрузка завершена',
+    successfullyPaired: '[SYSTEM] Успешно сопряжено с {ip}',
+    pairingFailed: '[SYSTEM] Сопряжение не удалось: {message}',
+    pairingProtocolFault:
+      '[TIP] Сбой протокола обычно означает, что сервер ADB завис.\nПопробуйте «Остановить ADB» на боковой панели.',
+    pairingError: '[ERROR] Ошибка сопряжения: {error}',
+    connectionFailedRetrying:
+      '[SYSTEM] Подключение не удалось, повторная попытка с очисткой...',
+    connectedSuccessfully: '[SYSTEM] УСПЕШНО ПОДКЛЮЧЕНО К {ip}.',
+    connectionFailed: '[SYSTEM] Подключение не удалось: {message}',
+    connectionStaleTip:
+      '[TIP] Порт может быть устаревшим.\nПопробуйте «Остановить ADB», чтобы обновить обнаружение.',
+    connectionError: '[ERROR] Ошибка подключения: {error}',
+    discoveringPort:
+      '[SYSTEM] Сопряжение выполнено. Поиск порта подключения через mDNS...',
+    discoveredPort: '[SYSTEM] Найдена конечная точка подключения: {ip}',
+    portDiscoveryFailed:
+      '[TIP] Не удалось автоматически определить порт подключения. Android 11+ использует случайный порт (не 5555). Посмотрите «IP-адрес и порт» в разделе «Беспроводная отладка» на устройстве, введите его в поле IP-подключения и нажмите «Подключить».',
+    scrcpyVersionUntested:
+      '[WARN] scrcpy v{version} новее версии, с которой тестировалось это приложение (v{tested}). Большинство функций должно работать, и приложение автоматически повторит запуск без любой опции, которую новый scrcpy больше не распознаёт.',
+    runningScrcpyArg: 'Запуск scrcpy {arg}...',
+    noCamerasParsed:
+      '[SYSTEM] Не удалось распознать камеры из вывода.\nПроверьте консоль выше.',
+    genericError: 'Ошибка: {error}',
+    pushingFile: '[SYSTEM] Отправка файла на {device}: {filePath}...',
+    installingApk: '[SYSTEM] Установка APK на {device}: {filePath}...',
+    adbPrefix: '[ADB] {message}',
+    commandFailed: '[ERROR] Команда завершилась с ошибкой: {error}',
+  },
+}
