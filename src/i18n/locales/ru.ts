@@ -97,7 +97,6 @@ export const ru: DeepPartialTranslations = {
     connect: 'Подключить',
     connecting: '...',
     recentDevices: 'Недавние устройства',
-    discoveredDevices: 'Обнаруженные устройства (mDNS)',
     clear: 'Очистить',
     pairDeviceTitle: '2. Сопряжение устройства (Android 11+)',
     ipPortPlaceholder: 'IP:Порт',
