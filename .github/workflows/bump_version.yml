@@ -41,6 +41,9 @@ jobs:
           NEW_VERSION=$(node -p "require('./package.json').version")
           echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
 
+      - name: Update package-lock.json
+        run: npm install --package-lock-only
+
       - name: Update tauri.conf.json
         run: |
           # Use jq to update version in tauri.conf.json
