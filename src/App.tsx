@@ -573,7 +573,7 @@ function App() {
           }
         `}</style>
         <div className="fixed inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none z-0"></div>
-        <div className="fixed top-[-50%] left-[-50%] w-[200%] h-[200%] bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-primary/30 via-transparent to-transparent pointer-events-none z-0"></div>
+        <div className="fixed top-[-50%] left-[-50%] w-[200%] h-[200%] bg-[radial-gradient(circle_at_center,var(--tw-gradient-stops))] from-primary/30 via-transparent to-transparent pointer-events-none z-0"></div>
 
         <div className="relative z-10 flex flex-col h-screen transition-all duration-700">
           <Header
@@ -686,7 +686,7 @@ function App() {
                     notify={notify}
                   />
                 </div>
-                <div className="relative z-10">
+                {/*<div className="relative z-10">
                   <EmbeddedMirror
                     enabled={embeddedMirror.embedEnabled}
                     onToggle={embeddedMirror.setEmbedEnabled}
@@ -699,7 +699,7 @@ function App() {
                     isCapturing={screenshot.isCapturing}
                     notify={notify}
                   />
-                </div>
+                </div>*/}
                 <div className="relative z-10">
                   <LivePreview
                     isPreviewing={livePreview.isPreviewing}
