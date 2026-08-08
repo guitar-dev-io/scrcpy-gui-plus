@@ -1,19 +1,25 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  Download,
-  FolderOpen,
-  RefreshCcw,
-  Palette,
-  HelpCircle,
-  X,
-  ExternalLink,
-  Languages,
   ChevronDown,
-  Sun,
+  Download,
+  ExternalLink,
+  FolderOpen,
+  HelpCircle,
   Moon,
+  Palette,
+  RefreshCcw,
+  Settings,
+  Smartphone,
+  Sun,
   Monitor,
+  Maximize2,
+  BatteryMedium,
+  Wifi,
+  UserCircle,
+  X,
 } from 'lucide-react'
 import { SUPPORTED_LOCALES, useI18n, type Locale } from '../i18n'
+import { useDeviceStatus } from '../hooks/useDeviceStatus'
 
 interface HeaderProps {
   onThemeChange: (theme: string) => void
@@ -21,6 +27,12 @@ interface HeaderProps {
   colorMode: 'light' | 'dark' | 'system'
   onColorModeChange: (mode: 'light' | 'dark' | 'system') => void
   binaryStatus: { found: boolean; message: string }
+  activeDevice: string
+  customPath?: string
+  connected: boolean
+  isRefreshing: boolean
+  onRefresh: () => void
+  onOpenSettings: () => void
   onDownload: () => void
   onSetPath: () => void
   onResetPath: () => void
@@ -29,12 +41,26 @@ interface HeaderProps {
   version: string
 }
 
+const THEMES = [
+  { id: 'ultraviolet', color: '#7c4dff' },
+  { id: 'astro', color: '#3b82f6' },
+  { id: 'carbon', color: '#ffffff' },
+  { id: 'emerald', color: '#10b981' },
+  { id: 'bloodmoon', color: '#ef4444' },
+] as const
+
 export default function Header({
   onThemeChange,
   currentTheme,
   colorMode,
   onColorModeChange,
   binaryStatus,
+  activeDevice,
+  customPath,
+  connected,
+  isRefreshing,
+  onRefresh,
+  onOpenSettings,
   onDownload,
   onSetPath,
   onResetPath,
@@ -44,312 +70,268 @@ export default function Header({
 }: HeaderProps) {
   const { t, locale, setLocale, translations } = useI18n()
   const [showHelp, setShowHelp] = useState(false)
+  const [showAppearance, setShowAppearance] = useState(false)
   const [showLangMenu, setShowLangMenu] = useState(false)
-  const langMenuRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const { status: deviceStatus } = useDeviceStatus({
+    activeDevice,
+    customPath,
+    autoRefresh: false,
+    enabled: !!activeDevice,
+  })
 
   useEffect(() => {
-    if (!showLangMenu) return
+    if (!showAppearance && !showLangMenu) return
     const onClick = (event: MouseEvent) => {
-      if (
-        langMenuRef.current &&
-        !langMenuRef.current.contains(event.target as Node)
-      ) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowAppearance(false)
         setShowLangMenu(false)
       }
     }
     document.addEventListener('mousedown', onClick)
     return () => document.removeEventListener('mousedown', onClick)
-  }, [showLangMenu])
+  }, [showAppearance, showLangMenu])
+
+  useEffect(() => {
+    if (!showAppearance && !showLangMenu && !showHelp) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setShowAppearance(false)
+      setShowLangMenu(false)
+      setShowHelp(false)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [showAppearance, showHelp, showLangMenu])
+
+  const iconButton =
+    'flex h-8 w-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]'
 
   return (
-    <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 px-2 py-4">
+    <>
+      <header className="flex h-[58px] items-stretch gap-4">
+        <section className="flex min-w-0 flex-1 items-center gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 shadow-[var(--shadow-sm)]">
+          <Smartphone size={20} className="shrink-0 text-[var(--text-muted)]" />
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h1 className="truncate text-[12px] font-semibold text-[var(--text-base)]">
+                {deviceStatus?.model || activeDevice || 'No Android device selected'}
+              </h1>
+              <span className={`rounded px-1.5 py-0.5 text-[8px] font-semibold ${activeDevice ? 'bg-emerald-500/15 text-emerald-400' : 'bg-[var(--bg-hover)] text-[var(--text-subtle)]'}`}>
+                {activeDevice ? 'Online' : 'Offline'}
+              </span>
+            </div>
+            <p className="mt-0.5 truncate text-[10px] text-[var(--text-subtle)]">
+              {activeDevice
+                ? [activeDevice, deviceStatus?.androidVersion && `Android ${deviceStatus.androidVersion}`].filter(Boolean).join(' · ')
+                : 'Connect a device to begin'}
+            </p>
+          </div>
+          <div className="ml-auto hidden items-center gap-5 text-[10px] text-[var(--text-subtle)] md:flex">
+            <span className="flex items-center gap-1.5"><Maximize2 size={13} /> {deviceStatus?.resolution || (connected ? 'Session active' : 'Ready')}</span>
+            <span className="flex items-center gap-1.5"><BatteryMedium size={13} /> {deviceStatus?.batteryLevel !== undefined ? `${deviceStatus.batteryLevel}%` : '—'}</span>
+            <Wifi size={13} />
+          </div>
+        </section>
+
+        <div ref={menuRef} className="relative flex min-w-0 items-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 shadow-[var(--shadow-sm)] sm:min-w-[340px] sm:px-4">
+          <div className="mr-auto min-w-0">
+            <div className="flex items-center gap-2">
+              <p className="text-[9px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Scrcpy Engine</p>
+              <span className={`h-1.5 w-1.5 rounded-full ${binaryStatus.found ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+            </div>
+            <p className={`mt-0.5 max-w-32 truncate text-[9px] font-semibold uppercase ${binaryStatus.found ? 'text-emerald-400' : 'text-amber-400'}`}>
+              {isDownloading ? `${downloadProgress}%` : binaryStatus.found ? t('header.scrcpyReady') : binaryStatus.message}
+            </p>
+          </div>
+          {!binaryStatus.found && !isDownloading && (
+            <button
+              type="button"
+              onClick={onDownload}
+              className="mr-1 inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-md)] bg-primary px-3 text-[var(--font-size-caption)] font-semibold text-on-primary hover:bg-[var(--primary-hover)]"
+            >
+              <Download size={13} /> {t('header.installCore')}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={isRefreshing}
+            className={iconButton}
+            title={t('sidebar.refresh')}
+            aria-label={t('sidebar.refresh')}
+          >
+            <RefreshCcw size={15} className={isRefreshing ? 'animate-spin' : ''} />
+          </button>
+          <button
+            type="button"
+            onClick={onSetPath}
+            className={iconButton}
+            title={t('header.selectFolder')}
+            aria-label={t('header.selectFolder')}
+          >
+            <FolderOpen size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => { setShowAppearance((open) => !open); setShowLangMenu(false) }}
+            className={iconButton}
+            title={t('header.themeLabel')}
+            aria-label={t('header.themeLabel')}
+            aria-expanded={showAppearance}
+            aria-controls="appearance-menu"
+            aria-haspopup="dialog"
+          >
+            <Palette size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            className={iconButton}
+            title="Settings"
+            aria-label="Settings"
+          >
+            <Settings size={15} />
+          </button>
+          <button type="button" onClick={() => setShowHelp(true)} className={iconButton} title={t('header.setupHelpTitle')} aria-label={t('header.setupHelpTitle')} aria-expanded={showHelp} aria-controls="setup-help-dialog" aria-haspopup="dialog">
+            <HelpCircle size={15} />
+          </button>
+          <button type="button" onClick={() => { setShowLangMenu((open) => !open); setShowAppearance(false) }} className={iconButton} title={`${t('header.languageLabel')} · v${version}`} aria-label={`${t('header.languageLabel')} · v${version}`} aria-expanded={showLangMenu} aria-controls="language-menu" aria-haspopup="menu">
+            <UserCircle size={19} />
+          </button>
+
+          {showAppearance && (
+            <div id="appearance-menu" role="dialog" aria-label={t('header.themeLabel')} className="absolute right-0 top-10 z-[120] w-64 rounded-[var(--radius-lg)] border border-[var(--border-base)] bg-[var(--bg-elevated)] p-3 shadow-[var(--shadow-lg)]">
+              <p className="mb-2 text-[var(--font-size-caption)] font-semibold text-[var(--text-muted)]">
+                Accent color
+              </p>
+              <div className="flex gap-2">
+                {THEMES.map((theme) => (
+                  <button
+                    key={theme.id}
+                    type="button"
+                    onClick={() => onThemeChange(theme.id)}
+                    className={`h-6 w-6 rounded-full border-2 transition-transform hover:scale-110 ${
+                      currentTheme === theme.id
+                        ? 'border-[var(--text-base)]'
+                        : 'border-transparent'
+                    }`}
+                    style={{ backgroundColor: theme.color }}
+                    title={t(`header.themes.${theme.id}`)}
+                    aria-label={t(`header.themes.${theme.id}`)}
+                    aria-pressed={currentTheme === theme.id}
+                  />
+                ))}
+              </div>
+              <p className="mb-2 mt-4 text-[var(--font-size-caption)] font-semibold text-[var(--text-muted)]">
+                Appearance
+              </p>
+              <div className="grid grid-cols-3 gap-1">
+                {([
+                  ['light', Sun],
+                  ['dark', Moon],
+                  ['system', Monitor],
+                ] as const).map(([mode, Icon]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => onColorModeChange(mode)}
+                    aria-pressed={colorMode === mode}
+                    className={`flex items-center justify-center gap-1 rounded-[var(--radius-md)] px-2 py-1.5 text-[var(--font-size-caption)] capitalize ${
+                      colorMode === mode
+                        ? 'bg-primary text-on-primary'
+                        : 'bg-[var(--bg-input)] text-[var(--text-muted)] hover:text-[var(--text-base)]'
+                    }`}
+                  >
+                    <Icon size={12} /> {mode}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-3 flex items-center gap-2 border-t border-[var(--border-subtle)] pt-3">
+                <button type="button" onClick={onSetPath} className={iconButton} title={t('header.selectFolder')} aria-label={t('header.selectFolder')}>
+                  <FolderOpen size={14} />
+                </button>
+                <button type="button" onClick={onResetPath} className={iconButton} title={t('header.resetPath')} aria-label={t('header.resetPath')}>
+                  <RefreshCcw size={14} />
+                </button>
+                <span className="text-[var(--font-size-caption)] text-[var(--text-subtle)]">
+                  Engine path
+                </span>
+              </div>
+            </div>
+          )}
+
+          {showLangMenu && (
+            <div id="language-menu" role="menu" aria-label={t('header.languageLabel')} className="absolute right-0 top-10 z-[120] min-w-44 rounded-[var(--radius-lg)] border border-[var(--border-base)] bg-[var(--bg-elevated)] p-1 shadow-[var(--shadow-lg)]">
+              {SUPPORTED_LOCALES.map((nextLocale: Locale) => (
+                <button
+                  key={nextLocale}
+                  type="button"
+                  onClick={() => {
+                    setLocale(nextLocale)
+                    setShowLangMenu(false)
+                  }}
+                  role="menuitemradio"
+                  aria-checked={nextLocale === locale}
+                  className={`flex w-full items-center justify-between rounded-[var(--radius-md)] px-3 py-2 text-left text-[var(--font-size-body-sm)] ${
+                    nextLocale === locale
+                      ? 'bg-primary/15 text-primary'
+                      : 'text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-base)]'
+                  }`}
+                >
+                  {translations.languages[nextLocale]}
+                  {nextLocale === locale && <ChevronDown size={12} />}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </header>
+
       {showHelp && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="glass max-w-md w-full p-6 rounded-2xl border border-zinc-800 shadow-2xl animate-in fade-in zoom-in-95 duration-200 bg-zinc-950/90">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-sm font-black uppercase tracking-widest text-primary flex items-center gap-2">
-                <HelpCircle size={18} /> {t('header.manualSetupGuide')}
-              </h3>
-              <button
-                onClick={() => setShowHelp(false)}
-                className="text-zinc-500 hover:text-white transition-colors"
-              >
-                <X size={20} />
+        <div className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <div id="setup-help-dialog" role="dialog" aria-modal="true" aria-labelledby="setup-help-title" className="w-full max-w-md rounded-[var(--radius-2xl)] border border-[var(--border-base)] bg-[var(--bg-elevated)] p-6 shadow-[var(--shadow-lg)]">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 id="setup-help-title" className="flex items-center gap-2 text-[var(--font-size-title)] font-semibold">
+                <HelpCircle size={18} className="text-primary" />
+                {t('header.manualSetupGuide')}
+              </h2>
+              <button type="button" onClick={() => setShowHelp(false)} className={iconButton} aria-label="Close setup help">
+                <X size={17} />
               </button>
             </div>
-
-            <div className="space-y-4 text-xs leading-relaxed text-zinc-300">
+            <div className="space-y-4 text-[var(--font-size-body-sm)] leading-6 text-[var(--text-muted)]">
               <p>{t('header.manualSetupIntro')}</p>
-
-              <ol className="list-decimal list-inside space-y-3 font-medium">
+              <ol className="list-inside list-decimal space-y-2">
                 <li>
-                  {t('header.manualStep1')}
+                  {t('header.manualStep1')}{' '}
                   <a
                     href="https://github.com/Genymobile/scrcpy/releases/latest"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-primary hover:underline flex items-center gap-1 mt-1 ml-4"
+                    className="inline-flex items-center gap-1 text-primary hover:underline"
                   >
-                    {t('header.manualStep1Link')} <ExternalLink size={10} />
+                    {t('header.manualStep1Link')} <ExternalLink size={11} />
                   </a>
                 </li>
                 <li>{t('header.manualStep2')}</li>
-                <li>
-                  {t('header.manualStep3Before')}{' '}
-                  <span className="text-white font-bold inline-flex items-center gap-1 px-1.5 py-0.5 bg-zinc-800 rounded border border-zinc-700 shadow-sm mx-1">
-                    <FolderOpen size={10} /> {t('header.manualStep3Browse')}
-                  </span>{' '}
-                  {t('header.manualStep3After')}
-                </li>
-                <li>
-                  {t('header.manualStep4Before')}{' '}
-                  <code className="text-primary font-bold">
-                    {t('header.manualStep4Executable')}
-                  </code>{' '}
-                  {t('header.manualStep4After')}
-                </li>
+                <li>{t('header.manualStep3Before')} {t('header.manualStep3Browse')} {t('header.manualStep3After')}</li>
+                <li>{t('header.manualStep4Before')} {t('header.manualStep4Executable')} {t('header.manualStep4After')}</li>
               </ol>
-
-              <div className="pt-3 border-t border-zinc-800/50">
-                <p className="text-zinc-500 italic">{t('header.manualNote')}</p>
-              </div>
+              <p className="border-t border-[var(--border-subtle)] pt-3 text-[var(--text-subtle)]">
+                {t('header.manualNote')}
+              </p>
             </div>
-
             <button
+              type="button"
               onClick={() => setShowHelp(false)}
-              className="w-full mt-6 py-3 bg-primary text-on-primary rounded-xl text-[10px] font-black uppercase tracking-widest transition-all hover:bg-primary/90 active:scale-95"
+              className="mt-6 h-10 w-full rounded-[var(--radius-md)] bg-primary text-[var(--font-size-body-sm)] font-semibold text-on-primary hover:bg-[var(--primary-hover)]"
             >
               {t('header.gotIt')}
             </button>
           </div>
         </div>
       )}
-
-      {/* Theme & Language Switchers - Far Left */}
-      <div className="flex-1 flex justify-start items-center gap-5">
-        <div className="flex items-center gap-3 group/header">
-          <div className="flex items-center gap-1.5 grayscale opacity-50 group-hover/header:grayscale-0 group-hover/header:opacity-100 transition-all">
-            <Palette size={12} className="text-primary" />
-            <span className="text-[9px] uppercase font-black text-zinc-500 tracking-tighter">
-              {t('header.themeLabel')}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            {[
-              {
-                id: 'ultraviolet',
-                color: '#8b5cf6',
-                label: t('header.themes.ultraviolet'),
-              },
-              {
-                id: 'astro',
-                color: '#3b82f6',
-                label: t('header.themes.astro'),
-              },
-              {
-                id: 'carbon',
-                color: '#ffffff',
-                label: t('header.themes.carbon'),
-              },
-              {
-                id: 'emerald',
-                color: '#10b981',
-                label: t('header.themes.emerald'),
-              },
-              {
-                id: 'bloodmoon',
-                color: '#ef4444',
-                label: t('header.themes.bloodmoon'),
-              },
-            ].map((th) => (
-              <button
-                key={th.id}
-                onClick={() => onThemeChange(th.id)}
-                className={`w-4 h-4 rounded-full transition-all hover:scale-125 active:scale-95 relative group/swatch ${currentTheme === th.id ? 'ring-2 ring-white ring-offset-2 ring-offset-black scale-110' : 'opacity-50 hover:opacity-100'}`}
-                style={{
-                  backgroundColor: th.color,
-                  boxShadow: 'inset 0 0 0 1.5px var(--swatch-border)',
-                }}
-              >
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-zinc-900 border border-zinc-800 rounded text-[9px] font-bold uppercase tracking-widest text-white opacity-0 group-hover/swatch:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
-                  {th.label}
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Color Mode Toggle */}
-        <div className="flex items-center gap-1 group/mode">
-          <div className="flex items-center gap-0.5 p-0.5 rounded-lg border border-zinc-800 bg-zinc-900/60">
-            {(
-              [
-                {
-                  id: 'light' as const,
-                  Icon: Sun,
-                  label: t('header.colorModes.light'),
-                },
-                {
-                  id: 'dark' as const,
-                  Icon: Moon,
-                  label: t('header.colorModes.dark'),
-                },
-                {
-                  id: 'system' as const,
-                  Icon: Monitor,
-                  label: t('header.colorModes.system'),
-                },
-              ] as const
-            ).map(({ id, Icon, label }) => (
-              <button
-                key={id}
-                onClick={() => onColorModeChange(id)}
-                title={label}
-                className={`relative p-1.5 rounded-md transition-all group/btn ${
-                  colorMode === id
-                    ? 'bg-primary text-on-primary shadow-sm'
-                    : 'text-zinc-400 hover:text-primary hover:bg-zinc-800/60'
-                }`}
-              >
-                <Icon size={11} />
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-zinc-900 border border-zinc-800 rounded text-[9px] font-bold uppercase tracking-widest text-white opacity-0 group-hover/btn:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
-                  {label}
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Language Switcher */}
-        <div className="relative" ref={langMenuRef}>
-          <button
-            onClick={() => setShowLangMenu((v) => !v)}
-            className="flex items-center gap-1.5 px-2 py-1 rounded-md text-zinc-500 hover:text-primary hover:bg-zinc-900/60 transition-all border border-transparent hover:border-zinc-800"
-            title={t('header.languageLabel')}
-          >
-            <Languages size={12} />
-            <span className="text-[9px] font-black uppercase tracking-widest">
-              {translations.languages[locale]}
-            </span>
-            <ChevronDown
-              size={10}
-              className={`transition-transform ${showLangMenu ? 'rotate-180' : ''}`}
-            />
-          </button>
-          {showLangMenu && (
-            <div className="absolute top-full left-0 mt-1 min-w-[160px] bg-zinc-950/95 border border-zinc-800 rounded-md shadow-2xl z-[120] py-1 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150">
-              {SUPPORTED_LOCALES.map((loc: Locale) => (
-                <button
-                  key={loc}
-                  onClick={() => {
-                    setLocale(loc)
-                    setShowLangMenu(false)
-                  }}
-                  className={`block w-full text-left px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-colors ${loc === locale ? 'bg-primary/20 text-primary' : 'text-zinc-400 hover:bg-primary hover:text-on-primary'}`}
-                >
-                  {translations.languages[loc]}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Branding - Center */}
-      <div className="flex-1 flex flex-col items-center justify-center text-center">
-        <div className="flex items-baseline gap-2">
-          <h1 className="text-2xl md:text-3xl font-black tracking-tighter text-white uppercase italic">
-            Mobile Device{' '}
-            <span className="text-primary not-italic">Studio</span>
-          </h1>
-          <div className="flex items-center gap-1.5 px-1.5 py-0.5 bg-zinc-800 rounded border border-zinc-700 mt-1">
-            <span className="text-[10px] font-black text-zinc-400 tracking-wider">
-              V{version}
-            </span>
-            <div
-              className={`w-1.5 h-1.5 rounded-full ${binaryStatus.found ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] animate-pulse'}`}
-            />
-          </div>
-        </div>
-        <p className="text-zinc-600 text-[9px] uppercase tracking-[0.3em] font-black mt-1 ml-0.5">
-          {t('header.tagline')}
-        </p>
-      </div>
-
-      {/* Binary Status - Far Right */}
-      <div className="flex flex-wrap gap-3 items-center flex-1 justify-end">
-        {!binaryStatus.found && (
-          <button
-            onClick={() => setShowHelp(true)}
-            className="px-4 py-2 glass rounded-xl border border-primary/50 text-primary hover:text-white transition-all hover:scale-105 hover:bg-primary/20 shadow-[0_0_15px_rgba(139,92,246,0.2)] flex items-center gap-2 group/help animate-pulse hover:animate-none"
-            title={t('header.setupHelpTitle')}
-          >
-            <HelpCircle
-              size={18}
-              className="group-hover/help:rotate-12 transition-transform"
-            />
-            <span className="text-[10px] font-black uppercase tracking-widest">
-              {t('header.setupHelp')}
-            </span>
-          </button>
-        )}
-
-        <div className="glass px-4 py-2 rounded-xl flex items-center gap-4 w-full md:w-auto justify-between md:justify-start border border-zinc-800 bg-zinc-950/50 backdrop-blur-2xl shadow-2xl relative group overflow-hidden">
-          <div className="absolute inset-0 bg-emerald-500/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
-
-          <div className="flex flex-col min-w-[110px] relative z-10">
-            <div className="flex items-center gap-1.5 mb-1 text-zinc-500">
-              <span className="text-[10px] uppercase font-black tracking-widest">
-                {t('header.scrcpyEngine')}
-              </span>
-              <div
-                className={`w-1.5 h-1.5 rounded-full ${binaryStatus.found ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-[pulse_2s_infinite]' : 'bg-yellow-500 animate-pulse'}`}
-              />
-            </div>
-            <div
-              className={`text-xs font-black uppercase tracking-tighter truncate max-w-[150px] ${binaryStatus.found ? 'text-emerald-400 animate-[pulse_4s_infinite]' : 'text-yellow-500'}`}
-            >
-              {isDownloading
-                ? t('header.syncingComponents', { progress: downloadProgress })
-                : binaryStatus.found
-                  ? t('header.scrcpyReady')
-                  : binaryStatus.message}
-            </div>
-            {isDownloading && (
-              <div className="w-full bg-zinc-800 h-1 rounded-full mt-1.5 overflow-hidden">
-                <div
-                  className="bg-emerald-500 h-full transition-all duration-300"
-                  style={{ width: `${downloadProgress}%` }}
-                ></div>
-              </div>
-            )}
-          </div>
-          <div className="flex gap-2 items-center border-l border-zinc-800 pl-3 relative z-10">
-            {!binaryStatus.found && !isDownloading && (
-              <button
-                onClick={onDownload}
-                className="px-2 py-0.5 bg-emerald-500 text-black border border-emerald-400 rounded-md text-[9px] font-black hover:bg-emerald-400 transition-all uppercase tracking-tighter shadow-lg shadow-emerald-500/20 active:scale-95 flex items-center gap-1"
-              >
-                <Download size={10} /> {t('header.installCore')}
-              </button>
-            )}
-            <button
-              onClick={onSetPath}
-              className="p-1 hover:text-primary text-zinc-500 transition-colors"
-              title={t('header.selectFolder')}
-            >
-              <FolderOpen size={16} />
-            </button>
-            <button
-              onClick={onResetPath}
-              className="p-1 hover:text-red-400 text-zinc-500 transition-colors"
-              title={t('header.resetPath')}
-            >
-              <RefreshCcw size={16} />
-            </button>
-          </div>
-        </div>
-      </div>
-    </header>
+    </>
   )
 }

@@ -368,6 +368,85 @@ pub async fn get_mdns_devices(custom_path: Option<String>) -> serde_json::Value 
     }
 }
 
+/// Finds this machine's LAN IPv4 address by opening a UDP "connection" to a
+/// public address. No packets are actually sent (UDP connect just picks the
+/// outbound route), so this works fully offline as long as a default route
+/// exists.
+fn get_local_ipv4() -> Option<std::net::Ipv4Addr> {
+    use std::net::{IpAddr, UdpSocket};
+    let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("8.8.8.8:80").ok()?;
+    match socket.local_addr().ok()?.ip() {
+        IpAddr::V4(ip) => Some(ip),
+        _ => None,
+    }
+}
+
+/// Fallback discovery for devices that don't advertise over mDNS (older
+/// Android already switched to `adb tcpip`, or a router that blocks mDNS).
+/// Sweeps the local /24 subnet for hosts with the default wireless-adb port
+/// (5555) open. Purely a TCP reachability probe — nothing adb-specific is
+/// sent, so a stray open 5555 elsewhere would show up too; the caller still
+/// has to attempt `adb connect` to confirm it's really a device.
+#[tauri::command]
+pub async fn scan_lan_adb(window: Window) -> serde_json::Value {
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+    use tokio::net::TcpStream;
+    use tokio::sync::Semaphore;
+
+    let local_ip = match get_local_ipv4() {
+        Some(ip) => ip,
+        None => {
+            return json!({ "error": true, "message": "Could not determine local IP address" })
+        }
+    };
+    let octets = local_ip.octets();
+
+    let _ = window.emit(
+        "scrcpy-log",
+        format!(
+            "[SYSTEM] Scanning {}.{}.{}.1-254 for wireless-debug port 5555...",
+            octets[0], octets[1], octets[2]
+        ),
+    );
+
+    let semaphore = Arc::new(Semaphore::new(64));
+    let mut tasks = Vec::with_capacity(254);
+    for host in 1u8..=254 {
+        if host == octets[3] {
+            continue;
+        }
+        let sem = semaphore.clone();
+        let ip = Ipv4Addr::new(octets[0], octets[1], octets[2], host);
+        tasks.push(tokio::spawn(async move {
+            let _permit = sem.acquire_owned().await.ok()?;
+            let addr = SocketAddr::new(IpAddr::V4(ip), 5555);
+            match timeout(Duration::from_millis(400), TcpStream::connect(addr)).await {
+                Ok(Ok(_)) => Some(ip.to_string()),
+                _ => None,
+            }
+        }));
+    }
+
+    let mut found = Vec::new();
+    for task in tasks {
+        if let Ok(Some(ip)) = task.await {
+            found.push(ip);
+        }
+    }
+    found.sort();
+
+    let _ = window.emit(
+        "scrcpy-log",
+        format!(
+            "[SYSTEM] Subnet scan finished, found {} host(s) with port 5555 open.",
+            found.len()
+        ),
+    );
+
+    json!({ "error": false, "addresses": found })
+}
+
 #[tauri::command]
 pub async fn adb_connect(
     window: Window,

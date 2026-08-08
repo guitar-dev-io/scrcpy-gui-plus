@@ -20,6 +20,7 @@ import type { ToolbarNotifier } from '../device-control-toolbar'
 
 interface KeymapControllerProps {
   isOpen: boolean
+  embedded?: boolean
   onClose: () => void
   activeDevice: string
   customPath?: string
@@ -32,6 +33,7 @@ const DRAG_THRESHOLD_PX = 4
 
 export default function KeymapController({
   isOpen,
+  embedded = false,
   onClose,
   activeDevice,
   customPath,
@@ -99,13 +101,13 @@ export default function KeymapController({
 
   // Capture a first screenshot when opening with a device but no background.
   useEffect(() => {
-    if (isOpen && km.hasDevice && !km.background && !km.capturing) {
+    if ((isOpen || embedded) && km.hasDevice && !km.background && !km.capturing) {
       void km.captureBackground()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, km.hasDevice])
+  }, [isOpen, embedded, km.hasDevice])
 
-  if (!isOpen) return null
+  if (!isOpen && !embedded) return null
 
   const handleCanvasClick = (e: React.PointerEvent) => {
     // Only add buttons in edit mode, and ignore clicks that land on a button
@@ -155,13 +157,19 @@ export default function KeymapController({
 
   const buttons = km.activeProfile?.buttons ?? []
 
+  const dialogClassName = embedded
+    ? 'relative w-full h-full min-h-0 flex flex-col bg-zinc-950/95 border border-zinc-800 rounded-3xl shadow-2xl overflow-hidden'
+    : 'relative w-full max-w-5xl max-h-[92vh] flex flex-col bg-zinc-950/95 border border-zinc-800 rounded-3xl shadow-2xl overflow-hidden backdrop-blur-2xl animate-in zoom-in-95 fade-in duration-200'
+
   return (
-    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 sm:p-6">
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-md"
-        onClick={onClose}
-      />
-      <div className="relative w-full max-w-5xl max-h-[92vh] flex flex-col bg-zinc-950/95 border border-zinc-800 rounded-3xl shadow-2xl overflow-hidden backdrop-blur-2xl animate-in zoom-in-95 fade-in duration-200">
+    <div className={embedded ? 'flex h-full min-h-0 w-full' : 'fixed inset-0 z-[300] flex items-center justify-center p-4 sm:p-6'}>
+      {!embedded && (
+        <div
+          className="absolute inset-0 bg-black/60 backdrop-blur-md"
+          onClick={onClose}
+        />
+      )}
+      <div className={dialogClassName}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800/60">
           <div className="flex items-center gap-2">
@@ -189,12 +197,14 @@ export default function KeymapController({
               {km.active ? <Square size={13} /> : <Play size={13} />}
               {km.active ? t('keymap.stop') : t('keymap.activate')}
             </button>
-            <button
-              onClick={onClose}
-              className="p-2 rounded-xl text-zinc-500 hover:text-white hover:bg-white/5 transition-all"
-            >
-              <X size={18} />
-            </button>
+            {!embedded && (
+              <button
+                onClick={onClose}
+                className="p-2 rounded-xl text-zinc-500 hover:text-white hover:bg-white/5 transition-all"
+              >
+                <X size={18} />
+              </button>
+            )}
           </div>
         </div>
 

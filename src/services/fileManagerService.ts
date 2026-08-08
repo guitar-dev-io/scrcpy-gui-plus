@@ -45,10 +45,20 @@ export async function fmMkdir(
     return invoke<FsResult>('fm_mkdir', { serial, path, customPath });
 }
 
+export async function fmRename(
+    serial: string,
+    fromPath: string,
+    toPath: string,
+    customPath?: string
+): Promise<FsResult> {
+    return invoke<FsResult>('fm_rename', { serial, fromPath, toPath, customPath });
+}
+
 export async function fmPreviewFile(
     serial: string,
     remotePath: string,
-    customPath?: string
+    customPath?: string,
+    maxBytes?: number
 ): Promise<FsResult> {
-    return invoke<FsResult>('fm_preview_file', { serial, remotePath, customPath });
+    return invoke<FsResult>('fm_preview_file', { serial, remotePath, customPath, maxBytes });
 }

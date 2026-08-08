@@ -9,6 +9,12 @@ interface DeviceDisplayProps {
   state: EmbeddedSessionState
   error: string
   fps: number
+  /**
+   * When true, omits the default rounded border/chrome so the display can be
+   * embedded inside a custom frame (e.g. a phone bezel) without a double
+   * border. Defaults to false to preserve existing callers' look.
+   */
+  bare?: boolean
 }
 
 /**
@@ -23,6 +29,7 @@ export default function DeviceDisplay({
   state,
   error,
   fps,
+  bare = false,
 }: DeviceDisplayProps) {
   const { t } = useI18n()
   const connected = state === 'connected'
@@ -41,7 +48,9 @@ export default function DeviceDisplay({
     <div
       ref={containerRef}
       tabIndex={0}
-      className="relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border border-zinc-800 bg-black outline-none focus:border-primary/40"
+      className={`relative min-h-0 min-w-0 flex-1 overflow-hidden outline-none focus:border-primary/40 ${
+        bare ? 'bg-transparent' : 'rounded-xl border border-zinc-800 bg-black'
+      }`}
       style={{
         userSelect: 'none',
         WebkitUserSelect: 'none',

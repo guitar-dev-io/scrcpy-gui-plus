@@ -14,6 +14,7 @@ import { useConnectionHealth } from '../../hooks/useConnectionHealth';
 
 interface ConnectionHealthProps {
     isOpen: boolean;
+    embedded?: boolean;
     onClose: () => void;
     connected: boolean;
     bitrateMbps?: number;
@@ -46,19 +47,24 @@ function Metric({
 
 export default function ConnectionHealth({
     isOpen,
+    embedded = false,
     onClose,
     connected,
     bitrateMbps
 }: ConnectionHealthProps) {
     const { t } = useI18n();
-    const m = useConnectionHealth({ connected, bitrateMbps, enabled: isOpen });
+    const m = useConnectionHealth({ connected, bitrateMbps, enabled: isOpen || embedded });
 
-    if (!isOpen) return null;
+    if (!isOpen && !embedded) return null;
+
+    const dialogClassName = embedded
+        ? 'relative w-full h-full min-h-0 flex flex-col bg-zinc-950/95 border border-zinc-800 rounded-3xl shadow-2xl overflow-hidden'
+        : 'relative w-full max-w-lg max-h-[90vh] flex flex-col bg-zinc-950/95 border border-zinc-800 rounded-3xl shadow-2xl overflow-hidden backdrop-blur-2xl animate-in zoom-in-95 fade-in duration-200';
 
     return (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 sm:p-6">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={onClose} />
-            <div className="relative w-full max-w-lg max-h-[90vh] flex flex-col bg-zinc-950/95 border border-zinc-800 rounded-3xl shadow-2xl overflow-hidden backdrop-blur-2xl animate-in zoom-in-95 fade-in duration-200">
+        <div className={embedded ? 'flex h-full min-h-0 w-full' : 'fixed inset-0 z-[300] flex items-center justify-center p-4 sm:p-6'}>
+            {!embedded && <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={onClose} />}
+            <div className={dialogClassName}>
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800/60">
                     <div className="flex items-center gap-2">
@@ -82,12 +88,14 @@ export default function ConnectionHealth({
                             </p>
                         </div>
                     </div>
-                    <button
-                        onClick={onClose}
-                        className="p-2 rounded-xl text-zinc-500 hover:text-white hover:bg-white/5 transition-all"
-                    >
-                        <X size={18} />
-                    </button>
+                    {!embedded && (
+                        <button
+                            onClick={onClose}
+                            className="p-2 rounded-xl text-zinc-500 hover:text-white hover:bg-white/5 transition-all"
+                        >
+                            <X size={18} />
+                        </button>
+                    )}
                 </div>
 
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-3">

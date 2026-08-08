@@ -162,7 +162,7 @@ export const zhCN: DeepPartialTranslations = {
     preset4k: '4K 超高清',
     presetUltrawide: '21:9 超宽屏',
     initializeOtg: '初始化 OTG',
-    startMission: '开始',
+    startMission: '开始镜像',
     engageCamera: '启用摄像头',
     ejectToDesktop: '投射到桌面',
     stopSession: '停止',

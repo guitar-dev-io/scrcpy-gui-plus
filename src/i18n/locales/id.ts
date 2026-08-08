@@ -168,7 +168,7 @@ export const id: DeepPartialTranslations = {
     preset4k: '4K Ultra',
     presetUltrawide: '21:9 Ultra-Wide',
     initializeOtg: 'Inisialisasi OTG',
-    startMission: 'Mulai Sesi',
+    startMission: 'Mulai pencerminan',
     engageCamera: 'Aktifkan Kamera',
     ejectToDesktop: 'Pindahkan ke Jendela Sendiri',
     stopSession: 'Hentikan Sesi',

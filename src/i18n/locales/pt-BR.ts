@@ -171,7 +171,7 @@ export const ptBR: DeepPartialTranslations = {
     preset4k: '4K Ultra',
     presetUltrawide: '21:9 Ultra-Wide',
     initializeOtg: 'Inicializar OTG',
-    startMission: 'Iniciar Missão',
+    startMission: 'Iniciar espelhamento',
     engageCamera: 'Ativar Câmera',
     ejectToDesktop: 'Ejetar para Desktop',
     stopSession: 'Encerrar Sessão',

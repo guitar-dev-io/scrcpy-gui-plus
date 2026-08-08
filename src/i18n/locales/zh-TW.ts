@@ -159,7 +159,7 @@ export const zhTW: DeepPartialTranslations = {
     preset4k: '4K 超高畫質',
     presetUltrawide: '21:9 超寬',
     initializeOtg: '初始化 OTG',
-    startMission: '開始',
+    startMission: '開始鏡像',
     engageCamera: '啟用相機',
     ejectToDesktop: '輸出至桌面',
     stopSession: '停止',

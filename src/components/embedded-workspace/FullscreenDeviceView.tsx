@@ -1,11 +1,13 @@
 import { useEffect } from 'react'
 import {
   ChevronLeft,
+  Circle,
   Home,
   SquareStack,
   RotateCw,
   Camera,
   Minimize2,
+  Square,
 } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import type {
@@ -23,6 +25,9 @@ interface FullscreenDeviceViewProps {
   fps: number
   onAction: (action: DeviceAction) => void
   onScreenshot: () => void
+  recording?: boolean
+  recordingBusy?: boolean
+  onToggleRecording?: () => void
   onExitFullscreen: () => void
 }
 
@@ -40,6 +45,9 @@ export default function FullscreenDeviceView({
   fps,
   onAction,
   onScreenshot,
+  recording = false,
+  recordingBusy = false,
+  onToggleRecording,
   onExitFullscreen,
 }: FullscreenDeviceViewProps) {
   const { t } = useI18n()
@@ -116,6 +124,16 @@ export default function FullscreenDeviceView({
           >
             <Camera size={16} />
           </button>
+          {onToggleRecording && (
+            <button
+              onClick={onToggleRecording}
+              disabled={disabled || recordingBusy}
+              title={recording ? t('workspace.stopRecording') : t('workspace.record')}
+              className={`${barBtn} ${recording ? 'border-red-500/60 text-red-400' : ''}`}
+            >
+              {recording ? <Square size={16} /> : <Circle size={16} />}
+            </button>
+          )}
           <button
             onClick={onExitFullscreen}
             title={t('workspace.exitFullscreen')}

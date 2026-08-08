@@ -103,14 +103,14 @@ export default function SessionBehavior({ config, setConfig }: SessionBehaviorPr
     const Toggle = ({ checked, onChange, icon: Icon, label, tooltip, danger = false }: { checked: boolean, onChange: (v: boolean) => void, icon: any, label: string, tooltip: string, danger?: boolean }) => (
         <div
             onClick={() => onChange(!checked)}
-            className="flex items-center justify-between gap-3 group cursor-pointer py-1 bg-zinc-950/30 rounded-lg px-2 border border-transparent hover:border-zinc-800 transition-all"
+            className="group flex cursor-pointer items-center justify-between gap-3 rounded-[var(--radius-md)] px-2 py-1.5 transition-colors hover:bg-white/5"
         >
             <div className="flex items-center gap-2 min-w-0">
                 <div className={`p-1 rounded-md shrink-0 transition-colors ${checked ? (danger ? 'bg-red-500/10 text-red-500' : 'bg-primary/10 text-primary') : 'bg-zinc-800/50 text-zinc-500 group-hover:text-zinc-300'}`}>
                     <Icon size={12} />
                 </div>
                 <div className="flex items-center gap-1.5 min-w-0">
-                    <span className={`text-[10px] font-bold uppercase tracking-tight truncate transition-colors ${checked ? (danger ? 'text-red-400' : 'text-zinc-200') : 'text-zinc-500 group-hover:text-zinc-400'}`}>
+                    <span className={`truncate text-[var(--font-size-body-sm)] font-medium transition-colors ${checked ? (danger ? 'text-red-400' : 'text-zinc-200') : 'text-zinc-500 group-hover:text-zinc-400'}`}>
                         {label}
                     </span>
                     <div className="shrink-0">
@@ -126,10 +126,10 @@ export default function SessionBehavior({ config, setConfig }: SessionBehaviorPr
 
     return (
         <div className="space-y-4">
-            <div className="glass p-3.5 rounded-2xl space-y-2 border border-zinc-800 bg-zinc-900/40 backdrop-blur-md">
-                <div className="flex items-center gap-2 border-b border-zinc-800/50 pb-1.5 mb-1">
+            <div className="space-y-2">
+                <div className="mb-1 flex items-center gap-2 border-b border-[var(--border-subtle)] pb-2">
                     <Settings2 size={12} className="text-zinc-500" />
-                    <h2 className="text-[10px] font-black uppercase text-zinc-400 tracking-widest">{t('sessionBehavior.title')}</h2>
+                    <h2 className="text-[var(--font-size-body-sm)] font-semibold text-[var(--text-base)]">{t('sessionBehavior.title')}</h2>
                 </div>
 
                 <div className="flex flex-col gap-1">

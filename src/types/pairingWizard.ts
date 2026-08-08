@@ -4,6 +4,8 @@ export interface LanDevice {
     name: string;
     service: string;
     address: string;
+    /** How this device was found: mDNS broadcast, or a raw subnet port scan. */
+    source?: 'mdns' | 'subnet';
 }
 
 export interface PairingOutcome {

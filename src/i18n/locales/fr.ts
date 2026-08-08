@@ -172,7 +172,7 @@ export const fr: DeepPartialTranslations = {
     preset4k: '4K Ultra',
     presetUltrawide: '21:9 Ultra-Large',
     initializeOtg: 'Initialiser OTG',
-    startMission: 'Démarrer la Mission',
+    startMission: 'Démarrer la mise en miroir',
     engageCamera: 'Activer la Caméra',
     ejectToDesktop: 'Éjecter vers le Bureau',
     stopSession: 'Arrêter la Session',

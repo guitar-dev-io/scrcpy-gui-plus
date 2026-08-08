@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Zap,
   QrCode,
+  Search,
 } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useWirelessPairing } from '../../hooks/useWirelessPairing'
@@ -283,12 +284,33 @@ export default function WirelessPairingWizard({
                     <span className="flex-1 min-w-0 text-[11px] font-mono text-zinc-200 truncate">
                       {d.address}
                     </span>
+                    {d.source === 'subnet' && (
+                      <span className="text-[7px] font-black uppercase text-zinc-500 border border-zinc-700 rounded px-1 py-0.5 tracking-widest shrink-0">
+                        {t('pairing.tcpipBadge')}
+                      </span>
+                    )}
                     <span className="text-[8px] font-black uppercase text-primary tracking-widest">
                       {t('pairing.connect')}
                     </span>
                   </button>
                 ))
               )}
+              <button
+                onClick={() => void wizard.scanSubnet()}
+                disabled={wizard.subnetScanning}
+                className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-zinc-800 bg-transparent text-[10px] font-black uppercase tracking-widest text-zinc-500 hover:border-primary/50 hover:text-zinc-300 transition-all disabled:opacity-40"
+              >
+                <Search
+                  size={12}
+                  className={wizard.subnetScanning ? 'animate-pulse' : ''}
+                />
+                {wizard.subnetScanning
+                  ? t('pairing.subnetScanning')
+                  : t('pairing.subnetScan')}
+              </button>
+              <p className="text-[9px] text-zinc-600 leading-relaxed px-1">
+                {t('pairing.subnetScanHint')}
+              </p>
             </div>
           )}
 

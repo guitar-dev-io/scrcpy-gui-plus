@@ -16,6 +16,7 @@ interface ScreenshotManagerProps {
     onCopyImage: (path: string) => void;
     onDeleteEntry: (id: string) => void;
     onClearHistory: () => void;
+    dashboard?: boolean;
 }
 
 function formatDate(iso: string): string {
@@ -36,16 +37,19 @@ export default function ScreenshotManager({
     onOpenFolder,
     onCopyImage,
     onDeleteEntry,
-    onClearHistory
+    onClearHistory,
+    dashboard = false
 }: ScreenshotManagerProps) {
     const { t } = useI18n();
 
     return (
-        <div className="glass p-3.5 rounded-2xl border border-zinc-800 bg-zinc-900/40 backdrop-blur-md space-y-3">
-            <div className="flex items-center justify-between border-b border-zinc-800/60 pb-2">
+        <div className={dashboard
+            ? 'space-y-4 rounded-xl border border-[var(--border-subtle)] bg-[linear-gradient(145deg,rgba(23,29,43,.92),rgba(13,17,27,.96))] p-4 shadow-[0_14px_36px_rgba(0,0,0,.18)]'
+            : 'glass p-3.5 rounded-2xl border border-zinc-800 bg-zinc-900/40 backdrop-blur-md space-y-3'}>
+            <div className={`flex items-center justify-between border-b border-zinc-800/60 ${dashboard ? 'pb-3' : 'pb-2'}`}>
                 <div className="flex items-center gap-2">
                     <Camera size={13} className="text-primary" />
-                    <h2 className="text-[10px] font-black uppercase text-zinc-400 tracking-widest">
+                    <h2 className={`${dashboard ? 'text-[11px] font-semibold' : 'text-[10px] font-black'} uppercase text-zinc-400 tracking-widest`}>
                         {t('screenshot.title')}
                     </h2>
                 </div>
@@ -64,7 +68,7 @@ export default function ScreenshotManager({
                 onClick={onCapture}
                 disabled={!canCapture || isCapturing}
                 title={t('screenshot.captureTooltip', { shortcut: shortcutLabel })}
-                className="w-full py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 bg-primary text-on-primary disabled:opacity-30 disabled:cursor-not-allowed hover:brightness-110 active:scale-[0.98]"
+                className={`w-full rounded-lg text-[11px] font-semibold uppercase tracking-wide transition-all flex items-center justify-center gap-2 bg-primary text-on-primary disabled:opacity-30 disabled:cursor-not-allowed hover:brightness-110 active:scale-[0.98] ${dashboard ? 'h-11 shadow-[0_8px_22px_rgba(var(--primary-rgb),.22)]' : 'py-2.5'}`}
             >
                 {isCapturing ? (
                     <>
@@ -83,22 +87,33 @@ export default function ScreenshotManager({
             )}
 
             {/* Directory config */}
-            <button
-                onClick={onChangeDirectory}
-                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg border border-zinc-800 bg-zinc-950/40 hover:border-primary/50 transition-colors group text-left"
-                title={t('screenshot.changeDirectory')}
-            >
-                <FolderCog size={12} className="text-zinc-500 group-hover:text-primary shrink-0" />
-                <span className="text-[9px] text-zinc-400 truncate flex-1" dir="rtl">
-                    {screenshotDir || '...'}
-                </span>
-            </button>
+            <div className={dashboard ? 'space-y-2' : ''}>
+                {dashboard && (
+                    <div className="flex items-center justify-between">
+                        <span className="text-[8px] font-semibold uppercase tracking-widest text-zinc-500">Save To</span>
+                        <button type="button" onClick={onChangeDirectory} className="text-[8px] font-semibold uppercase text-primary hover:text-white">Change</button>
+                    </div>
+                )}
+                <button
+                    onClick={onChangeDirectory}
+                    className={`w-full flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-950/40 hover:border-primary/50 transition-colors group text-left ${dashboard ? 'h-9 px-3' : 'px-2 py-1.5'}`}
+                    title={t('screenshot.changeDirectory')}
+                >
+                    <FolderCog size={12} className="text-zinc-500 group-hover:text-primary shrink-0" />
+                    <span className="text-[9px] text-zinc-400 truncate flex-1" dir="rtl">
+                        {screenshotDir || '...'}
+                    </span>
+                </button>
+            </div>
 
             {/* Recent list */}
             <div className="space-y-1.5">
-                <span className="text-[8px] font-black uppercase text-zinc-500 tracking-widest">
-                    {t('screenshot.recent')}
-                </span>
+                <div className="flex items-center justify-between">
+                    <span className="text-[8px] font-black uppercase text-zinc-500 tracking-widest">
+                        {t('screenshot.recent')}
+                    </span>
+                    {dashboard && history.length > 0 && <span className="text-[8px] text-primary">{history.length} captures</span>}
+                </div>
                 {history.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-6 text-zinc-700">
                         <ImageOff size={20} />
@@ -111,11 +126,11 @@ export default function ScreenshotManager({
                         {history.map((entry) => (
                             <div
                                 key={entry.id}
-                                className="flex items-center gap-2 p-1.5 rounded-lg border border-zinc-800/60 bg-zinc-950/30 hover:border-zinc-700 transition-colors group"
+                            className={`flex items-center gap-2 rounded-lg border border-zinc-800/60 bg-zinc-950/30 hover:border-zinc-700 transition-colors group ${dashboard ? 'p-2' : 'p-1.5'}`}
                             >
                                 <button
                                     onClick={() => onOpenImage(entry.path)}
-                                    className="shrink-0 w-11 h-11 rounded-md overflow-hidden border border-zinc-800 bg-black flex items-center justify-center"
+                                    className={`shrink-0 rounded-md overflow-hidden border border-zinc-800 bg-black flex items-center justify-center ${dashboard ? 'h-14 w-14' : 'h-11 w-11'}`}
                                     title={t('screenshot.openImage')}
                                 >
                                     <img

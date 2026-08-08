@@ -95,8 +95,8 @@ export default function Sidebar({
   }
 
   return (
-    <aside className="lg:col-span-3 space-y-4">
-      <div className="glass p-4 rounded-xl space-y-4 border border-zinc-800 bg-zinc-900/40 backdrop-blur-md">
+    <section className="space-y-3">
+      <div className="space-y-4">
         <div className="border-b border-zinc-800/50 pb-2.5 mb-1 space-y-2">
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-[11px] font-black uppercase tracking-widest flex items-center gap-2 text-zinc-400">
@@ -424,7 +424,7 @@ export default function Sidebar({
       </div>
 
       {iosSupported && (
-        <div className="glass p-4 rounded-xl space-y-3 border border-zinc-800 bg-zinc-900/40 backdrop-blur-md">
+        <div className="space-y-3 border-t border-[var(--border-subtle)] pt-3">
           <div className="flex items-center gap-x-2 border-b border-zinc-800/50 pb-2">
             <h2 className="text-[11px] font-black uppercase tracking-widest flex items-center gap-2 text-zinc-400">
               <MonitorSmartphone size={14} className="text-primary" />
@@ -512,7 +512,7 @@ export default function Sidebar({
 
       <div
         onClick={onFilePush}
-        className="glass p-5 rounded-xl flex flex-col items-center justify-center space-y-2 cursor-pointer hover:bg-primary/5 transition-all border-2 border-dashed border-zinc-800/50 hover:border-primary/30 group bg-zinc-900/40 backdrop-blur-md"
+        className="flex cursor-pointer flex-col items-center justify-center space-y-2 rounded-[var(--radius-lg)] border border-dashed border-[var(--border-base)] bg-[var(--bg-surface)] p-4 transition-colors hover:border-primary/40 hover:bg-primary/5"
       >
         <div className="p-3 bg-primary/10 rounded-full group-hover:bg-primary/20 transition-colors">
           <UploadCloud
@@ -529,6 +529,6 @@ export default function Sidebar({
           </p>
         </div>
       </div>
-    </aside>
+    </section>
   )
 }

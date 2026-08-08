@@ -26,6 +26,7 @@ export function useWirelessPairing({
 }: UseWirelessPairingOptions) {
     const [busy, setBusy] = useState(false);
     const [scanning, setScanning] = useState(false);
+    const [subnetScanning, setSubnetScanning] = useState(false);
     const [lanDevices, setLanDevices] = useState<LanDevice[]>([]);
 
     /** Pair with a code, then auto-discover the (random) connect port and connect. */
@@ -94,7 +95,8 @@ export function useWirelessPairing({
                         devices.push({
                             name: s.name || s.address,
                             service: s.service,
-                            address: s.address
+                            address: s.address,
+                            source: 'mdns'
                         });
                     }
                 }
@@ -109,5 +111,46 @@ export function useWirelessPairing({
         }
     }, [customPath]);
 
-    return { busy, scanning, lanDevices, pairAndConnect, connect, scanLan };
+    /**
+     * Fallback discovery: sweeps the local /24 subnet for hosts with the
+     * default wireless-adb port (5555) open. Useful when mDNS is blocked by
+     * the router or the device was switched to tcpip mode manually (pre
+     * Android 11, no mDNS broadcast). Merged into the existing mDNS results
+     * rather than replacing them.
+     */
+    const scanSubnet = useCallback(async () => {
+        setSubnetScanning(true);
+        try {
+            const res: any = await invoke('scan_lan_adb');
+            if (res && !res.error && Array.isArray(res.addresses)) {
+                setLanDevices((prev) => {
+                    const seen = new Set(prev.map((d) => d.address.split(':')[0]));
+                    const added: LanDevice[] = res.addresses
+                        .filter((ip: string) => !seen.has(ip))
+                        .map((ip: string) => ({
+                            name: ip,
+                            service: '_adb-tcpip._tcp',
+                            address: `${ip}:5555`,
+                            source: 'subnet' as const
+                        }));
+                    return [...prev, ...added];
+                });
+            }
+        } catch {
+            // Best-effort fallback; leave existing lanDevices untouched on failure.
+        } finally {
+            setSubnetScanning(false);
+        }
+    }, []);
+
+    return {
+        busy,
+        scanning,
+        subnetScanning,
+        lanDevices,
+        pairAndConnect,
+        connect,
+        scanLan,
+        scanSubnet
+    };
 }

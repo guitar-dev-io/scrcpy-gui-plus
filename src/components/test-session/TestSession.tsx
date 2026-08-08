@@ -27,6 +27,7 @@ import type { ToolbarNotifier } from '../device-control-toolbar';
 
 interface TestSessionProps {
     isOpen: boolean;
+    embedded?: boolean;
     onClose: () => void;
     activeDevice: string;
     customPath?: string;
@@ -60,6 +61,7 @@ function StatusIcon({ status }: { status?: StepStatus }) {
 
 export default function TestSession({
     isOpen,
+    embedded = false,
     onClose,
     activeDevice,
     customPath,
@@ -70,7 +72,7 @@ export default function TestSession({
     const session = useTestSession({ activeDevice, customPath, outputDir });
     const [localOpts, setLocalOpts] = useState<TestSessionOptions>(session.options);
 
-    if (!isOpen) return null;
+    if (!isOpen && !embedded) return null;
 
     const disabled = !activeDevice;
 
@@ -108,10 +110,14 @@ export default function TestSession({
 
     const info = session.summary?.deviceInfo;
 
+    const dialogClassName = embedded
+        ? 'relative w-full h-full min-h-0 flex flex-col bg-zinc-950/95 border border-zinc-800 rounded-3xl shadow-2xl overflow-hidden'
+        : 'relative w-full max-w-xl max-h-[90vh] flex flex-col bg-zinc-950/95 border border-zinc-800 rounded-3xl shadow-2xl overflow-hidden backdrop-blur-2xl animate-in zoom-in-95 fade-in duration-200';
+
     return (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 sm:p-6">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={onClose} />
-            <div className="relative w-full max-w-xl max-h-[90vh] flex flex-col bg-zinc-950/95 border border-zinc-800 rounded-3xl shadow-2xl overflow-hidden backdrop-blur-2xl animate-in zoom-in-95 fade-in duration-200">
+        <div className={embedded ? 'flex h-full min-h-0 w-full' : 'fixed inset-0 z-[300] flex items-center justify-center p-4 sm:p-6'}>
+            {!embedded && <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={onClose} />}
+            <div className={dialogClassName}>
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800/60">
                     <div className="flex items-center gap-2">
@@ -133,12 +139,14 @@ export default function TestSession({
                             </span>
                         )}
                     </div>
-                    <button
-                        onClick={onClose}
-                        className="p-2 rounded-xl text-zinc-500 hover:text-white hover:bg-white/5 transition-all"
-                    >
-                        <X size={18} />
-                    </button>
+                    {!embedded && (
+                        <button
+                            onClick={onClose}
+                            className="p-2 rounded-xl text-zinc-500 hover:text-white hover:bg-white/5 transition-all"
+                        >
+                            <X size={18} />
+                        </button>
+                    )}
                 </div>
 
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-4">

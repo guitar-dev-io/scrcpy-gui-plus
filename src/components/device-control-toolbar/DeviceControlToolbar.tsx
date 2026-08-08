@@ -537,6 +537,37 @@ export default function DeviceControlToolbar({
     </button>
   )
 
+  if (compact) {
+    return (
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="hidden shrink-0 lg:block">
+          <p className="text-[var(--font-size-body-sm)] font-semibold text-[var(--text-base)]">
+            Quick actions
+          </p>
+          <p className="text-[var(--font-size-caption)] text-[var(--text-subtle)]">
+            {disabled ? t('deviceToolbar.noDevice') : activeDevice}
+          </p>
+        </div>
+        <div className="custom-scrollbar flex min-w-0 flex-1 items-center gap-3 overflow-x-auto pb-0.5">
+          {groups.map((group) => (
+            <div
+              key={group.id}
+              className="flex shrink-0 items-center gap-1 border-l border-[var(--border-subtle)] pl-3 first:border-l-0 first:pl-0"
+              aria-label={group.label}
+            >
+              <span className="mr-1 hidden text-[9px] font-medium text-[var(--text-subtle)] 2xl:inline">
+                {group.label}
+              </span>
+              {group.items.map((item) => (
+                <CompactBtn key={item.key} item={item} />
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="glass p-2.5 rounded-2xl border border-zinc-800 bg-zinc-900/50 backdrop-blur-md">
       <div className="flex items-center justify-between mb-2.5 px-0.5">

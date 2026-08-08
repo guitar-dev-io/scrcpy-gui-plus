@@ -1,15 +1,17 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     fmDelete,
     fmListDir,
     fmMkdir,
     fmPreviewFile,
     fmPull,
-    fmPush
+    fmPush,
+    fmRename
 } from '../services/fileManagerService';
 import {
     FM_DEFAULT_PATH,
     joinPath,
+    MAX_PREVIEW_BYTES,
     parentPath,
     type FileEntry,
     type FsResult
@@ -35,6 +37,9 @@ export function useFileManager({ activeDevice, customPath, enabled }: UseFileMan
     const [previewName, setPreviewName] = useState<string | null>(null);
     const [previewLocalPath, setPreviewLocalPath] = useState<string | null>(null);
     const [previewLoading, setPreviewLoading] = useState(false);
+    const [previewError, setPreviewError] = useState<string | null>(null);
+    const previewRequest = useRef(0);
+    const previewKey = useRef<string | null>(null);
 
     const serial = (activeDevice || '').trim();
 
@@ -83,24 +88,52 @@ export function useFileManager({ activeDevice, customPath, enabled }: UseFileMan
     const refresh = useCallback(() => void load(cwd), [cwd, load]);
 
     const preview = useCallback(
-        async (entry: FileEntry) => {
+        async (entry: FileEntry, maxBytes: number = MAX_PREVIEW_BYTES) => {
             if (!serial) return;
+            const key = `${serial}:${cwd}:${entry.name}:${maxBytes}`;
+            if (previewKey.current === key) return;
+            previewKey.current = key;
+            const requestId = ++previewRequest.current;
             setPreviewName(entry.name);
             setPreviewLocalPath(null);
+            setPreviewError(null);
+
+            if (entry.size !== undefined && entry.size > maxBytes) {
+                setPreviewError(`File is too large to preview. Maximum is ${Math.round(maxBytes / 1024 / 1024)} MB.`);
+                setPreviewLoading(false);
+                previewKey.current = null;
+                return;
+            }
+
             setPreviewLoading(true);
             try {
-                const res = await fmPreviewFile(serial, joinPath(cwd, entry.name), customPath);
-                if (res.success && res.path) setPreviewLocalPath(res.path);
+                const res = await fmPreviewFile(serial, joinPath(cwd, entry.name), customPath, maxBytes);
+                if (requestId !== previewRequest.current) return;
+                if (res.success && res.path) {
+                    setPreviewLocalPath(res.path);
+                } else {
+                    previewKey.current = null;
+                    setPreviewError(res.error || 'Preview unavailable');
+                }
+            } catch (error) {
+                if (requestId === previewRequest.current) {
+                    previewKey.current = null;
+                    setPreviewError(String(error));
+                }
             } finally {
-                setPreviewLoading(false);
+                if (requestId === previewRequest.current) setPreviewLoading(false);
             }
         },
         [serial, cwd, customPath]
     );
 
     const closePreview = useCallback(() => {
+        previewRequest.current += 1;
+        previewKey.current = null;
         setPreviewName(null);
         setPreviewLocalPath(null);
+        setPreviewError(null);
+        setPreviewLoading(false);
     }, []);
 
     const withBusy = useCallback(async (fn: () => Promise<FsResult>): Promise<FsResult> => {
@@ -145,6 +178,35 @@ export function useFileManager({ activeDevice, customPath, enabled }: UseFileMan
         [serial, cwd, customPath, withBusy, load]
     );
 
+    const removeMany = useCallback(
+        async (targets: FileEntry[]): Promise<{ entry: FileEntry; error?: string }[]> => {
+            setBusy(true);
+            const failures: { entry: FileEntry; error?: string }[] = [];
+            try {
+                for (const entry of targets) {
+                    const res = await fmDelete(serial, joinPath(cwd, entry.name), customPath);
+                    if (!res.success) failures.push({ entry, error: res.error });
+                }
+            } finally {
+                setBusy(false);
+            }
+            if (failures.length < targets.length) await load(cwd);
+            return failures;
+        },
+        [serial, cwd, customPath, load]
+    );
+
+    const rename = useCallback(
+        async (entry: FileEntry, newName: string): Promise<FsResult> => {
+            const from = joinPath(cwd, entry.name);
+            const to = joinPath(cwd, newName);
+            const res = await withBusy(() => fmRename(serial, from, to, customPath));
+            if (res.success) await load(cwd);
+            return res;
+        },
+        [serial, cwd, customPath, withBusy, load]
+    );
+
     return {
         cwd,
         entries,
@@ -154,6 +216,7 @@ export function useFileManager({ activeDevice, customPath, enabled }: UseFileMan
         previewName,
         previewLocalPath,
         previewLoading,
+        previewError,
         open,
         goTo,
         goUp,
@@ -163,6 +226,8 @@ export function useFileManager({ activeDevice, customPath, enabled }: UseFileMan
         pull,
         push,
         remove,
-        mkdir
+        removeMany,
+        mkdir,
+        rename
     };
 }

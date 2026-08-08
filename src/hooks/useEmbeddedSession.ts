@@ -4,6 +4,9 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { parseFrameMessage, codecStringFromConfig } from '../utils/videoFraming'
 import { emitWorkspaceLog } from '../utils/workspaceLog'
 
+/** Consecutive `VideoDecoder` errors tolerated before ending the session. */
+const MAX_DECODER_ERRORS = 3
+
 /**
  * Options passed to the backend when starting an embedded session. These map
  * directly onto the scrcpy-server encoder knobs.
@@ -111,6 +114,18 @@ export function useEmbeddedSession({
   const codecConfiguredRef = useRef(false)
   const sawKeyFrameRef = useRef(false)
   const pendingConfigRef = useRef<Uint8Array | null>(null)
+  const lastConfigRef = useRef<VideoDecoderConfig | null>(null)
+  // Raw SPS/PPS bytes, kept for the life of the session (unlike
+  // pendingConfigRef, which is consumed once it's prepended to a key frame)
+  // so a replacement decoder can be re-primed after a fatal decoder error.
+  const lastConfigBytesRef = useRef<Uint8Array | null>(null)
+  const decoderErrorCountRef = useRef(0)
+  // The codec string the live decoder is currently configured for. A new SPS
+  // (stream start, or a fresh encoder after device rotation/resize) can
+  // describe a different profile/level/dimensions under the same session —
+  // tracked so ensureDecoder can tell "first config" apart from "config
+  // changed" instead of only ever configuring once per session.
+  const lastCodecStringRef = useRef<string | null>(null)
 
   const sessionIdRef = useRef<string | null>(null)
   const stateRef = useRef<EmbeddedSessionState>('idle')
@@ -163,6 +178,7 @@ export function useEmbeddedSession({
     if (ctx) ctx.drawImage(frame, 0, 0)
     frame.close()
     fpsCounterRef.current += 1
+    decoderErrorCountRef.current = 0
     if (!drewFirstRef.current) {
       drewFirstRef.current = true
       emitWorkspaceLog(
@@ -181,15 +197,87 @@ export function useEmbeddedSession({
       }
     }
     decoderRef.current = null
+    // The canvas bitmap otherwise survives session boundaries (stop/start,
+    // an unexpected disconnect, switching devices): the element itself keeps
+    // whatever was last painted until a new frame overwrites it. Without this,
+    // a fresh session that reaches 'connected' (right after the handshake,
+    // before any frame has actually decoded) flips the canvas back to visible
+    // showing the previous session's last frame — looking exactly like a
+    // frozen stream even though the real device is still updating live.
+    const canvas = canvasRef.current
+    if (canvas) {
+      const ctx = ctxRef.current ?? canvas.getContext('2d')
+      ctx?.clearRect(0, 0, canvas.width, canvas.height)
+    }
     ctxRef.current = null
     codecConfiguredRef.current = false
     sawKeyFrameRef.current = false
     pendingConfigRef.current = null
+    lastConfigRef.current = null
+    lastConfigBytesRef.current = null
+    lastCodecStringRef.current = null
+    decoderErrorCountRef.current = 0
+  }, [])
+
+  // Backpressure recovery: dropping a single delta frame silently desyncs the
+  // decoder's motion-compensation reference chain, so every later delta frame
+  // keeps decoding against a frame the decoder never saw — producing the
+  // blocky/color-corrupted macroblocks that then persist until the stream's
+  // next periodic key frame. Instead, discard the decoder's queued/reference
+  // state immediately and require a fresh key frame before decoding resumes,
+  // so we hold the last good frame on screen instead of painting garbage.
+  const resyncDecoder = useCallback(() => {
+    const dec = decoderRef.current
+    const cfg = lastConfigRef.current
+    if (!dec || dec.state === 'closed' || !cfg) return
+    try {
+      dec.reset()
+      dec.configure(cfg)
+      sawKeyFrameRef.current = false
+      // The encoder only emits SPS/PPS once (stream start / rotation) — a
+      // fresh decoder instance has no cached parameter sets, so the next key
+      // frame must have them prepended again, exactly like the decoder-error
+      // recovery path below.
+      pendingConfigRef.current = lastConfigBytesRef.current
+      emitWorkspaceLog(
+        'decode queue backed up; resynced decoder, waiting for next key frame',
+      )
+    } catch (e) {
+      emitWorkspaceLog(`decoder resync failed: ${String(e)}`)
+    }
   }, [])
 
   const ensureDecoder = useCallback(
     (codecString: string) => {
-      if (decoderRef.current && codecConfiguredRef.current) return
+      if (decoderRef.current && codecConfiguredRef.current) {
+        if (lastCodecStringRef.current === codecString) return
+        // A new SPS/PPS describing a different profile/level/dimensions than
+        // the live decoder was configured with — scrcpy sends this on device
+        // rotation/resize (the server recreates its encoder). WebCodecs
+        // decoders aren't guaranteed to adapt to an in-band geometry change,
+        // especially hardware-backed ones, so reset + reconfigure in place
+        // instead of silently continuing to feed the old configuration —
+        // this is the same reset+configure pattern resyncDecoder uses.
+        const dec = decoderRef.current
+        try {
+          dec.reset()
+          const config: VideoDecoderConfig = {
+            codec: codecString,
+            optimizeForLatency: true,
+          }
+          dec.configure(config)
+          lastConfigRef.current = config
+          lastCodecStringRef.current = codecString
+          sawKeyFrameRef.current = false
+          emitWorkspaceLog(`decoder reconfigured (${codecString})`)
+        } catch (e) {
+          emitWorkspaceLog(`decoder reconfigure failed: ${String(e)}`)
+          codecConfiguredRef.current = false
+          decoderRef.current = null
+          sawKeyFrameRef.current = false
+        }
+        return
+      }
       const config: VideoDecoderConfig = {
         codec: codecString,
         optimizeForLatency: true,
@@ -211,15 +299,40 @@ export function useEmbeddedSession({
       try {
         const decoder = new VideoDecoder({
           output: (frame) => drawFrame(frame),
+          // A `VideoDecoder` that fires `error` is permanently closed per the
+          // WebCodecs spec — it can't be recovered by reconfiguring. The
+          // backend scrcpy stream is unaffected though, so instead of ending
+          // the whole session, drop this decoder and spin up a replacement
+          // primed with the last known SPS/PPS, then wait for the next key
+          // frame. Only surface a hard session error if that keeps failing.
           error: (e) => {
             emitWorkspaceLog(`decoder error: ${String(e.message || e)}`)
-            setError(String(e.message || e))
-            setSessionState('error')
+            if (decoderRef.current === decoder) decoderRef.current = null
+            codecConfiguredRef.current = false
+            decoderErrorCountRef.current += 1
+            if (decoderErrorCountRef.current > MAX_DECODER_ERRORS) {
+              setError(String(e.message || e))
+              setSessionState('error')
+              return
+            }
+            emitWorkspaceLog(
+              `recreating decoder after error (attempt ${decoderErrorCountRef.current}/${MAX_DECODER_ERRORS}), waiting for next key frame`,
+            )
+            sawKeyFrameRef.current = false
+            pendingConfigRef.current = lastConfigBytesRef.current
+            // Use the most recently seen codec string, not the one this
+            // (now-dead) decoder instance was originally created with — a
+            // reconfigure (e.g. after rotation) updates lastCodecStringRef in
+            // place without creating a new VideoDecoder, so that closure
+            // variable can be stale by the time this instance errors out.
+            ensureDecoder(lastCodecStringRef.current ?? codecString)
           },
         })
         decoder.configure(config)
         decoderRef.current = decoder
         codecConfiguredRef.current = true
+        lastConfigRef.current = config
+        lastCodecStringRef.current = codecString
         emitWorkspaceLog(`decoder configured (${codecString})`)
       } catch (e) {
         emitWorkspaceLog(`decoder configure threw: ${String(e)}`)
@@ -250,6 +363,7 @@ export function useEmbeddedSession({
       // next key frame.
       if (frame.config) {
         pendingConfigRef.current = frame.data
+        lastConfigBytesRef.current = frame.data
         ensureDecoder(codecStringFromConfig(frame.data))
         return
       }
@@ -260,9 +374,13 @@ export function useEmbeddedSession({
       // A decoder can only start on a key frame — drop deltas until then.
       if (!sawKeyFrameRef.current && !frame.keyFrame) return
 
-      // Latency control: if the decode queue is backing up, drop the current
-      // delta frame (never drop config or key frames).
-      if (!frame.keyFrame && decoder.decodeQueueSize > 3) return
+      // Latency control: if the decode queue is backing up, resync instead of
+      // just dropping the current delta frame (never drop config or key
+      // frames) — see resyncDecoder for why a bare drop corrupts the picture.
+      if (!frame.keyFrame && decoder.decodeQueueSize > 3) {
+        resyncDecoder()
+        return
+      }
 
       let payload = frame.data
       if (frame.keyFrame) {
@@ -288,7 +406,7 @@ export function useEmbeddedSession({
         setError(String(e))
       }
     },
-    [ensureDecoder],
+    [ensureDecoder, resyncDecoder],
   )
 
   const normalizeMessage = useCallback((msg: unknown): Uint8Array => {

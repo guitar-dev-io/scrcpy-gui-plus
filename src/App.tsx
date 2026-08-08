@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open } from '@tauri-apps/plugin-dialog'
 import Sidebar from './components/Sidebar'
@@ -8,12 +9,13 @@ import Header from './components/Header'
 import SessionBehavior from './components/SessionBehavior'
 import ShortcutsPanel from './components/ShortcutsPanel'
 import Footer from './components/Footer'
-import ErrorBoundary from './components/ErrorBoundary'
+import AppNavigation from './components/app-shell/AppNavigation'
+import AppShell from './components/app-shell/AppShell'
+import DashboardLayout from './components/dashboard/DashboardLayout'
 import OnboardingModal from './components/OnboardingModal'
 import ThemedModal from './components/ThemedModal'
 import DeviceControlToolbar from './components/device-control-toolbar'
 import ScreenshotManager from './components/screenshot-manager'
-import LivePreview from './components/live-preview'
 //import EmbeddedMirror from './components/embedded-mirror'
 import MirrorStage from './components/mirror-stage'
 import BugReportModal from './components/bug-report'
@@ -36,15 +38,57 @@ import WidgetLayout from './components/widget-layout'
 import KeymapController from './components/keymap-controller'
 import { useScrcpy } from './hooks/useScrcpy'
 import { useScreenshot } from './hooks/useScreenshot'
-import { useLivePreview } from './hooks/useLivePreview'
 import { useEmbeddedMirror } from './hooks/useEmbeddedMirror'
 import { useIosMirror, type IosDeviceInfo } from './hooks/useIosMirror'
 import { getVersion } from '@tauri-apps/api/app'
 import { isTauri } from './utils/tauriEnv'
 import { useI18n } from './i18n'
+import {
+  appRouteFromHash,
+  appRouteToHash,
+  type AppRouteId,
+} from './navigation/appRoutes'
+
+const OtherPages = lazy(() => import('./components/pages/OtherPages'))
+const DevicesPage = lazy(() => import('./components/pages/DevicesPage'))
+const SessionsPage = lazy(() => import('./components/pages/SessionsPage'))
+const ScreenshotsPage = lazy(() => import('./components/pages/ScreenshotsPage'))
+const RecordingsPage = lazy(() => import('./components/pages/RecordingsPage'))
+const SettingsPage = lazy(() => import('./components/pages/SettingsPage'))
+const FileExplorerPage = lazy(() => import('./components/pages/FileExplorerPage'))
+const WirelessAdbPage = lazy(() => import('./components/pages/WirelessAdbPage'))
+const AppManagerPage = lazy(() => import('./components/pages/AppManagerPage'))
+const LogcatViewerPage = lazy(() => import('./components/pages/LogcatViewerPage'))
+const PerformancePage = lazy(() => import('./components/pages/PerformancePage'))
+const InputControlPage = lazy(() => import('./components/pages/InputControlPage'))
+const AutomationPage = lazy(() => import('./components/pages/AutomationPage'))
+const ScriptManagerPage = lazy(() => import('./components/pages/ScriptManagerPage'))
+const TaskSchedulerPage = lazy(() => import('./components/pages/TaskSchedulerPage'))
 
 function App() {
   const { t } = useI18n()
+  const [activeRoute, setActiveRoute] = useState<AppRouteId>(() =>
+    appRouteFromHash(window.location.hash),
+  )
+  const [dashboardBottomTab, setDashboardBottomTab] = useState<
+    'logcat' | 'shell' | 'events'
+  >('logcat')
+  const [navigationCollapsed, setNavigationCollapsed] = useState(false)
+
+  useEffect(() => {
+    const syncRoute = () => setActiveRoute(appRouteFromHash(window.location.hash))
+    window.addEventListener('hashchange', syncRoute)
+    return () => window.removeEventListener('hashchange', syncRoute)
+  }, [])
+
+  const handleNavigate = (route: AppRouteId) => {
+    const hash = appRouteToHash(route)
+    if (window.location.hash === hash) {
+      setActiveRoute(route)
+      return
+    }
+    window.location.hash = hash
+  }
   const {
     devices,
     logs,
@@ -141,11 +185,6 @@ function App() {
   ) => showAlert(title, message, kind)
 
   const screenshot = useScreenshot({
-    activeDevice,
-    customPath: config.scrcpyPath,
-  })
-
-  const livePreview = useLivePreview({
     activeDevice,
     customPath: config.scrcpyPath,
   })
@@ -274,6 +313,22 @@ function App() {
     }
   }
 
+  const handleChangeRecordPath = async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        defaultPath: config.recordPath || undefined,
+      })
+      if (selected && typeof selected === 'string') {
+        setConfig((prev) => ({ ...prev, recordPath: selected }))
+        localStorage.setItem('scrcpy_record_path', selected)
+      }
+    } catch (error) {
+      console.error(error)
+    }
+  }
+
   const handleScreenshotAction = async (
     fn: (path: string) => Promise<void>,
     path: string,
@@ -311,7 +366,6 @@ function App() {
         const v = await getVersion()
         setAppVersion(v)
 
-        const { invoke } = await import('@tauri-apps/api/core')
         await invoke('close_splashscreen')
       } catch (e) {
         console.error('Initialization failed:', e)
@@ -340,7 +394,6 @@ function App() {
 
       const runCheck = async () => {
         try {
-          const { invoke } = await import('@tauri-apps/api/core')
           const updateRes: any = await invoke('check_scrcpy_update', {
             customPath: config.scrcpyPath,
           })
@@ -474,7 +527,6 @@ function App() {
 
   const handleKillAdb = async () => {
     try {
-      const { invoke } = await import('@tauri-apps/api/core')
       await invoke('kill_adb', { customPath: config.scrcpyPath })
       refreshDevices(config.scrcpyPath)
     } catch (e) {
@@ -526,7 +578,6 @@ function App() {
     try {
       let startPath = config.scrcpyPath
       if (!startPath) {
-        const { invoke } = await import('@tauri-apps/api/core')
         startPath = await invoke<string>('get_scrcpy_bin_dir').catch(() => '')
       }
       const selected = await open({
@@ -555,222 +606,437 @@ function App() {
     setTimeout(() => checkScrcpy(undefined), 100)
   }
 
+  const deviceSidebar = (
+    <Sidebar
+      devices={devices}
+      runningDevices={runningDevices}
+      onRefresh={handleRefresh}
+      onKillAdb={handleKillAdb}
+      selectedDevice={activeDevice}
+      onSelectDevice={setActiveDevice}
+      onPair={pairDevice}
+      onConnect={connectDevice}
+      onDiscoverConnect={discoverConnectAddress}
+      isAutoConnect={isAutoConnect}
+      onToggleAuto={toggleAutoConnect}
+      isRefreshing={isRefreshing}
+      onFilePush={handleFileBrowse}
+      onOpenWorkspace={() => setIsWorkspaceOpen(true)}
+      onOpenPairing={() => setIsPairingOpen(true)}
+      historyDevices={historyDevices}
+      clearHistory={clearHistory}
+      iosSupported={ios.support.supported}
+      iosFound={ios.support.found}
+      iosMessage={ios.support.message}
+      iosDevices={ios.devices}
+      iosRefreshing={ios.isRefreshing}
+      iosInstalling={ios.isInstalling}
+      onIosRefresh={ios.refreshDevices}
+      onIosInstall={async () => {
+        const res = await ios.installTool()
+        notify(
+          'iOS Tools',
+          res.success
+            ? 'pymobiledevice3 installed successfully.'
+            : res.message,
+          res.success ? 'success' : 'error',
+        )
+      }}
+      onIosMirror={(device) => setIosMirrorDevice(device)}
+    />
+  )
+
+  const deviceToolbar = (
+    <DeviceControlToolbar
+      compact
+      activeDevice={activeDevice}
+      customPath={config.scrcpyPath}
+      isRunning={sessionRunning}
+      recordingOutputDir={screenshot.screenshotDir}
+      fullscreenActive={!!config.fullscreen}
+      onToggleFullscreen={() =>
+        setConfig((prev) => ({
+          ...prev,
+          fullscreen: !prev.fullscreen,
+        }))
+      }
+      onScreenshot={handleScreenshotCapture}
+      isCapturing={screenshot.isCapturing}
+      onOpenBugReport={() => setIsBugReportOpen(true)}
+      onOpenAppManager={() => setIsAppManagerOpen(true)}
+      onOpenLogcat={() => setIsLogcatOpen(true)}
+      onOpenDeepLink={() => setIsDeepLinkOpen(true)}
+      onOpenTestSession={() => setIsTestSessionOpen(true)}
+      onOpenUiInspector={() => setIsUiInspectorOpen(true)}
+      onOpenDeviceStatus={() => setIsDeviceStatusOpen(true)}
+      onOpenConnectionHealth={() => setIsConnHealthOpen(true)}
+      onOpenPresets={() => setIsPresetsOpen(true)}
+      onOpenMacro={() => setIsMacroOpen(true)}
+      onOpenCustomCommand={() => setIsCustomCmdOpen(true)}
+      onOpenFileManager={() => setIsFileManagerOpen(true)}
+      onOpenWidgetLayout={() => setIsWidgetLayoutOpen(true)}
+      onOpenKeymap={() => setIsKeymapOpen(true)}
+      onOpenEmbeddedWorkspace={() => setIsEmbeddedWorkspaceOpen(true)}
+      notify={notify}
+    />
+  )
+
+  const controlPanel = (
+    <ControlPanel
+      config={config}
+      setConfig={setConfig}
+      onStart={handleStart}
+      onStop={handleStop}
+      isRunning={sessionRunning}
+      detectedCameras={detectedCameras}
+      renderDriverSupport={renderDriverSupport}
+      onListOptions={(arg) => {
+        if (activeDevice) listScrcpyOptions(activeDevice, arg)
+      }}
+    />
+  )
+
+  const sessionBehavior = <SessionBehavior config={config} setConfig={setConfig} />
+
+  const renderScreenshotManager = (dashboard = false) => (
+    <ScreenshotManager
+      dashboard={dashboard}
+      history={screenshot.history}
+      screenshotDir={screenshot.screenshotDir}
+      isCapturing={screenshot.isCapturing}
+      canCapture={!!activeDevice}
+      shortcutLabel={
+        navigator.platform.toLowerCase().includes('mac')
+          ? 'Cmd+Shift+S'
+          : 'Ctrl+Shift+S'
+      }
+      onCapture={handleScreenshotCapture}
+      onChangeDirectory={handleChangeScreenshotDir}
+      onOpenImage={(path) =>
+        handleScreenshotAction(screenshot.openImage, path)
+      }
+      onOpenFolder={(path) =>
+        handleScreenshotAction(screenshot.openFolder, path)
+      }
+      onCopyImage={async (path) => {
+        try {
+          await screenshot.copyToClipboard(path)
+          notify(
+            t('screenshot.copiedTitle'),
+            t('screenshot.copiedMessage'),
+            'success',
+          )
+        } catch (error) {
+          notify(t('screenshot.actionFailedTitle'), String(error), 'error')
+        }
+      }}
+      onDeleteEntry={(id) => screenshot.deleteEntry(id)}
+      onClearHistory={screenshot.clearHistory}
+    />
+  )
+
+  const logPanel = (
+    <LogPanel
+      logs={logs}
+      onClear={clearLogs}
+      onAddLog={(message) =>
+        setLogs((prev: string[]) => [...prev.slice(-100), message])
+      }
+      onRunCommand={runTerminalCommand}
+    />
+  )
+
+  const dashboardLogPanel = (
+    <LogPanel
+      dashboard
+      mode={dashboardBottomTab}
+      logs={logs}
+      onClear={clearLogs}
+      onAddLog={(message) =>
+        setLogs((prev: string[]) => [...prev.slice(-100), message])
+      }
+      onRunCommand={runTerminalCommand}
+    />
+  )
+
   return (
-    <ErrorBoundary>
-      <div
-        className="min-h-screen font-sans selection:bg-primary selection:text-on-primary overflow-hidden flex flex-col transition-opacity duration-1000 ease-in-out"
-        style={{
-          backgroundColor: 'var(--bg-base)',
-          color: 'var(--text-base)',
-          opacity: 0,
-          animation: 'fadeIn 0.8s ease-out forwards',
-        }}
-      >
-        <style>{`
-          @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(5px); }
-            to { opacity: 1; transform: translateY(0); }
-          }
-        `}</style>
-        <div className="fixed inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none z-0"></div>
-        <div className="fixed top-[-50%] left-[-50%] w-[200%] h-[200%] bg-[radial-gradient(circle_at_center,var(--tw-gradient-stops))] from-primary/30 via-transparent to-transparent pointer-events-none z-0"></div>
-
-        <div className="relative z-10 flex flex-col h-screen transition-all duration-700">
-          <Header
-            onThemeChange={setTheme}
-            currentTheme={theme}
-            colorMode={colorMode}
-            onColorModeChange={setColorMode}
-            binaryStatus={scrcpyStatus}
-            onDownload={downloadScrcpy}
-            onSetPath={handleSetPath}
-            onResetPath={handleResetPath}
-            isDownloading={isDownloading}
-            downloadProgress={downloadProgress}
-            version={appVersion}
+    <AppShell
+      header={
+        <Header
+          onThemeChange={setTheme}
+          currentTheme={theme}
+          colorMode={colorMode}
+          onColorModeChange={setColorMode}
+          binaryStatus={scrcpyStatus}
+          activeDevice={activeDevice}
+          customPath={config.scrcpyPath}
+          connected={sessionRunning}
+          isRefreshing={isRefreshing}
+          onRefresh={handleRefresh}
+          onOpenSettings={() => handleNavigate('settings')}
+          onDownload={downloadScrcpy}
+          onSetPath={handleSetPath}
+          onResetPath={handleResetPath}
+          isDownloading={isDownloading}
+          downloadProgress={downloadProgress}
+          version={appVersion}
+        />
+      }
+      navigation={
+        <AppNavigation
+          activeRoute={activeRoute}
+          onNavigate={handleNavigate}
+          actions={{
+            'shell-terminal': () => {
+              setDashboardBottomTab('shell')
+              handleNavigate('dashboard')
+            },
+          }}
+          collapsed={navigationCollapsed}
+          onCollapsedChange={setNavigationCollapsed}
+        />
+      }
+      footer={
+        <Footer
+          version={appVersion}
+          activeRoute={activeRoute}
+          onNavigate={handleNavigate}
+          navigationCollapsed={navigationCollapsed}
+          onToggleNavigation={() => setNavigationCollapsed((value) => !value)}
+        />
+      }
+      content={
+        activeRoute === 'dashboard' ? (
+          <DashboardLayout
+            devices={devices}
+            activeDevice={activeDevice}
+            runningDevices={runningDevices}
+            customPath={config.scrcpyPath}
+            outputDir={screenshot.screenshotDir}
+            config={config}
+            setConfig={setConfig}
+            onSelectDevice={setActiveDevice}
+            onAddDevice={() => setIsPairingOpen(true)}
+            onInstallApk={handleInstallApkBrowse}
+            onOpenLogcat={() => setIsLogcatOpen(true)}
+            onOpenSettings={() => handleNavigate('settings')}
+            onStart={handleStart}
+            onStop={handleStop}
+            isRunning={sessionRunning}
+            onScreenshot={handleScreenshotCapture}
+            screenshotBusy={screenshot.isCapturing}
+            sessionBehavior={sessionBehavior}
+            screenshotPanel={renderScreenshotManager(true)}
+            logPanel={dashboardLogPanel}
+            controlPanel={controlPanel}
+            advancedTools={
+              <>
+                {deviceToolbar}
+                <div className="mt-4"><ShortcutsPanel /></div>
+              </>
+            }
+            bottomTab={dashboardBottomTab}
+            onBottomTabChange={setDashboardBottomTab}
+            notify={notify}
           />
-
-          <div className="flex-1 overflow-y-auto flex flex-col pt-6 custom-scrollbar">
-            <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 px-6 pb-6">
-              <div className="lg:col-span-3 flex flex-col">
-                <div className="transition-all duration-700">
-                  <Sidebar
-                    devices={devices}
-                    runningDevices={runningDevices}
-                    onRefresh={handleRefresh}
-                    onKillAdb={handleKillAdb}
-                    selectedDevice={activeDevice}
-                    onSelectDevice={setActiveDevice}
-                    onPair={pairDevice}
-                    onConnect={connectDevice}
-                    onDiscoverConnect={discoverConnectAddress}
-                    isAutoConnect={isAutoConnect}
-                    onToggleAuto={toggleAutoConnect}
-                    isRefreshing={isRefreshing}
-                    onFilePush={handleFileBrowse}
-                    onOpenWorkspace={() => setIsWorkspaceOpen(true)}
-                    onOpenPairing={() => setIsPairingOpen(true)}
-                    historyDevices={historyDevices}
-                    clearHistory={clearHistory}
-                    iosSupported={ios.support.supported}
-                    iosFound={ios.support.found}
-                    iosMessage={ios.support.message}
-                    iosDevices={ios.devices}
-                    iosRefreshing={ios.isRefreshing}
-                    iosInstalling={ios.isInstalling}
-                    onIosRefresh={ios.refreshDevices}
-                    onIosInstall={async () => {
-                      const res = await ios.installTool()
-                      notify(
-                        'iOS Tools',
-                        res.success
-                          ? 'pymobiledevice3 installed successfully.'
-                          : res.message,
-                        res.success ? 'success' : 'error',
-                      )
-                    }}
-                    onIosMirror={(d) => setIosMirrorDevice(d)}
-                  />
-                </div>
+        ) : (
+          <Suspense
+            fallback={
+              <div
+                role="status"
+                className="flex min-h-72 flex-1 items-center justify-center text-[var(--font-size-body-sm)] text-[var(--text-subtle)]"
+              >
+                Loading page…
               </div>
-
-              <div className="lg:col-span-6 flex flex-col gap-6 relative z-20">
-                <div className="relative z-30">
-                  <ControlPanel
-                    config={config}
-                    setConfig={setConfig}
-                    onStart={handleStart}
-                    onStop={handleStop}
-                    isRunning={sessionRunning}
-                    detectedCameras={detectedCameras}
-                    renderDriverSupport={renderDriverSupport}
-                    onListOptions={(arg) => {
-                      if (activeDevice) {
-                        listScrcpyOptions(activeDevice, arg)
-                      }
-                    }}
-                  />
-                </div>
-                <div className="relative z-20">
-                  <DeviceControlToolbar
+            }
+          >
+            <OtherPages
+            route={activeRoute}
+            devices={
+              <DevicesPage
+                devices={devices}
+                activeDevice={activeDevice}
+                runningDevices={runningDevices}
+                customPath={config.scrcpyPath}
+                isRefreshing={isRefreshing}
+                onRefresh={handleRefresh}
+                onAddDevice={() => setIsPairingOpen(true)}
+                onSelectDevice={setActiveDevice}
+                onView={(serial) => {
+                  setActiveDevice(serial)
+                  handleNavigate('dashboard')
+                }}
+                onControl={(serial) => {
+                  setActiveDevice(serial)
+                  void runScrcpy({ ...config, device: serial })
+                }}
+                onFile={(serial) => {
+                  setActiveDevice(serial)
+                  setIsFileManagerOpen(true)
+                }}
+                onShell={(serial) => {
+                  setActiveDevice(serial)
+                  setDashboardBottomTab('shell')
+                  handleNavigate('dashboard')
+                }}
+                onMore={(serial) => {
+                  setActiveDevice(serial)
+                  setIsDeviceStatusOpen(true)
+                }}
+                connectionTools={deviceSidebar}
+              />
+            }
+            sessions={
+              <SessionsPage
+                runningDevices={runningDevices}
+                activeDevice={activeDevice}
+                customPath={config.scrcpyPath}
+                onSelectDevice={setActiveDevice}
+                onView={(serial) => {
+                  setActiveDevice(serial)
+                  handleNavigate('dashboard')
+                }}
+                onStop={(serial) => void stopScrcpy(serial)}
+                settings={
+                  <div className="space-y-4">
+                    {controlPanel}
+                    {sessionBehavior}
+                    <div className="h-72 overflow-hidden rounded-xl border border-[var(--border-subtle)]">{logPanel}</div>
+                  </div>
+                }
+              />
+            }
+            screenshots={
+              <ScreenshotsPage
+                history={screenshot.history}
+                screenshotDir={screenshot.screenshotDir}
+                canCapture={!!activeDevice}
+                isCapturing={screenshot.isCapturing}
+                onCapture={handleScreenshotCapture}
+                onChangeDirectory={handleChangeScreenshotDir}
+                onOpenImage={(path) => handleScreenshotAction(screenshot.openImage, path)}
+                onOpenFolder={(path) => handleScreenshotAction(screenshot.openFolder, path)}
+                onCopyImage={async (path) => {
+                  try {
+                    await screenshot.copyToClipboard(path)
+                    notify(t('screenshot.copiedTitle'), t('screenshot.copiedMessage'), 'success')
+                  } catch (error) {
+                    notify(t('screenshot.actionFailedTitle'), String(error), 'error')
+                  }
+                }}
+                onDeleteEntry={(id) => screenshot.deleteEntry(id)}
+                onClearHistory={screenshot.clearHistory}
+              />
+            }
+            recordings={
+              <RecordingsPage
+                deviceControls={deviceToolbar}
+                activeDevice={activeDevice}
+                isRunning={sessionRunning}
+                recordPath={config.recordPath}
+                onChangeRecordPath={handleChangeRecordPath}
+                onOpenDashboard={() => handleNavigate('dashboard')}
+              />
+            }
+            fileExplorer={
+              <FileExplorerPage
+                activeDevice={activeDevice}
+                customPath={config.scrcpyPath}
+                manager={
+                  <FileManager
+                    embedded
+                    isOpen={false}
+                    onClose={() => undefined}
                     activeDevice={activeDevice}
                     customPath={config.scrcpyPath}
-                    isRunning={sessionRunning}
-                    recordingOutputDir={screenshot.screenshotDir}
-                    fullscreenActive={!!config.fullscreen}
-                    onToggleFullscreen={() =>
-                      setConfig((prev) => ({
-                        ...prev,
-                        fullscreen: !prev.fullscreen,
-                      }))
-                    }
-                    onScreenshot={handleScreenshotCapture}
-                    isCapturing={screenshot.isCapturing}
-                    onOpenBugReport={() => setIsBugReportOpen(true)}
-                    onOpenAppManager={() => setIsAppManagerOpen(true)}
-                    onOpenLogcat={() => setIsLogcatOpen(true)}
-                    onOpenDeepLink={() => setIsDeepLinkOpen(true)}
-                    onOpenTestSession={() => setIsTestSessionOpen(true)}
-                    onOpenUiInspector={() => setIsUiInspectorOpen(true)}
-                    onOpenDeviceStatus={() => setIsDeviceStatusOpen(true)}
-                    onOpenConnectionHealth={() => setIsConnHealthOpen(true)}
-                    onOpenPresets={() => setIsPresetsOpen(true)}
-                    onOpenMacro={() => setIsMacroOpen(true)}
-                    onOpenCustomCommand={() => setIsCustomCmdOpen(true)}
-                    onOpenFileManager={() => setIsFileManagerOpen(true)}
-                    onOpenWidgetLayout={() => setIsWidgetLayoutOpen(true)}
-                    onOpenKeymap={() => setIsKeymapOpen(true)}
-                    onOpenEmbeddedWorkspace={() =>
-                      setIsEmbeddedWorkspaceOpen(true)
-                    }
+                    defaultDownloadDir={screenshot.screenshotDir}
+                    confirmAction={confirmAction}
                     notify={notify}
                   />
-                </div>
-                {/*<div className="relative z-10">
-                  <EmbeddedMirror
-                    enabled={embeddedMirror.embedEnabled}
-                    onToggle={embeddedMirror.setEmbedEnabled}
-                    isRunning={sessionRunning}
-                    dockRef={embeddedMirror.dockRef}
-                    onRedock={handleRedock}
-                    activeDevice={activeDevice}
-                    customPath={config.scrcpyPath}
-                    onScreenshot={handleScreenshotCapture}
-                    isCapturing={screenshot.isCapturing}
-                    notify={notify}
-                  />
-                </div>*/}
-                <div className="relative z-10">
-                  <LivePreview
-                    isPreviewing={livePreview.isPreviewing}
-                    frameSrc={livePreview.frameSrc}
-                    error={livePreview.error}
-                    isLoading={livePreview.isLoading}
-                    fps={livePreview.fps}
-                    fpsOptions={livePreview.fpsOptions}
-                    canPreview={livePreview.canPreview}
-                    onToggle={livePreview.toggle}
-                    onSetFps={livePreview.setFps}
-                  />
-                </div>
-                <div className="relative z-10">
-                  <LogPanel
-                    logs={logs}
-                    onClear={clearLogs}
-                    onAddLog={(msg) =>
-                      setLogs((prev: string[]) => [...prev.slice(-100), msg])
-                    }
-                    onRunCommand={runTerminalCommand}
-                  />
-                </div>
-              </div>
-
-              <div className="lg:col-span-3 flex flex-col gap-6">
-                <SessionBehavior config={config} setConfig={setConfig} />
-                <ScreenshotManager
-                  history={screenshot.history}
-                  screenshotDir={screenshot.screenshotDir}
-                  isCapturing={screenshot.isCapturing}
-                  canCapture={!!activeDevice}
-                  shortcutLabel={
-                    navigator.platform.toLowerCase().includes('mac')
-                      ? 'Cmd+Shift+S'
-                      : 'Ctrl+Shift+S'
-                  }
-                  onCapture={handleScreenshotCapture}
-                  onChangeDirectory={handleChangeScreenshotDir}
-                  onOpenImage={(p) =>
-                    handleScreenshotAction(screenshot.openImage, p)
-                  }
-                  onOpenFolder={(p) =>
-                    handleScreenshotAction(screenshot.openFolder, p)
-                  }
-                  onCopyImage={async (p) => {
-                    try {
-                      await screenshot.copyToClipboard(p)
-                      notify(
-                        t('screenshot.copiedTitle'),
-                        t('screenshot.copiedMessage'),
-                        'success',
-                      )
-                    } catch (e) {
-                      notify(
-                        t('screenshot.actionFailedTitle'),
-                        String(e),
-                        'error',
-                      )
-                    }
-                  }}
-                  onDeleteEntry={(id) => screenshot.deleteEntry(id)}
-                  onClearHistory={screenshot.clearHistory}
-                />
-                <ShortcutsPanel />
-              </div>
-            </div>
-
-            <Footer version={appVersion} />
-          </div>
-        </div>
+                }
+              />
+            }
+            wirelessAdb={
+              <WirelessAdbPage
+                activeDevice={activeDevice}
+                historyDevices={historyDevices}
+                isAutoConnect={isAutoConnect}
+                onToggleAuto={toggleAutoConnect}
+                onConnect={(address) => connectDevice(address)}
+                onOpenAdvanced={() => setIsPairingOpen(true)}
+              />
+            }
+            appManager={
+              <AppManagerPage
+                activeDevice={activeDevice}
+                customPath={config.scrcpyPath}
+                notify={notify}
+                confirmAction={confirmAction}
+                onInstallApk={handleInstallApkBrowse}
+              />
+            }
+            logcatViewer={
+              <LogcatViewerPage
+                activeDevice={activeDevice}
+                customPath={config.scrcpyPath}
+                notify={notify}
+              />
+            }
+            performance={
+              <PerformancePage
+                connected={sessionRunning}
+                bitrateMbps={config.bitrate}
+              />
+            }
+            inputControl={
+              <InputControlPage
+                activeDevice={activeDevice}
+                customPath={config.scrcpyPath}
+                notify={notify}
+              />
+            }
+            automation={
+              <AutomationPage
+                activeDevice={activeDevice}
+                customPath={config.scrcpyPath}
+                outputDir={screenshot.screenshotDir}
+                notify={notify}
+              />
+            }
+            scriptManager={
+              <ScriptManagerPage
+                activeDevice={activeDevice}
+                customPath={config.scrcpyPath}
+                notify={notify}
+              />
+            }
+            taskScheduler={
+              <TaskSchedulerPage
+                activeDevice={activeDevice}
+                customPath={config.scrcpyPath}
+                outputDir={screenshot.screenshotDir}
+                notify={notify}
+              />
+            }
+            settings={
+              <SettingsPage
+                general={sessionBehavior}
+                advanced={controlPanel}
+                shortcuts={<ShortcutsPanel />}
+                about={
+                  <div className="rounded-xl border border-[var(--border-subtle)] bg-black/10 p-5">
+                    <h2 className="text-sm font-semibold text-[var(--text-base)]">Mobile Device Studio</h2>
+                    <p className="mt-2 text-[10px] text-[var(--text-subtle)]">Version {appVersion}</p>
+                    <p className="mt-4 text-[10px] leading-relaxed text-[var(--text-muted)]">Built with scrcpy, Tauri, React, and Lucide. Existing application links and setup help remain available from the top bar.</p>
+                  </div>
+                }
+              />
+            }
+            />
+          </Suspense>
+        )
+      }
+    >
 
         <OnboardingModal
           isOpen={isOnboardingOpen}
@@ -967,8 +1233,7 @@ function App() {
           customPath={config.scrcpyPath}
           notify={notify}
         />
-      </div>
-    </ErrorBoundary>
+    </AppShell>
   )
 }
 

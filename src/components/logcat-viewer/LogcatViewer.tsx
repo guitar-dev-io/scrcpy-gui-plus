@@ -20,6 +20,7 @@ import type { ToolbarNotifier } from '../device-control-toolbar'
 
 interface LogcatViewerProps {
   isOpen: boolean
+  embedded?: boolean
   onClose: () => void
   activeDevice: string
   customPath?: string
@@ -37,22 +38,23 @@ const LEVEL_STYLES: Record<LogLevel, string> = {
 
 export default function LogcatViewer({
   isOpen,
+  embedded = false,
   onClose,
   activeDevice,
   customPath,
   notify,
 }: LogcatViewerProps) {
   const { t } = useI18n()
-  const logcat = useLogcat({ activeDevice, customPath, enabled: isOpen })
+  const logcat = useLogcat({ activeDevice, customPath, enabled: isOpen || embedded })
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // Auto-start streaming when opened for a device; stop on close.
   useEffect(() => {
-    if (isOpen && activeDevice && !logcat.running && !logcat.busy) {
+    if ((isOpen || embedded) && activeDevice && !logcat.running && !logcat.busy) {
       void logcat.start()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, activeDevice])
+  }, [isOpen, embedded, activeDevice])
 
   // Auto-scroll to the newest entry unless paused.
   useEffect(() => {
@@ -61,7 +63,7 @@ export default function LogcatViewer({
     if (el) el.scrollTop = el.scrollHeight
   }, [logcat.filtered, logcat.paused])
 
-  if (!isOpen) return null
+  if (!isOpen && !embedded) return null
 
   const handleExport = async () => {
     const content = logcat.buildExport()
@@ -89,19 +91,25 @@ export default function LogcatViewer({
 
   const disabled = !activeDevice
 
+  const dialogClassName = embedded
+    ? 'relative w-full h-full min-h-0 flex flex-col bg-zinc-950/95 border border-zinc-800 rounded-3xl shadow-2xl overflow-hidden'
+    : 'relative w-full max-w-4xl max-h-[90vh] flex flex-col bg-zinc-950/95 border border-zinc-800 rounded-3xl shadow-2xl overflow-hidden backdrop-blur-2xl animate-in zoom-in-95 fade-in duration-200'
+
   return (
-    <div className="fixed inset-0 z-300 flex items-center justify-center p-4 sm:p-6">
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-md"
-        onClick={onClose}
-      />
-      <div className="relative w-full max-w-4xl max-h-[90vh] flex flex-col bg-zinc-950/95 border border-zinc-800 rounded-3xl shadow-2xl overflow-hidden backdrop-blur-2xl animate-in zoom-in-95 fade-in duration-200">
+    <div className={embedded ? 'flex h-full min-h-0 w-full' : 'fixed inset-0 z-300 flex items-center justify-center p-4 sm:p-6'}>
+      {!embedded && (
+        <div
+          className="absolute inset-0 bg-black/60 backdrop-blur-md"
+          onClick={onClose}
+        />
+      )}
+      <div role={embedded ? undefined : 'dialog'} aria-modal={embedded ? undefined : true} aria-labelledby={embedded ? undefined : 'logcat-viewer-title'} className={dialogClassName}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800/60">
           <div className="flex items-center gap-2">
             <ScrollText size={18} className="text-primary" />
             <div>
-              <h3 className="text-sm font-black uppercase tracking-widest text-white">
+              <h3 id="logcat-viewer-title" className="text-sm font-black uppercase tracking-widest text-white">
                 {t('logcat.title')}
               </h3>
               <p className="text-[9px] text-zinc-500 tracking-wide">
@@ -125,12 +133,15 @@ export default function LogcatViewer({
               </span>
             )}
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl text-zinc-500 hover:text-white hover:bg-white/5 transition-all"
-          >
-            <X size={18} />
-          </button>
+          {!embedded && (
+            <button
+              onClick={onClose}
+              aria-label={t('common.close')}
+              className="p-2 rounded-xl text-zinc-500 hover:text-white hover:bg-white/5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+            >
+              <X size={18} />
+            </button>
+          )}
         </div>
 
         {/* Controls */}
@@ -139,7 +150,7 @@ export default function LogcatViewer({
             <button
               onClick={() => (logcat.running ? logcat.stop() : logcat.start())}
               disabled={disabled || logcat.busy}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all disabled:opacity-30 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 disabled:opacity-30 ${
                 logcat.running
                   ? 'border border-red-500/50 bg-red-500/10 text-red-400 hover:bg-red-500/20'
                   : 'bg-primary text-on-primary hover:brightness-110'
@@ -157,7 +168,8 @@ export default function LogcatViewer({
             <button
               onClick={logcat.togglePause}
               disabled={disabled}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[9px] font-black uppercase tracking-widest transition-all disabled:opacity-30 ${
+              aria-pressed={logcat.paused}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[9px] font-black uppercase tracking-widest transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 disabled:opacity-30 ${
                 logcat.paused
                   ? 'border-amber-500/50 bg-amber-500/10 text-amber-400'
                   : 'border-zinc-800 bg-zinc-950/40 text-zinc-300 hover:border-primary/50'
@@ -188,7 +200,8 @@ export default function LogcatViewer({
             </button>
             <button
               onClick={() => logcat.setCrashOnly(!logcat.crashOnly)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[9px] font-black uppercase tracking-widest transition-all ${
+              aria-pressed={logcat.crashOnly}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[9px] font-black uppercase tracking-widest transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${
                 logcat.crashOnly
                   ? 'border-red-500/50 bg-red-500/10 text-red-400'
                   : 'border-zinc-800 bg-zinc-950/40 text-zinc-300 hover:border-primary/50'
@@ -206,7 +219,9 @@ export default function LogcatViewer({
                   key={lvl}
                   onClick={() => logcat.setMinLevel(lvl)}
                   title={t('logcat.minLevel')}
-                  className={`w-6 py-1 text-[9px] font-black rounded-md transition-all ${
+                  aria-label={`${t('logcat.minLevel')}: ${lvl}`}
+                  aria-pressed={logcat.minLevel === lvl}
+                  className={`w-6 py-1 text-[9px] font-black rounded-md transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${
                     logcat.minLevel === lvl
                       ? 'bg-primary text-on-primary'
                       : `${LEVEL_STYLES[lvl]} hover:bg-white/5`
@@ -221,7 +236,7 @@ export default function LogcatViewer({
               value={logcat.tagFilter}
               onChange={(e) => logcat.setTagFilter(e.target.value)}
               placeholder={t('logcat.tagPlaceholder')}
-              className="flex-1 min-w-[140px] bg-black/40 border border-zinc-800 rounded-lg px-3 py-1.5 text-[11px] text-zinc-200 focus:border-primary/40 focus:outline-none transition-all"
+              className="flex-1 min-w-[140px] bg-black/40 border border-zinc-800 rounded-lg px-3 py-1.5 text-[11px] text-zinc-200 focus:border-primary/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 transition-all"
             />
             <div className="relative flex-1 min-w-[140px]">
               <Search
@@ -233,7 +248,7 @@ export default function LogcatViewer({
                 value={logcat.search}
                 onChange={(e) => logcat.setSearch(e.target.value)}
                 placeholder={t('logcat.searchPlaceholder')}
-                className="w-full bg-black/40 border border-zinc-800 rounded-lg pl-8 pr-3 py-1.5 text-[11px] text-zinc-200 focus:border-primary/40 focus:outline-none transition-all"
+                className="w-full bg-black/40 border border-zinc-800 rounded-lg pl-8 pr-3 py-1.5 text-[11px] text-zinc-200 focus:border-primary/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 transition-all"
               />
             </div>
           </div>

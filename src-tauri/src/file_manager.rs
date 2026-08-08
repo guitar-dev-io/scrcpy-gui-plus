@@ -14,6 +14,10 @@ use serde::Serialize;
 const LIST_TIMEOUT_SECS: u64 = 20;
 const ACTION_TIMEOUT_SECS: u64 = 30;
 const TRANSFER_TIMEOUT_SECS: u64 = 300;
+const MAX_PREVIEW_BYTES: u64 = 25 * 1024 * 1024;
+/// Absolute ceiling for any preview pull, even when a caller requests a
+/// larger `max_bytes` (e.g. to play a video or open a document).
+const HARD_MAX_PULL_BYTES: u64 = 300 * 1024 * 1024;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -350,6 +354,60 @@ pub async fn fm_mkdir(serial: String, path: String, custom_path: Option<String>)
     }
 }
 
+/// Rename/move a file or directory on the device.
+#[tauri::command]
+pub async fn fm_rename(
+    serial: String,
+    from_path: String,
+    to_path: String,
+    custom_path: Option<String>,
+) -> FsResult {
+    let serial = serial.trim().to_string();
+    if let Err(e) = adb::validate_serial(&serial) {
+        return fs_err(e.code(), e.message());
+    }
+    if let Err(m) = validate_remote_path(&from_path) {
+        return fs_err("invalid_path", m);
+    }
+    if let Err(m) = validate_remote_path(&to_path) {
+        return fs_err("invalid_path", m);
+    }
+    let from_normalized = from_path.trim().trim_end_matches('/');
+    if from_normalized.is_empty() || from_normalized == "/" {
+        return fs_err("refused", "Refusing to rename a root path".to_string());
+    }
+
+    let cmd = format!("mv -n {} {}", quote(&from_path), quote(&to_path));
+    match adb::run_adb_text(
+        Some(&serial),
+        &["shell", &cmd],
+        custom_path,
+        ACTION_TIMEOUT_SECS,
+    )
+    .await
+    {
+        Ok(out) => {
+            let lower = out.to_lowercase();
+            if lower.contains("permission denied") {
+                return fs_err("permission_denied", "Permission denied".to_string());
+            }
+            if lower.contains("no such file") {
+                return fs_err("not_found", "Path not found".to_string());
+            }
+            if lower.contains("file exists") || lower.contains("not overwritten") {
+                return fs_err("already_exists", "An item with that name already exists".to_string());
+            }
+            FsResult {
+                success: true,
+                path: Some(to_path.trim().to_string()),
+                error: None,
+                error_code: None,
+            }
+        }
+        Err(e) => fs_err(e.code(), e.message()),
+    }
+}
+
 /// Pull a remote file into the app cache dir and return the local path, for
 /// previewing images without cluttering the user's chosen download folder.
 #[tauri::command]
@@ -358,6 +416,7 @@ pub async fn fm_preview_file(
     serial: String,
     remote_path: String,
     custom_path: Option<String>,
+    max_bytes: Option<u64>,
 ) -> FsResult {
     use tauri::Manager;
 
@@ -367,6 +426,41 @@ pub async fn fm_preview_file(
     }
     if let Err(m) = validate_remote_path(&remote_path) {
         return fs_err("invalid_path", m);
+    }
+    let size_limit = max_bytes.unwrap_or(MAX_PREVIEW_BYTES).min(HARD_MAX_PULL_BYTES);
+
+    // Check the remote size before starting `adb pull`. Previewing a large
+    // image should never begin a full-device transfer just because a row was
+    // clicked. The command output is intentionally tiny (a single byte count).
+    let stat_cmd = format!("stat -c %s {}", quote(remote_path.trim()));
+    let size_output = match adb::run_adb_text(
+        Some(&serial),
+        &["shell", &stat_cmd],
+        custom_path.clone(),
+        LIST_TIMEOUT_SECS,
+    )
+    .await
+    {
+        Ok(output) => output,
+        Err(e) => return fs_err(e.code(), e.message()),
+    };
+    let remote_size = match size_output.trim().parse::<u64>() {
+        Ok(size) => size,
+        Err(_) => {
+            return fs_err(
+                "preview_size_unavailable",
+                "Could not determine file size".to_string(),
+            )
+        }
+    };
+    if remote_size > size_limit {
+        return fs_err(
+            "preview_too_large",
+            format!(
+                "File is too large to preview (maximum {} MB)",
+                size_limit / 1024 / 1024
+            ),
+        );
     }
 
     let cache_dir = match app_handle.path().app_cache_dir() {

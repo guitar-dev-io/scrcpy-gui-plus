@@ -175,7 +175,7 @@ export const ru: DeepPartialTranslations = {
     preset4k: '4K Ultra',
     presetUltrawide: '21:9 сверхширокий',
     initializeOtg: 'Инициализировать OTG',
-    startMission: 'Начать миссию',
+    startMission: 'Запустить трансляцию',
     engageCamera: 'Включить камеру',
     ejectToDesktop: 'Перейти на рабочий стол',
     stopSession: 'Остановить сессию',

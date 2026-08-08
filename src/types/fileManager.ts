@@ -26,6 +26,12 @@ export interface FsResult {
 /** Default starting directory. */
 export const FM_DEFAULT_PATH = '/sdcard';
 
+/** Maximum remote file size allowed for an inline preview (auto-triggered, e.g. clicking an image). */
+export const MAX_PREVIEW_BYTES = 25 * 1024 * 1024;
+
+/** Maximum remote file size allowed when the user explicitly asks to play/open a larger file (video, documents). */
+export const LARGE_PREVIEW_BYTES = 200 * 1024 * 1024;
+
 const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'];
 
 export function isImageFile(name: string): boolean {

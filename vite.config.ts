@@ -7,6 +7,42 @@ const host = process.env.TAURI_DEV_HOST;
 // https://vite.dev/config/
 export default defineConfig(async () => ({
   plugins: [react()],
+  build: {
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            {
+              name: 'react-vendor',
+              test: /node_modules[\\/](?:react|react-dom)[\\/]/,
+              priority: 30,
+            },
+            {
+              name: 'tauri-vendor',
+              test: /node_modules[\\/]@tauri-apps[\\/]/,
+              priority: 20,
+            },
+            {
+              name: 'icons-vendor',
+              test: /node_modules[\\/]lucide-react[\\/]/,
+              priority: 10,
+            },
+            {
+              name: 'feature-ui',
+              test: /src[\\/]components[\\/]/,
+              priority: 5,
+              maxSize: 400 * 1024,
+            },
+            {
+              name: 'vendor',
+              test: /node_modules[\\/]/,
+              maxSize: 400 * 1024,
+            },
+          ],
+        },
+      },
+    },
+  },
   test: {
     globals: true,
     environment: 'jsdom',

@@ -202,7 +202,7 @@ export default function ControlPanel({
     );
 
     return (
-        <main className="lg:col-span-6 space-y-4">
+        <div className="space-y-4 lg:col-span-6">
             <div className="glass p-3.5 rounded-2xl border border-zinc-800 bg-zinc-900/50 backdrop-blur-md">
                 <div className="flex items-center gap-2 mb-1.5">
                     <label className="text-[10px] font-black uppercase text-zinc-400 tracking-widest">{t('controlPanel.captureSource')}</label>
@@ -607,6 +607,6 @@ export default function ControlPanel({
                     </button>
                 )}
             </div>
-        </main>
+        </div>
     );
 }

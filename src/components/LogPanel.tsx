@@ -1,5 +1,13 @@
 import { useRef, useEffect, useState, memo } from 'react'
-import { Terminal, Trash2, Download } from 'lucide-react'
+import {
+  Download,
+  Pause,
+  Play,
+  Search,
+  SlidersHorizontal,
+  Terminal,
+  Trash2,
+} from 'lucide-react'
 import { invoke } from '@tauri-apps/api/core'
 import { useI18n } from '../i18n'
 
@@ -8,17 +16,25 @@ interface LogPanelProps {
   onClear: () => void
   onAddLog?: (msg: string) => void
   onRunCommand?: (cmd: string) => void
+  dashboard?: boolean
+  mode?: 'logcat' | 'shell' | 'events'
 }
 
 const LogPanel = memo(
-  ({ logs, onClear, onAddLog, onRunCommand }: LogPanelProps) => {
+  ({ logs, onClear, onAddLog, onRunCommand, dashboard = false, mode = 'logcat' }: LogPanelProps) => {
     const { t } = useI18n()
     const containerRef = useRef<HTMLDivElement>(null)
     const [isLive, setIsLive] = useState(false)
     const [command, setCommand] = useState('')
+    const [query, setQuery] = useState('')
+    const [paused, setPaused] = useState(false)
+
+    const visibleLogs = query.trim()
+      ? logs.filter((log) => log.toLowerCase().includes(query.trim().toLowerCase()))
+      : logs
 
     useEffect(() => {
-      if (containerRef.current) {
+      if (!paused && containerRef.current) {
         containerRef.current.scrollTop = containerRef.current.scrollHeight
       }
       if (logs.length > 0) {
@@ -26,7 +42,7 @@ const LogPanel = memo(
         const timer = setTimeout(() => setIsLive(false), 2000)
         return () => clearTimeout(timer)
       }
-    }, [logs.length]) // Only trigger scroll on length change
+    }, [logs.length, paused]) // Only trigger scroll on length change
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
       if (e.key === 'Enter' && command.trim()) {
@@ -36,21 +52,55 @@ const LogPanel = memo(
     }
 
     return (
-      <div className="force-dark glass rounded-2xl h-[220px] flex-none overflow-hidden font-mono border border-zinc-800 bg-black/60 backdrop-blur-xl flex flex-col shadow-2xl relative">
+      <div className="force-dark relative flex h-full min-h-0 flex-col overflow-hidden bg-[#070a10] font-mono">
         {/* Top Bar */}
-        <div className="px-4 py-2.5 border-b border-zinc-800/80 bg-zinc-900/40 flex justify-between items-center shrink-0">
+        <div className={`flex shrink-0 items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)] px-3 ${dashboard ? 'h-10 gap-2' : 'h-8'}`}>
           <div className="flex items-center gap-3">
             <Terminal size={12} className="text-primary" />
-            <div className="flex items-center gap-2">
-              <span className="font-black text-zinc-400 tracking-[0.2em] uppercase text-[9px]">
+            <div className={`items-center gap-2 ${dashboard ? 'hidden' : 'flex'}`}>
+              <span className="text-[var(--font-size-caption)] font-medium text-[var(--text-muted)]">
                 {t('logPanel.systemConsole')}
               </span>
               <div
                 className={`w-1.5 h-1.5 rounded-full transition-all duration-500 ${isLive ? 'bg-primary shadow-[0_0_8px_rgba(var(--primary-rgb),0.8)]' : 'bg-zinc-700'}`}
               />
             </div>
+            {dashboard && (
+              <select
+                aria-label="Log level"
+                className="h-7 rounded-md border border-[var(--border-base)] bg-[var(--bg-input)] px-2 text-[9px] text-[var(--text-muted)] outline-none focus:border-primary"
+                defaultValue="verbose"
+              >
+                <option value="verbose">Verbose</option>
+                <option value="info">Info</option>
+                <option value="warning">Warning</option>
+                <option value="error">Error</option>
+              </select>
+            )}
           </div>
-          <div className="flex gap-2 shrink-0">
+          {dashboard && (
+            <label className="relative min-w-0 flex-1">
+              <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--text-subtle)]" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={`Search ${mode}…`}
+                className="h-7 w-full rounded-md border border-[var(--border-base)] bg-black/20 pl-7 pr-2 text-[9px] text-[var(--text-muted)] outline-none placeholder:text-[var(--text-subtle)] focus:border-primary"
+              />
+            </label>
+          )}
+          <div className="flex shrink-0 gap-1">
+            {dashboard && (
+              <button
+                type="button"
+                onClick={() => setPaused((value) => !value)}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-subtle)] hover:bg-white/5 hover:text-primary"
+                aria-label={paused ? 'Resume log scrolling' : 'Pause log scrolling'}
+                title={paused ? 'Resume' : 'Pause'}
+              >
+                {paused ? <Play size={11} /> : <Pause size={11} />}
+              </button>
+            )}
             <button
               onClick={async () => {
                 const storageData: Record<string, string> = {}
@@ -80,28 +130,30 @@ const LogPanel = memo(
                   console.error('Export failed:', e)
                 }
               }}
-              className="flex items-center gap-1.5 text-[9px] font-black uppercase text-primary hover:text-primary/70 transition-all px-2 py-1 rounded-md hover:bg-white/5 active:scale-95"
+              className={`flex items-center gap-1.5 text-[9px] font-black uppercase text-primary hover:text-primary/70 transition-all px-2 py-1 rounded-md hover:bg-white/5 active:scale-95 ${dashboard ? 'h-7 w-7 justify-center px-0' : ''}`}
               title={t('logPanel.reportTitle')}
             >
               <Download size={10} />
-              {t('logPanel.report')}
+              {!dashboard && t('logPanel.report')}
             </button>
             <button
               onClick={onClear}
-              className="flex items-center gap-1.5 text-[9px] font-black uppercase text-primary hover:text-red-400 transition-all px-2 py-1 rounded-md hover:bg-white/5 active:scale-95"
+              className={`flex items-center gap-1.5 text-[9px] font-black uppercase text-primary hover:text-red-400 transition-all px-2 py-1 rounded-md hover:bg-white/5 active:scale-95 ${dashboard ? 'h-7 w-7 justify-center px-0' : ''}`}
+              aria-label={dashboard ? t('logPanel.clear') : undefined}
             >
               <Trash2 size={10} />
-              {t('logPanel.clear')}
+              {!dashboard && t('logPanel.clear')}
             </button>
+            {dashboard && <SlidersHorizontal size={11} className="mx-1 self-center text-[var(--text-subtle)]" />}
           </div>
         </div>
 
         {/* Terminal Body */}
         <div
           ref={containerRef}
-          className="flex-1 overflow-y-auto p-4 pt-2 custom-scrollbar bg-[radial-gradient(circle_at_top_left,_rgba(var(--primary-rgb),0.03),_transparent)]"
+          className="custom-scrollbar flex-1 overflow-y-auto px-3 py-2"
         >
-          {logs.length === 0 ? (
+          {visibleLogs.length === 0 ? (
             <div className="h-full flex items-center justify-center">
               <span className="text-[10px] text-zinc-700 font-bold uppercase tracking-widest animate-pulse">
                 {t('logPanel.waitingForSequence')}
@@ -109,7 +161,7 @@ const LogPanel = memo(
             </div>
           ) : (
             <div className="space-y-1">
-              {logs.map((log, i) => (
+              {visibleLogs.map((log, i) => (
                 <div
                   key={i}
                   className="group flex gap-3 text-[11px] leading-relaxed py-0.5 border-l border-zinc-900 hover:border-primary/30 transition-colors pl-3"
@@ -132,6 +184,7 @@ const LogPanel = memo(
         </div>
 
         {/* Terminal Input */}
+        {(!dashboard || mode === 'shell') && (
         <div className="px-4 py-2 border-t border-zinc-800/80 bg-black/40 flex items-center gap-2 shrink-0 group">
           <span className="text-primary font-bold text-[11px] select-none">
             $
@@ -145,9 +198,8 @@ const LogPanel = memo(
             className="flex-1 bg-transparent border-none outline-none text-[11px] text-zinc-300 placeholder:text-zinc-500 font-mono transition-colors focus:placeholder:text-zinc-600"
           />
         </div>
+        )}
 
-        {/* Bottom Glow */}
-        <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent pointer-events-none" />
       </div>
     )
   },

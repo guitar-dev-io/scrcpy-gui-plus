@@ -1,107 +1,76 @@
-import { Github, Youtube, Globe, Heart, Coffee } from 'lucide-react'
-import { useI18n } from '../i18n'
+import {
+  AppWindow,
+  Coffee,
+  Folder,
+  Github,
+  Image,
+  LayoutDashboard,
+  MonitorPlay,
+  Settings,
+  Smartphone,
+  Video,
+  Wifi,
+  Youtube,
+} from 'lucide-react'
+import type { AppRouteId } from '../navigation/appRoutes'
 
-export default function Footer({ version }: { version: string }) {
-  const { t } = useI18n()
+interface FooterProps {
+  version: string
+  activeRoute: AppRouteId
+  onNavigate: (route: AppRouteId) => void
+  navigationCollapsed: boolean
+  onToggleNavigation: () => void
+}
+
+const dockItems: Array<{
+  route: AppRouteId
+  label: string
+  icon: typeof LayoutDashboard
+}> = [
+  { route: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { route: 'devices', label: 'Devices', icon: Smartphone },
+  { route: 'sessions', label: 'Sessions', icon: MonitorPlay },
+  { route: 'screenshots', label: 'Screenshots', icon: Image },
+  { route: 'recordings', label: 'Recordings', icon: Video },
+  { route: 'file-explorer', label: 'File Explorer', icon: Folder },
+  { route: 'wireless-adb', label: 'Wireless ADB', icon: Wifi },
+  { route: 'app-manager', label: 'App Manager', icon: AppWindow },
+  { route: 'settings', label: 'Settings', icon: Settings },
+]
+
+export default function Footer({ version, activeRoute, onNavigate, navigationCollapsed, onToggleNavigation }: FooterProps) {
   return (
-    <footer className="w-full px-4 py-3 mt-4 glass border-t border-zinc-800 bg-zinc-900/80 backdrop-blur-md flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-zinc-600">
-      <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
-        {t('footer.aboutScrcpyGui')}
-      </span>
-
-      <span className="hidden sm:inline text-zinc-800">•</span>
-
-      <div className="flex items-center gap-3">
-        <a
-          href="https://github.com/kil0bit-kb"
-          target="_blank"
-          rel="noopener noreferrer"
-          title={t('footer.github')}
-          aria-label={t('footer.github')}
-          className="text-zinc-600 hover:text-white transition-colors"
-        >
-          <Github size={14} />
-        </a>
-        <a
-          href="https://www.youtube.com/@kilObit"
-          target="_blank"
-          rel="noopener noreferrer"
-          title={t('footer.youtube')}
-          aria-label={t('footer.youtube')}
-          className="text-zinc-600 hover:text-white transition-colors"
-        >
-          <Youtube size={14} />
-        </a>
-        <a
-          href="https://kil0bit.blogspot.com/"
-          target="_blank"
-          rel="noopener noreferrer"
-          title={t('footer.website')}
-          aria-label={t('footer.website')}
-          className="text-zinc-600 hover:text-white transition-colors"
-        >
-          <Globe size={14} />
-        </a>
-        <a
-          href="https://www.patreon.com/cw/KB_kilObit"
-          target="_blank"
-          rel="noopener noreferrer"
-          title={t('footer.support')}
-          aria-label={t('footer.support')}
-          className="text-primary hover:text-primary/80 transition-colors"
-        >
-          <Coffee size={14} />
-        </a>
+    <footer className="flex h-[68px] w-full min-w-0 items-center border-t border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 shadow-[0_-16px_40px_rgba(0,0,0,.12)]">
+      <div className={`hidden shrink-0 items-center border-r border-[var(--border-subtle)] text-[9px] text-[var(--text-subtle)] min-[1181px]:flex ${navigationCollapsed ? 'w-[72px] justify-center' : 'w-[284px]'}`}>
+        <button type="button" onClick={onToggleNavigation} className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-[var(--bg-hover)] hover:text-[var(--text-base)]" aria-label={navigationCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+          <AppWindow size={13} /> {!navigationCollapsed && <span>Collapse · v{version}</span>}
+        </button>
       </div>
 
-      <span className="hidden sm:inline text-zinc-800">•</span>
+      <nav aria-label="Dashboard dock" className="custom-scrollbar mx-auto flex h-full min-w-0 items-center justify-start gap-2 overflow-x-auto lg:justify-center lg:gap-5">
+        {dockItems.map(({ route, label, icon: Icon }) => {
+          const active = activeRoute === route
+          return (
+            <button
+              key={route}
+              type="button"
+              onClick={() => onNavigate(route)}
+              aria-label={label}
+              aria-current={active ? 'page' : undefined}
+              className={`group flex min-w-[58px] shrink-0 flex-col items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-[9px] transition-colors ${active ? 'text-primary' : 'text-[var(--text-subtle)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-muted)]'}`}
+            >
+              <Icon size={18} className={active ? 'drop-shadow-[0_0_8px_rgba(var(--primary-rgb),.6)]' : ''} />
+              <span className="hidden whitespace-nowrap md:block">{label}</span>
+            </button>
+          )
+        })}
+      </nav>
 
-      {/* Tech Attributions */}
-      <span className="text-[9px] text-zinc-700 hover:text-zinc-500 transition-colors">
-        <a
-          href="https://github.com/Genymobile/scrcpy"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="hover:text-primary transition-colors"
-        >
-          scrcpy
-        </a>
-        {' · '}
-        <a
-          href="https://tauri.app/"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="hover:text-primary transition-colors"
-        >
-          Tauri
-        </a>
-        {' · '}
-        <a
-          href="https://react.dev/"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="hover:text-primary transition-colors"
-        >
-          React
-        </a>
-        {' · '}
-        <a
-          href="https://lucide.dev/"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="hover:text-primary transition-colors"
-        >
-          Lucide
-        </a>
-      </span>
-
-      <span className="hidden sm:inline text-zinc-800">•</span>
-
-      <span className="text-[10px] text-zinc-600 flex items-center gap-1">
-        {t('footer.appVersion', { version })}{' '}
-        <Heart size={10} className="text-red-500 fill-red-500" />{' '}
-        {t('footer.byKb')}
-      </span>
+      <div className="hidden w-[180px] items-center justify-end gap-3 text-[var(--text-subtle)] xl:flex">
+        <a href="https://github.com/kil0bit-kb" target="_blank" rel="noopener noreferrer" aria-label="GitHub" className="hover:text-[var(--text-base)]"><Github size={13} /></a>
+        <a href="https://www.youtube.com/@kilObit" target="_blank" rel="noopener noreferrer" aria-label="YouTube" className="hover:text-[var(--text-base)]"><Youtube size={13} /></a>
+        <a href="https://www.patreon.com/cw/KB_kilObit" target="_blank" rel="noopener noreferrer" aria-label="Support" className="hover:text-primary"><Coffee size={13} /></a>
+      </div>
     </footer>
   )
 }

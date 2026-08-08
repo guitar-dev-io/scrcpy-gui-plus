@@ -20,6 +20,7 @@ import type { ToolbarNotifier } from '../device-control-toolbar';
 
 interface CustomCommandProps {
     isOpen: boolean;
+    embedded?: boolean;
     onClose: () => void;
     activeDevice: string;
     packageName?: string;
@@ -31,6 +32,7 @@ const emptyDraft = (): CommandPreset => ({ id: '', label: '', template: '' });
 
 export default function CustomCommand({
     isOpen,
+    embedded = false,
     onClose,
     activeDevice,
     packageName,
@@ -43,7 +45,7 @@ export default function CustomCommand({
     const [showImport, setShowImport] = useState(false);
     const [importText, setImportText] = useState('');
 
-    if (!isOpen) return null;
+    if (!isOpen && !embedded) return null;
 
     const startAdd = () => setDraft(emptyDraft());
     const startEdit = (p: CommandPreset) => setDraft({ ...p });
@@ -106,10 +108,14 @@ export default function CustomCommand({
     const inputCls =
         'w-full bg-black/40 border border-zinc-800 rounded-lg px-3 py-2 text-[12px] text-zinc-200 focus:border-primary/40 focus:outline-none';
 
+    const dialogClassName = embedded
+        ? 'relative w-full h-full min-h-0 flex flex-col bg-zinc-950/95 border border-zinc-800 rounded-3xl shadow-2xl overflow-hidden'
+        : 'relative w-full max-w-xl max-h-[90vh] flex flex-col bg-zinc-950/95 border border-zinc-800 rounded-3xl shadow-2xl overflow-hidden backdrop-blur-2xl animate-in zoom-in-95 fade-in duration-200';
+
     return (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 sm:p-6">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={onClose} />
-            <div className="relative w-full max-w-xl max-h-[90vh] flex flex-col bg-zinc-950/95 border border-zinc-800 rounded-3xl shadow-2xl overflow-hidden backdrop-blur-2xl animate-in zoom-in-95 fade-in duration-200">
+        <div className={embedded ? 'flex h-full min-h-0 w-full' : 'fixed inset-0 z-[300] flex items-center justify-center p-4 sm:p-6'}>
+            {!embedded && <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={onClose} />}
+            <div className={dialogClassName}>
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800/60">
                     <div className="flex items-center gap-2">
@@ -130,9 +136,11 @@ export default function CustomCommand({
                         <button onClick={() => setShowImport((s) => !s)} title={t('customCmd.import')} className="p-2 rounded-xl text-zinc-500 hover:text-primary hover:bg-white/5 transition-all">
                             <Upload size={16} />
                         </button>
-                        <button onClick={onClose} className="p-2 rounded-xl text-zinc-500 hover:text-white hover:bg-white/5 transition-all">
-                            <X size={18} />
-                        </button>
+                        {!embedded && (
+                            <button onClick={onClose} className="p-2 rounded-xl text-zinc-500 hover:text-white hover:bg-white/5 transition-all">
+                                <X size={18} />
+                            </button>
+                        )}
                     </div>
                 </div>
 

@@ -31,7 +31,7 @@ use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tauri::{Emitter, State, Window};
+use tauri::{AppHandle, Emitter, Manager, State, Window};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::net::TcpStream;
 
@@ -385,8 +385,15 @@ pub async fn start_embedded_mirror(
     let stop_loop = stop.clone();
     let win_loop = window.clone();
     let serial_loop = serial.clone();
+    let app_loop = window.app_handle().clone();
+    let custom_path_loop = custom_path.clone();
     tokio::spawn(async move {
-        read_frames(stream, win_loop, serial_loop, stop_loop).await;
+        read_frames(stream, win_loop.clone(), serial_loop.clone(), stop_loop).await;
+        // The stream ended on its own (device unplugged, network drop,
+        // scrcpy-server crash, ...) rather than via an explicit stop — tear
+        // the session down ourselves so it doesn't linger in the map and
+        // block the next start for this serial.
+        teardown_mirror_session(&app_loop, &win_loop, &serial_loop, custom_path_loop).await;
     });
 
     state
@@ -518,11 +525,36 @@ async fn read_frames(mut stream: TcpStream, window: Window, serial: String, stop
             }),
         );
     }
+}
 
-    let _ = window.emit(
-        "embed-status",
-        json!({ "serial": serial, "running": false }),
-    );
+/// Remove a mirror session from the shared map and release everything it owns
+/// (kills the scrcpy-server child, releases the adb forward, emits the
+/// `running: false` status). Shared by the explicit `stop_embedded_mirror`
+/// command *and* the frame reader's own end-of-stream handler, so a session
+/// that dies on its own (network drop, device unplug, scrcpy-server crash)
+/// never leaves a stale map entry behind — otherwise the next
+/// `start_embedded_mirror` for that serial is permanently rejected as
+/// "already running" until the app restarts. Safe to call twice for the same
+/// serial (e.g. a racing manual stop): the second call finds nothing to
+/// remove and skips the emit.
+async fn teardown_mirror_session(
+    app: &AppHandle,
+    window: &Window,
+    serial: &str,
+    custom_path: Option<String>,
+) {
+    let state = app.state::<EmbedMirrorState>();
+    let removed = state.sessions.lock().unwrap().remove(serial);
+    if let Some(mut session) = removed {
+        session.stop.store(true, Ordering::Relaxed);
+        let _ = session.child.kill().await;
+        let adb_exe = get_binary_path("adb", custom_path);
+        let _ = remove_forward(&adb_exe, session.port).await;
+        let _ = window.emit(
+            "embed-status",
+            json!({ "serial": serial, "running": false }),
+        );
+    }
 }
 
 pub(crate) async fn remove_forward(adb_exe: &str, port: u16) -> std::io::Result<()> {
@@ -538,23 +570,11 @@ pub(crate) async fn remove_forward(adb_exe: &str, port: u16) -> std::io::Result<
 #[tauri::command]
 pub async fn stop_embedded_mirror(
     window: Window,
-    state: State<'_, EmbedMirrorState>,
     serial: String,
     custom_path: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let serial = serial.trim().to_string();
-    let session = state.sessions.lock().unwrap().remove(&serial);
-
-    if let Some(mut session) = session {
-        session.stop.store(true, Ordering::Relaxed);
-        let _ = session.child.kill().await;
-        let adb_exe = get_binary_path("adb", custom_path);
-        let _ = remove_forward(&adb_exe, session.port).await;
-        let _ = window.emit(
-            "embed-status",
-            json!({ "serial": serial, "running": false }),
-        );
-    }
-
+    let app = window.app_handle().clone();
+    teardown_mirror_session(&app, &window, &serial, custom_path).await;
     Ok(json!({ "success": true, "message": "Embedded mirror stopped" }))
 }

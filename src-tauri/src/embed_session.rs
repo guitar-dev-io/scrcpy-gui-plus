@@ -50,7 +50,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::ipc::{Channel, InvokeResponseBody};
-use tauri::{AppHandle, Emitter, State, Window};
+use tauri::{AppHandle, Emitter, Manager, State, Window};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex as AsyncMutex;
@@ -271,6 +271,37 @@ fn emit_status(window: &Window, session_id: &str, serial: &str, state: SessionSt
             "state": state.as_str(),
         }),
     );
+}
+
+/// Remove a session from the shared map and release everything it owns (kills
+/// the scrcpy-server child, releases the adb forward). Shared by the explicit
+/// `stop_embedded_session` command *and* the video reader's own end-of-stream
+/// handler, so a session that dies on its own (network drop, device unplug,
+/// scrcpy-server crash) never leaves a stale map entry behind — otherwise the
+/// next `start_embedded_session` for that serial is permanently rejected as
+/// "already running" until the app restarts. Safe to call twice for the same
+/// id (e.g. a racing manual stop): the second call finds nothing to remove.
+async fn teardown_session(
+    app: &AppHandle,
+    window: &Window,
+    session_id: &str,
+    custom_path: Option<String>,
+) {
+    let state = app.state::<EmbedSessionState>();
+    let removed = state.sessions.lock().unwrap().remove(session_id);
+    if let Some(mut session) = removed {
+        set_state(&session.state, SessionState::Stopping);
+        session.stop.store(true, Ordering::Relaxed);
+        let _ = session.child.kill().await;
+        let adb_exe = get_binary_path("adb", custom_path);
+        let _ = remove_forward(&adb_exe, session.port).await;
+        emit_status(
+            window,
+            session_id,
+            &session.serial,
+            SessionState::Disconnected,
+        );
+    }
 }
 
 /// Connect the scrcpy forward-tunnel sockets in the correct order and read the
@@ -674,10 +705,11 @@ pub async fn start_embedded_session(
     // 5. Spawn the video reader.
     {
         let stop_loop = stop.clone();
-        let state_loop = state_cell.clone();
         let win_loop = window.clone();
         let sid_loop = session_id.clone();
         let serial_loop = serial.clone();
+        let app_loop = window.app_handle().clone();
+        let custom_path_loop = custom_path.clone();
         tokio::spawn(async move {
             read_frames(
                 video,
@@ -688,13 +720,11 @@ pub async fn start_embedded_session(
                 serial_loop.clone(),
             )
             .await;
-            set_state(&state_loop, SessionState::Disconnected);
-            emit_status(
-                &win_loop,
-                &sid_loop,
-                &serial_loop,
-                SessionState::Disconnected,
-            );
+            // The stream ended on its own (device unplugged, network drop,
+            // scrcpy-server crash, ...) rather than via an explicit stop —
+            // tear the session down ourselves so it doesn't linger in the
+            // map and block the next start for this serial.
+            teardown_session(&app_loop, &win_loop, &sid_loop, custom_path_loop).await;
         });
     }
 
@@ -726,24 +756,11 @@ pub async fn start_embedded_session(
 #[tauri::command]
 pub async fn stop_embedded_session(
     window: Window,
-    state: State<'_, EmbedSessionState>,
     session_id: String,
     custom_path: Option<String>,
 ) -> Result<serde_json::Value, String> {
-    let session = state.sessions.lock().unwrap().remove(&session_id);
-    if let Some(mut session) = session {
-        set_state(&session.state, SessionState::Stopping);
-        session.stop.store(true, Ordering::Relaxed);
-        let _ = session.child.kill().await;
-        let adb_exe = get_binary_path("adb", custom_path);
-        let _ = remove_forward(&adb_exe, session.port).await;
-        emit_status(
-            &window,
-            &session_id,
-            &session.serial,
-            SessionState::Disconnected,
-        );
-    }
+    let app = window.app_handle().clone();
+    teardown_session(&app, &window, &session_id, custom_path).await;
     Ok(json!({ "success": true, "message": "Embedded session stopped" }))
 }
 
