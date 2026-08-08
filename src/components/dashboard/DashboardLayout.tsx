@@ -5,6 +5,7 @@ import {
   ChevronRight,
   ChevronUp,
   CirclePower,
+  Columns2,
   Download,
   HardDrive,
   Home,
@@ -54,6 +55,8 @@ interface DashboardLayoutProps {
   onBottomTabChange: (tab: 'logcat' | 'shell' | 'events') => void
   notify: (title: string, message: string, kind: 'success' | 'error' | 'info' | 'warning') => void
   onScreenshot: () => void
+  /** Captures a screenshot for a specific serial; used by the pinned secondary device. */
+  onScreenshotSecondary?: (serial: string) => void
   screenshotBusy?: boolean
 }
 
@@ -117,11 +120,24 @@ export default function DashboardLayout({
   onBottomTabChange,
   notify,
   onScreenshot,
+  onScreenshotSecondary,
   screenshotBusy = false,
 }: DashboardLayoutProps) {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [inspectorOpen, setInspectorOpen] = useState(false)
   const [bottomPanelOpen, setBottomPanelOpen] = useState(true)
+  const [secondaryDevice, setSecondaryDevice] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (secondaryDevice && (secondaryDevice === activeDevice || !devices.includes(secondaryDevice))) {
+      setSecondaryDevice(null)
+    }
+  }, [activeDevice, devices, secondaryDevice])
+
+  const toggleSecondaryDevice = (serial: string) => {
+    if (serial === activeDevice) return
+    setSecondaryDevice((current) => (current === serial ? null : serial))
+  }
 
   useEffect(() => {
     if (!settingsOpen && !inspectorOpen) return
@@ -151,6 +167,22 @@ export default function DashboardLayout({
     finishRecording,
   } = useDeviceActions({ activeDevice, customPath })
 
+  const { status: secondaryStatus } = useDeviceStatus({
+    activeDevice: secondaryDevice || '',
+    customPath,
+    autoRefresh: false,
+    intervalMs: 5000,
+    enabled: !!secondaryDevice,
+  })
+  const {
+    pending: secondaryPending,
+    runAction: secondaryRunAction,
+    isRecording: secondaryIsRecording,
+    recordingBusy: secondaryRecordingBusy,
+    beginRecording: secondaryBeginRecording,
+    finishRecording: secondaryFinishRecording,
+  } = useDeviceActions({ activeDevice: secondaryDevice || '', customPath })
+
   const updateConfig = <K extends keyof ScrcpyConfig>(
     key: K,
     value: ScrcpyConfig[K],
@@ -175,6 +207,33 @@ export default function DashboardLayout({
       }
     } else {
       const result = await beginRecording()
+      if (result.success) {
+        notify('Recording started', 'Screen recording in progress', 'info')
+      } else if (result.errorCode !== 'busy') {
+        notify('Recording failed', result.error || 'Unknown error', 'error')
+      }
+    }
+  }
+
+  const secondaryAction = async (id: Parameters<typeof secondaryRunAction>[0]) => {
+    if (!secondaryDevice) return
+    const result = await secondaryRunAction(id)
+    if (!result.success && result.errorCode !== 'busy') {
+      notify('Device action failed', result.error || 'Unknown error', 'error')
+    }
+  }
+
+  const handleSecondaryRecording = async () => {
+    if (!secondaryDevice) return
+    if (secondaryIsRecording) {
+      const result = await secondaryFinishRecording(outputDir || '')
+      if (result.success) {
+        notify('Recording saved', result.output || '', 'success')
+      } else if (result.errorCode !== 'busy') {
+        notify('Recording failed', result.error || 'Unknown error', 'error')
+      }
+    } else {
+      const result = await secondaryBeginRecording()
       if (result.success) {
         notify('Recording started', 'Screen recording in progress', 'info')
       } else if (result.errorCode !== 'busy') {
@@ -410,6 +469,44 @@ export default function DashboardLayout({
           </section>
         </div>
 
+        {secondaryDevice && (
+          <div className="mt-4">
+            <DashboardEmbeddedStage
+              compact
+              deviceName={secondaryStatus?.model || secondaryDevice}
+              deviceSerial={secondaryDevice}
+              connection={connectionTypeOf(secondaryDevice).toUpperCase()}
+              batteryLevel={secondaryStatus?.batteryLevel}
+              customPath={customPath}
+              outputDir={outputDir}
+              notify={notify}
+              onScreenshot={() => onScreenshotSecondary?.(secondaryDevice)}
+              screenshotBusy={screenshotBusy}
+              isRecording={secondaryIsRecording}
+              recordingBusy={secondaryRecordingBusy}
+              onToggleRecording={() => void handleSecondaryRecording()}
+              onClose={() => setSecondaryDevice(null)}
+              actionRail={
+                <div className="flex flex-col gap-1">
+                  {railActions.map(({ id, icon: Icon, label, rotate }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => void secondaryAction(id)}
+                      disabled={!secondaryDevice || !!secondaryPending[id]}
+                      title={label}
+                      aria-label={label}
+                      className={`flex h-8 w-8 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-primary/15 hover:text-primary disabled:opacity-25 ${focusRing}`}
+                    >
+                      <Icon size={14} className={rotate ? 'rotate-180' : ''} />
+                    </button>
+                  ))}
+                </div>
+              }
+            />
+          </div>
+        )}
+
         <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(290px,.9fr)_minmax(380px,1.3fr)]">
           <section className={`${panel} min-h-52 p-4`}>
             <div className="mb-3 flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
@@ -431,21 +528,37 @@ export default function DashboardLayout({
                 </div>
               ) : (
                 devices.map((serial) => (
-                  <button
+                  <div
                     key={serial}
-                    type="button"
-                    onClick={() => onSelectDevice(serial)}
-                    className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors ${focusRing} ${activeDevice === serial ? 'border-primary/50 bg-primary/10' : 'border-[var(--border-subtle)] bg-[var(--bg-elevated)] hover:border-[var(--border-base)]'}`}
+                    className={`flex w-full items-center gap-2 rounded-lg border p-3 transition-colors ${activeDevice === serial ? 'border-primary/50 bg-primary/10' : 'border-[var(--border-subtle)] bg-[var(--bg-elevated)] hover:border-[var(--border-base)]'}`}
                   >
-                    <Smartphone size={17} className="text-primary" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[11px] font-medium text-[var(--text-base)]">{serial}</span>
-                      <span className="text-[9px] text-[var(--text-subtle)]">{connectionTypeOf(serial).toUpperCase()}</span>
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => onSelectDevice(serial)}
+                      className={`flex min-w-0 flex-1 items-center gap-3 text-left ${focusRing}`}
+                    >
+                      <Smartphone size={17} className="text-primary" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[11px] font-medium text-[var(--text-base)]">{serial}</span>
+                        <span className="text-[9px] text-[var(--text-subtle)]">{connectionTypeOf(serial).toUpperCase()}</span>
+                      </span>
+                    </button>
                     <span className={`rounded px-1.5 py-0.5 text-[8px] ${runningDevices.includes(serial) ? 'bg-emerald-500/15 text-emerald-400' : 'bg-white/5 text-[var(--text-subtle)]'}`}>
                       {runningDevices.includes(serial) ? 'Active' : 'Online'}
                     </span>
-                  </button>
+                    {serial !== activeDevice && (
+                      <button
+                        type="button"
+                        onClick={() => toggleSecondaryDevice(serial)}
+                        title={secondaryDevice === serial ? 'Unpin from split view' : 'Activate alongside primary device'}
+                        aria-label={secondaryDevice === serial ? 'Unpin from split view' : 'Activate alongside primary device'}
+                        aria-pressed={secondaryDevice === serial}
+                        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors ${focusRing} ${secondaryDevice === serial ? 'bg-primary text-on-primary' : 'text-[var(--text-subtle)] hover:bg-primary/15 hover:text-primary'}`}
+                      >
+                        <Columns2 size={13} />
+                      </button>
+                    )}
+                  </div>
                 ))
               )}
             </div>

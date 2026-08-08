@@ -15,6 +15,8 @@ export type MacroStepKind =
   | 'install'
   | 'command'
   | 'recordScreen'
+  | 'assertText'
+  | 'assertPackage'
 
 /**
  * A resilient way to identify a UI element across runs / screen sizes. Captured
@@ -94,6 +96,14 @@ export interface RecordScreenStep {
   seconds: number
   label?: string
 }
+export interface AssertTextStep {
+  kind: 'assertText'
+  value: string
+}
+export interface AssertPackageStep {
+  kind: 'assertPackage'
+  package: string
+}
 
 export type MacroStep =
   | TapStep
@@ -108,6 +118,8 @@ export type MacroStep =
   | InstallStep
   | CommandStep
   | RecordScreenStep
+  | AssertTextStep
+  | AssertPackageStep
 
 export interface Macro {
   version: 1

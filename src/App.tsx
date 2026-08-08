@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open } from '@tauri-apps/plugin-dialog'
@@ -36,18 +36,28 @@ import FileManager from './components/file-manager'
 import IosMirrorModal from './components/ios-mirror'
 import WidgetLayout from './components/widget-layout'
 import KeymapController from './components/keymap-controller'
-import { useScrcpy } from './hooks/useScrcpy'
+import { DEFAULT_SCRCPY_CONFIG, useScrcpy } from './hooks/useScrcpy'
 import { useScreenshot } from './hooks/useScreenshot'
+import { useRecordingLibrary } from './hooks/useRecordingLibrary'
 import { useEmbeddedMirror } from './hooks/useEmbeddedMirror'
 import { useIosMirror, type IosDeviceInfo } from './hooks/useIosMirror'
 import { getVersion } from '@tauri-apps/api/app'
 import { isTauri } from './utils/tauriEnv'
+import { createBugReport } from './services/bugReportService'
+import { applyQualityMode } from './utils/adaptiveQuality'
 import { useI18n } from './i18n'
 import {
   appRouteFromHash,
   appRouteToHash,
   type AppRouteId,
 } from './navigation/appRoutes'
+import {
+  DEVICE_PROFILES_KEY,
+  DEVICE_CONFIG_PROFILES_KEY,
+  getPreset,
+  type DeviceConfigProfileMap,
+  type DeviceProfileMap,
+} from './types/presetProfiles'
 
 const OtherPages = lazy(() => import('./components/pages/OtherPages'))
 const DevicesPage = lazy(() => import('./components/pages/DevicesPage'))
@@ -126,10 +136,46 @@ function App() {
     installApk,
     historyDevices,
     clearHistory,
+    sessionHistory,
     isOnboardingOpen,
     setIsOnboardingOpen,
     completeOnboarding,
   } = useScrcpy()
+  const recordingLibrary = useRecordingLibrary()
+  const appliedDeviceProfileRef = useRef('')
+  const latestActiveDeviceRef = useRef(activeDevice)
+  const adaptiveRestartTimerRef = useRef<number | null>(null)
+  latestActiveDeviceRef.current = activeDevice
+
+  useEffect(() => () => {
+    if (adaptiveRestartTimerRef.current !== null) {
+      window.clearTimeout(adaptiveRestartTimerRef.current)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!activeDevice || appliedDeviceProfileRef.current === activeDevice) return
+    appliedDeviceProfileRef.current = activeDevice
+    try {
+      const profiles = JSON.parse(
+        localStorage.getItem(DEVICE_PROFILES_KEY) || '{}',
+      ) as DeviceProfileMap
+      const configProfiles = JSON.parse(
+        localStorage.getItem(DEVICE_CONFIG_PROFILES_KEY) || '{}',
+      ) as DeviceConfigProfileMap
+      const preset = profiles[activeDevice] ? getPreset(profiles[activeDevice]) : undefined
+      setConfig((previous) => ({
+        ...DEFAULT_SCRCPY_CONFIG,
+        scrcpyPath: previous.scrcpyPath,
+        recordPath: previous.recordPath,
+        ...(preset?.config || {}),
+        ...(configProfiles[activeDevice] || {}),
+        device: activeDevice,
+      }))
+    } catch {
+      setConfig((previous) => ({ ...previous, device: activeDevice }))
+    }
+  }, [activeDevice, setConfig])
 
   const [alertState, setAlertState] = useState<{
     isOpen: boolean
@@ -184,10 +230,66 @@ function App() {
     kind: 'success' | 'error' | 'info' | 'warning',
   ) => showAlert(title, message, kind)
 
+  const persistDeviceConfig = (serial: string, launchConfig: typeof config) => {
+    try {
+      const saved = JSON.parse(
+        localStorage.getItem(DEVICE_CONFIG_PROFILES_KEY) || '{}',
+      ) as DeviceConfigProfileMap
+      saved[serial] = { ...launchConfig, device: serial }
+      localStorage.setItem(DEVICE_CONFIG_PROFILES_KEY, JSON.stringify(saved))
+    } catch {
+      // Launch remains available if profile persistence is unavailable.
+    }
+  }
+
   const screenshot = useScreenshot({
     activeDevice,
     customPath: config.scrcpyPath,
   })
+  const [quickDiagnosticBusy, setQuickDiagnosticBusy] = useState(false)
+
+  const handleQuickDiagnostic = async () => {
+    if (!activeDevice || quickDiagnosticBusy) return
+    const outputDir = screenshot.screenshotDir || config.recordPath || ''
+    if (!outputDir) {
+      notify('Diagnostic bundle', 'Choose an output directory first.', 'warning')
+      return
+    }
+    if (!window.confirm('Create a diagnostic ZIP containing device information, screenshot, and unfiltered system logcat? Sensitive data may be included.')) return
+    setQuickDiagnosticBusy(true)
+    try {
+      const result = await createBugReport({
+        deviceSerial: activeDevice,
+        title: `Quick diagnostic — ${activeDevice}`,
+        description: 'Automatically collected diagnostic bundle.',
+        steps: '',
+        expected: '',
+        actual: '',
+        outputDir,
+        includeCurrentScreenshot: false,
+        includeNewScreenshot: true,
+        includeLogcat: true,
+        includeDeviceInfo: true,
+        includeAppInfo: false,
+        includeRecording: Boolean(
+          recordingLibrary.history.find((entry) => entry.deviceSerial === activeDevice)?.path,
+        ),
+        recordingPath: recordingLibrary.history.find(
+          (entry) => entry.deviceSerial === activeDevice,
+        )?.path,
+        customPath: config.scrcpyPath,
+      })
+      notify(
+        result.success ? 'Diagnostic bundle ready' : 'Diagnostic bundle failed',
+        result.success ? result.zipPath : result.error || 'Unknown error',
+        result.success ? (result.warnings.length ? 'warning' : 'success') : 'error',
+      )
+    } catch (error) {
+      notify('Diagnostic bundle failed', String(error), 'error')
+    } finally {
+      setQuickDiagnosticBusy(false)
+    }
+  }
 
   const embeddedMirror = useEmbeddedMirror()
   const [isMirrorStageOpen, setIsMirrorStageOpen] = useState(false)
@@ -269,8 +371,9 @@ function App() {
     }
   }
 
-  const handleScreenshotCapture = async () => {
-    if (!activeDevice) {
+  const handleScreenshotCapture = async (serial?: string) => {
+    const target = serial || activeDevice
+    if (!target) {
       showAlert(
         t('alerts.noDeviceSelectedTitle'),
         t('alerts.noDeviceSelectedMessage'),
@@ -278,7 +381,7 @@ function App() {
       )
       return
     }
-    const res = await screenshot.capture(activeDevice)
+    const res = await screenshot.capture(target)
     if (res.success) {
       notify(
         t('screenshot.captureSuccessTitle'),
@@ -478,6 +581,7 @@ function App() {
       return
     }
     let launchConfig = config
+    persistDeviceConfig(activeDevice, config)
     if (embeddedMirror.embedEnabled) {
       // Open the dedicated full-window stage first, then wait for it to lay
       // out so we can measure it and dock scrcpy to fill it.
@@ -660,9 +764,11 @@ function App() {
           fullscreen: !prev.fullscreen,
         }))
       }
-      onScreenshot={handleScreenshotCapture}
+      onScreenshot={() => handleScreenshotCapture()}
       isCapturing={screenshot.isCapturing}
       onOpenBugReport={() => setIsBugReportOpen(true)}
+      onQuickDiagnostic={() => void handleQuickDiagnostic()}
+      quickDiagnosticBusy={quickDiagnosticBusy}
       onOpenAppManager={() => setIsAppManagerOpen(true)}
       onOpenLogcat={() => setIsLogcatOpen(true)}
       onOpenDeepLink={() => setIsDeepLinkOpen(true)}
@@ -710,7 +816,7 @@ function App() {
           ? 'Cmd+Shift+S'
           : 'Ctrl+Shift+S'
       }
-      onCapture={handleScreenshotCapture}
+      onCapture={() => handleScreenshotCapture()}
       onChangeDirectory={handleChangeScreenshotDir}
       onOpenImage={(path) =>
         handleScreenshotAction(screenshot.openImage, path)
@@ -823,7 +929,8 @@ function App() {
             onStart={handleStart}
             onStop={handleStop}
             isRunning={sessionRunning}
-            onScreenshot={handleScreenshotCapture}
+            onScreenshot={() => handleScreenshotCapture()}
+            onScreenshotSecondary={(serial) => handleScreenshotCapture(serial)}
             screenshotBusy={screenshot.isCapturing}
             sessionBehavior={sessionBehavior}
             screenshotPanel={renderScreenshotManager(true)}
@@ -889,6 +996,8 @@ function App() {
             sessions={
               <SessionsPage
                 runningDevices={runningDevices}
+                activeSessions={sessionHistory.activeSessions}
+                history={sessionHistory.history}
                 activeDevice={activeDevice}
                 customPath={config.scrcpyPath}
                 onSelectDevice={setActiveDevice}
@@ -897,6 +1006,13 @@ function App() {
                   handleNavigate('dashboard')
                 }}
                 onStop={(serial) => void stopScrcpy(serial)}
+                onRunAgain={(entry) => {
+                  setActiveDevice(entry.deviceSerial)
+                  setConfig(entry.config)
+                  persistDeviceConfig(entry.deviceSerial, entry.config)
+                  void runScrcpy(entry.config)
+                }}
+                onClearHistory={sessionHistory.clearHistory}
                 settings={
                   <div className="space-y-4">
                     {controlPanel}
@@ -912,7 +1028,7 @@ function App() {
                 screenshotDir={screenshot.screenshotDir}
                 canCapture={!!activeDevice}
                 isCapturing={screenshot.isCapturing}
-                onCapture={handleScreenshotCapture}
+                onCapture={() => handleScreenshotCapture()}
                 onChangeDirectory={handleChangeScreenshotDir}
                 onOpenImage={(path) => handleScreenshotAction(screenshot.openImage, path)}
                 onOpenFolder={(path) => handleScreenshotAction(screenshot.openFolder, path)}
@@ -936,6 +1052,11 @@ function App() {
                 recordPath={config.recordPath}
                 onChangeRecordPath={handleChangeRecordPath}
                 onOpenDashboard={() => handleNavigate('dashboard')}
+                history={recordingLibrary.history}
+                onOpenRecording={(path) => void recordingLibrary.openRecording(path)}
+                onRevealRecording={(path) => void recordingLibrary.revealRecording(path)}
+                onRemoveEntry={(id, deleteFile) => void recordingLibrary.removeEntry(id, deleteFile)}
+                onClearHistory={recordingLibrary.clearHistory}
               />
             }
             fileExplorer={
@@ -986,11 +1107,36 @@ function App() {
               <PerformancePage
                 connected={sessionRunning}
                 bitrateMbps={config.bitrate}
+                adaptiveEnabled={
+                  config.qualityMode === 'adaptive' ||
+                  config.qualityMode === 'quality' ||
+                  config.qualityMode === 'balanced'
+                }
+                onApplySaferProfile={(profile) => {
+                  const nextConfig = applyQualityMode({ ...config, qualityMode: profile })
+                  setConfig(nextConfig)
+                  if (activeDevice) persistDeviceConfig(activeDevice, nextConfig)
+                  if (sessionRunning && activeDevice) {
+                    const serial = activeDevice
+                    if (adaptiveRestartTimerRef.current !== null) {
+                      window.clearTimeout(adaptiveRestartTimerRef.current)
+                    }
+                    void stopScrcpy(serial).then(() => {
+                      adaptiveRestartTimerRef.current = window.setTimeout(() => {
+                        adaptiveRestartTimerRef.current = null
+                        if (latestActiveDeviceRef.current === serial) {
+                          void runScrcpy(nextConfig)
+                        }
+                      }, 600)
+                    })
+                  }
+                }}
               />
             }
             inputControl={
               <InputControlPage
                 activeDevice={activeDevice}
+                devices={devices}
                 customPath={config.scrcpyPath}
                 notify={notify}
               />

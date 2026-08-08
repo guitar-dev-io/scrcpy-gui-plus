@@ -34,6 +34,7 @@ import {
   Rocket,
   PackagePlus,
   Video,
+  BadgeCheck,
 } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useMacroRecorder } from '../../hooks/useMacroRecorder'
@@ -74,6 +75,8 @@ const KIND_ICONS: Record<MacroStepKind, typeof Play> = {
   install: PackagePlus,
   command: Terminal,
   recordScreen: Video,
+  assertText: BadgeCheck,
+  assertPackage: BadgeCheck,
 }
 
 /** Short human label for a captured selector. */
@@ -125,6 +128,10 @@ function describeStep(s: MacroStep): string {
       return `adb ${s.command}`
     case 'recordScreen':
       return `record ${s.seconds}s${s.label ? ` (${s.label})` : ''}`
+    case 'assertText':
+      return `assert text "${s.value}"`
+    case 'assertPackage':
+      return `assert package ${s.package}`
   }
 }
 
@@ -222,6 +229,14 @@ export default function MacroRecorder({
           seconds: Math.min(Math.max(num('seconds', 5), 1), 180),
           label: f('label') || undefined,
         }
+        break
+      case 'assertText':
+        if (!f('value').trim()) return
+        step = { kind, value: f('value').trim() }
+        break
+      case 'assertPackage':
+        if (!f('package').trim()) return
+        step = { kind, package: f('package').trim() }
         break
     }
     if (step) macro.addStep(step)
@@ -347,6 +362,14 @@ export default function MacroRecorder({
 
   const handleExportFormat = async (format: 'maestro' | 'appium') => {
     try {
+      if (format === 'maestro' && macro.steps.some((step) => step.kind === 'assertPackage')) {
+        notify(
+          t('macro.failedTitle'),
+          'Maestro cannot assert the foreground package directly. Remove Assert Package or export to Appium.',
+          'warning',
+        )
+        return
+      }
       const macroObj = {
         version: 1 as const,
         name: macro.name || 'Macro',
@@ -423,6 +446,8 @@ export default function MacroRecorder({
     'install',
     'command',
     'recordScreen',
+    'assertText',
+    'assertPackage',
   ]
 
   const stepsList = (
@@ -818,7 +843,7 @@ export default function MacroRecorder({
                     <button
                       key={k}
                       onClick={() => setKind(k)}
-                      title={t(`macro.kind_${k}`)}
+                      title={k === 'assertText' ? 'Assert Text' : k === 'assertPackage' ? 'Assert Package' : t(`macro.kind_${k}`)}
                       className={`flex flex-col items-center gap-1 py-1.5 rounded-md transition-all ${
                         kind === k
                           ? 'bg-primary text-on-primary'
@@ -827,7 +852,7 @@ export default function MacroRecorder({
                     >
                       <Icon size={13} />
                       <span className="text-[7px] font-black uppercase tracking-tighter">
-                        {t(`macro.kind_${k}`)}
+                        {k === 'assertText' ? 'Assert Text' : k === 'assertPackage' ? 'Assert App' : t(`macro.kind_${k}`)}
                       </span>
                     </button>
                   )
@@ -902,6 +927,12 @@ export default function MacroRecorder({
                       className="flex-1 bg-black/40 border border-zinc-800 rounded-md px-2 py-1.5 text-[11px] text-zinc-200 focus:border-primary/40 focus:outline-none"
                     />
                   </>
+                )}
+                {kind === 'assertText' && (
+                  <input value={f('value')} onChange={(e) => setF('value', e.target.value)} placeholder="Expected visible text" className="flex-1 bg-black/40 border border-zinc-800 rounded-md px-2 py-1.5 text-[11px] text-zinc-200 focus:border-primary/40 focus:outline-none" />
+                )}
+                {kind === 'assertPackage' && (
+                  <input value={f('package')} onChange={(e) => setF('package', e.target.value)} placeholder="Expected package (com.example.app)" className="flex-1 bg-black/40 border border-zinc-800 rounded-md px-2 py-1.5 text-[11px] font-mono text-zinc-200 focus:border-primary/40 focus:outline-none" />
                 )}
                 <button
                   onClick={addCurrentStep}

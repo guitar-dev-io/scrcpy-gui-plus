@@ -7,7 +7,8 @@ import {
     AlertTriangle,
     Wifi,
     WifiOff,
-    ShieldCheck
+    ShieldCheck,
+    RefreshCw
 } from 'lucide-react';
 import { useI18n } from '../../i18n';
 import { useConnectionHealth } from '../../hooks/useConnectionHealth';
@@ -18,6 +19,8 @@ interface ConnectionHealthProps {
     onClose: () => void;
     connected: boolean;
     bitrateMbps?: number;
+    adaptiveEnabled?: boolean;
+    onApplySaferProfile?: (profile: 'balanced' | 'low-latency') => void;
 }
 
 function Metric({
@@ -50,10 +53,13 @@ export default function ConnectionHealth({
     embedded = false,
     onClose,
     connected,
-    bitrateMbps
+    bitrateMbps,
+    adaptiveEnabled = false,
+    onApplySaferProfile
 }: ConnectionHealthProps) {
     const { t } = useI18n();
     const m = useConnectionHealth({ connected, bitrateMbps, enabled: isOpen || embedded });
+    const recommendedProfile = m.droppedFrames >= 30 ? 'low-latency' : m.droppedFrames >= 10 ? 'balanced' : null;
 
     if (!isOpen && !embedded) return null;
 
@@ -129,6 +135,18 @@ export default function ConnectionHealth({
                             <span className="text-[10px] font-bold text-amber-400">
                                 {t('connectionHealth.fallbackNotice')}
                             </span>
+                        </div>
+                    )}
+
+                    {adaptiveEnabled && recommendedProfile && onApplySaferProfile && (
+                        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
+                            <div className="flex items-start justify-between gap-3">
+                                <div>
+                                    <p className="text-[10px] font-bold text-amber-300">Adaptive recovery recommended</p>
+                                    <p className="mt-1 text-[8px] leading-relaxed text-zinc-500">{m.droppedFrames} dropped frames detected. Apply {recommendedProfile === 'balanced' ? 'Balanced' : 'Low Latency'} and restart this session.</p>
+                                </div>
+                                <button type="button" onClick={() => onApplySaferProfile(recommendedProfile)} className="flex shrink-0 items-center gap-1 rounded-lg border border-amber-400/30 px-2.5 py-1.5 text-[8px] font-bold text-amber-300 hover:bg-amber-400/10"><RefreshCw size={10} /> Apply & restart</button>
+                            </div>
                         </div>
                     )}
 

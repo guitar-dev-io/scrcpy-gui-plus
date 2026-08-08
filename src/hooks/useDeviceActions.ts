@@ -1,6 +1,10 @@
 import { useCallback, useRef, useState } from 'react';
 import { runDeviceAction, startRecording, stopRecording } from '../services/deviceActionService';
 import type { ActionResult, DeviceActionId, RecordingResult } from '../types/deviceControl';
+import {
+    RECORDING_COMPLETED_EVENT,
+    RECORDING_STARTED_EVENT
+} from './useRecordingLibrary';
 
 interface UseDeviceActionsOptions {
     activeDevice: string;
@@ -17,6 +21,8 @@ export function useDeviceActions({ activeDevice, customPath }: UseDeviceActionsO
     const [recordingBusy, setRecordingBusy] = useState(false);
     // Tracks in-flight actions to reject duplicate clicks synchronously.
     const inFlight = useRef<Set<string>>(new Set());
+    const recordingStartedAt = useRef<string>('');
+    const recordingSerial = useRef<string>('');
 
     const runAction = useCallback(
         async (action: DeviceActionId): Promise<ActionResult> => {
@@ -52,7 +58,15 @@ export function useDeviceActions({ activeDevice, customPath }: UseDeviceActionsO
         setRecordingBusy(true);
         try {
             const res = await startRecording(serial, customPath);
-            if (res.success) setIsRecording(true);
+            if (res.success) {
+                const startedAt = new Date().toISOString();
+                recordingStartedAt.current = startedAt;
+                recordingSerial.current = serial;
+                setIsRecording(true);
+                window.dispatchEvent(new CustomEvent(RECORDING_STARTED_EVENT, {
+                    detail: { deviceSerial: serial, startedAt }
+                }));
+            }
             return res;
         } catch (e) {
             return { success: false, action: 'start_recording', error: String(e), errorCode: 'invoke_failed' };
@@ -63,7 +77,7 @@ export function useDeviceActions({ activeDevice, customPath }: UseDeviceActionsO
 
     const finishRecording = useCallback(
         async (outputDir: string): Promise<RecordingResult> => {
-            const serial = (activeDevice || '').trim();
+            const serial = (recordingSerial.current || activeDevice || '').trim();
             if (!serial) {
                 return { success: false, action: 'stop_recording', error: 'No device selected', errorCode: 'no_device' };
             }
@@ -74,6 +88,19 @@ export function useDeviceActions({ activeDevice, customPath }: UseDeviceActionsO
             try {
                 const res = await stopRecording(serial, outputDir);
                 setIsRecording(false);
+                if (res.success && res.output) {
+                    const completedAt = new Date().toISOString();
+                    window.dispatchEvent(new CustomEvent(RECORDING_COMPLETED_EVENT, {
+                        detail: {
+                            deviceSerial: serial,
+                            path: res.output,
+                            startedAt: recordingStartedAt.current || completedAt,
+                            completedAt
+                        }
+                    }));
+                    recordingStartedAt.current = '';
+                    recordingSerial.current = '';
+                }
                 return res;
             } catch (e) {
                 setIsRecording(false);

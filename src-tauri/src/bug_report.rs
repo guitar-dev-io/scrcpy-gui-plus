@@ -252,8 +252,9 @@ pub fn create_zip_archive(zip_path: &Path, entries: &[ZipEntry]) -> Result<(), S
                 writer.write_all(b).map_err(|e| e.to_string())?;
             }
             ZipSource::Path(p) => {
-                let data = std::fs::read(p).map_err(|e| format!("{}: {}", p.display(), e))?;
-                writer.write_all(&data).map_err(|e| e.to_string())?;
+                let mut source =
+                    std::fs::File::open(p).map_err(|e| format!("{}: {}", p.display(), e))?;
+                std::io::copy(&mut source, &mut writer).map_err(|e| e.to_string())?;
             }
         }
     }
@@ -618,6 +619,8 @@ async fn generate(
             })
         }
         Err(e) => {
+            // Do not leave a corrupt/partial archive that looks usable.
+            let _ = std::fs::remove_file(&zip_path);
             emit_progress(window, "package", "failed", &e);
             Ok(BugReportResult {
                 success: false,

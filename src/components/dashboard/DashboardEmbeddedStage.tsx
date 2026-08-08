@@ -10,6 +10,7 @@ import {
   Smartphone,
   Square,
   Wifi,
+  X,
 } from 'lucide-react'
 import { useEmbeddedSession } from '../../hooks/useEmbeddedSession'
 import { useDeviceInput } from '../../hooks/useDeviceInput'
@@ -38,6 +39,10 @@ interface DashboardEmbeddedStageProps {
   recordingBusy?: boolean
   onToggleRecording?: () => void
   onAddDevice?: () => void
+  /** Renders a smaller stage for showing a second device alongside the primary one. */
+  compact?: boolean
+  /** Shows a close control in the header; used to unpin a secondary device. */
+  onClose?: () => void
 }
 
 const focusRing =
@@ -70,11 +75,14 @@ export default function DashboardEmbeddedStage({
   recordingBusy = false,
   onToggleRecording,
   onAddDevice,
+  compact = false,
+  onClose,
 }: DashboardEmbeddedStageProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const { settings } = useEmbeddedWorkspaceSettings()
   const [zoom, setZoom] = useState(100)
   const [fullscreen, setFullscreen] = useState(false)
+  const basePhoneHeight = compact ? 300 : BASE_PHONE_HEIGHT
 
   const {
     canvasRef,
@@ -172,7 +180,9 @@ export default function DashboardEmbeddedStage({
   }
 
   return (
-    <section className="flex min-h-127.5 min-w-0 flex-col overflow-hidden rounded-2xl border border-(--border-subtle) bg-[var(--bg-surface)] shadow-[var(--shadow-md)]">
+    <section
+      className={`flex min-w-0 flex-col overflow-hidden rounded-2xl border border-(--border-subtle) bg-[var(--bg-surface)] shadow-[var(--shadow-md)] ${compact ? 'min-h-80' : 'min-h-127.5'}`}
+    >
       <div className="flex min-h-12 shrink-0 flex-wrap items-center gap-3 border-b border-(--border-subtle) bg-[var(--bg-elevated)]/75 px-4 py-2">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-primary/25 bg-primary/10 text-primary">
           <MonitorSmartphone size={15} />
@@ -229,10 +239,21 @@ export default function DashboardEmbeddedStage({
           >
             <Maximize2 size={12} />
           </button>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              title="Unpin secondary device"
+              aria-label="Unpin secondary device"
+              className={`flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-subtle)] transition-colors hover:bg-red-500/15 hover:text-red-400 ${focusRing}`}
+            >
+              <X size={12} />
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="relative flex min-h-102.5 min-w-0 flex-1 items-stretch overflow-hidden bg-[radial-gradient(circle_at_50%_42%,rgba(var(--primary-rgb),.09),transparent_43%),var(--bg-base)]">
+      <div className={`relative flex min-w-0 flex-1 items-stretch overflow-hidden bg-[radial-gradient(circle_at_50%_42%,rgba(var(--primary-rgb),.09),transparent_43%),var(--bg-base)] ${compact ? 'min-h-64' : 'min-h-102.5'}`}>
         <aside
           aria-label="Device controls"
           className="z-10 flex w-12 shrink-0 flex-col items-center justify-center border-r border-(--border-subtle) bg-[var(--bg-elevated)]/72 p-1.5"
@@ -243,7 +264,7 @@ export default function DashboardEmbeddedStage({
         <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-auto p-3 sm:p-5">
           <div
             className="relative aspect-[9/19] max-h-full max-w-full shrink-0 overflow-hidden rounded-[27px] border-[3px] border-[#454b59] bg-[#05070b] p-[3px] shadow-[0_24px_70px_rgba(0,0,0,.48),0_0_0_1px_rgba(255,255,255,.13)]"
-            style={{ height: `${Math.round((BASE_PHONE_HEIGHT * zoom) / 100)}px` }}
+            style={{ height: `${Math.round((basePhoneHeight * zoom) / 100)}px` }}
           >
             <div className="flex h-full w-full overflow-hidden rounded-[22px] bg-[radial-gradient(circle_at_50%_22%,rgba(var(--primary-rgb),.22),transparent_38%),linear-gradient(165deg,#151c2c,#090c13_62%)]">
               {deviceSerial ? (

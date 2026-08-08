@@ -36,6 +36,7 @@ import {
   MonitorSmartphone,
   MonitorPlay,
   Gamepad2,
+  FileArchive,
   type LucideIcon,
 } from 'lucide-react'
 import { useI18n } from '../../i18n'
@@ -61,6 +62,8 @@ interface DeviceControlToolbarProps {
   onScreenshot: () => void
   isCapturing: boolean
   onOpenBugReport: () => void
+  onQuickDiagnostic: () => void
+  quickDiagnosticBusy?: boolean
   onOpenAppManager: () => void
   onOpenLogcat: () => void
   onOpenDeepLink: () => void
@@ -138,6 +141,8 @@ export default function DeviceControlToolbar({
   onScreenshot,
   isCapturing,
   onOpenBugReport,
+  onQuickDiagnostic,
+  quickDiagnosticBusy = false,
   onOpenAppManager,
   onOpenLogcat,
   onOpenDeepLink,
@@ -356,6 +361,14 @@ export default function DeviceControlToolbar({
             label: t('deviceToolbar.bugReport'),
             onClick: onOpenBugReport,
             disabled,
+          },
+          {
+            key: 'quickDiagnostic',
+            icon: FileArchive,
+            label: 'Quick Diagnostic ZIP',
+            onClick: onQuickDiagnostic,
+            loading: quickDiagnosticBusy,
+            disabled: disabled || quickDiagnosticBusy,
           },
           {
             key: 'appManager',

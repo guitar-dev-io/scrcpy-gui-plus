@@ -17,6 +17,10 @@ import {
   Loader2,
   CheckSquare,
   Smartphone,
+  ChevronLeft,
+  Home,
+  SquareStack,
+  Send,
 } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useDeviceWorkspace } from '../../hooks/useDeviceWorkspace'
@@ -32,6 +36,7 @@ import {
 } from '../../types/deviceWorkspace'
 import type { ScrcpyConfig } from '../../hooks/useScrcpy'
 import type { ToolbarNotifier } from '../device-control-toolbar'
+import type { Macro } from '../../types/macro'
 
 interface DeviceWorkspaceProps {
   isOpen: boolean
@@ -47,6 +52,15 @@ interface DeviceWorkspaceProps {
 }
 
 const FILTERS: WorkspaceFilter[] = ['all', 'ungrouped', 'qa', 'pos', 'demo']
+
+function loadMacros(): Macro[] {
+  try {
+    const parsed = JSON.parse(localStorage.getItem('scrcpy_macros') || '[]')
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
 
 export default function DeviceWorkspace({
   isOpen,
@@ -70,6 +84,11 @@ export default function DeviceWorkspace({
   })
   const [filter, setFilter] = useState<WorkspaceFilter>('all')
   const [restartPkg, setRestartPkg] = useState('')
+  const [broadcastText, setBroadcastText] = useState('')
+  const [tapPoint, setTapPoint] = useState({ x: '0', y: '0' })
+  const [swipe, setSwipe] = useState({ x1: '0', y1: '0', x2: '0', y2: '0' })
+  const [macroName, setMacroName] = useState('')
+  const macros = useMemo(() => loadMacros(), [isOpen])
   const [viewMode, setViewMode] = useState<'grid' | 'live'>('grid')
   const GRID_FPS_KEY = 'scrcpy_preview_grid_fps'
   const [gridFps, setGridFpsState] = useState<number>(() =>
@@ -143,6 +162,15 @@ export default function DeviceWorkspace({
       t('workspace.screenshotAllDone', { count: ws.targets.length }),
       'success',
     )
+  }
+
+  const runSync = async (label: string, task: () => Promise<void>) => {
+    try {
+      await task()
+      notify('Multi-device sync complete', `${label} sent to ${ws.targets.length} device(s).`, 'success')
+    } catch (error) {
+      notify('Multi-device sync failed', String(error), 'error')
+    }
   }
 
   const recordAll = async () => {
@@ -362,6 +390,35 @@ export default function DeviceWorkspace({
                 >
                   <RotateCcw size={13} /> {t('workspace.restartAppAll')}
                 </button>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-primary/15 bg-primary/[.04] p-2">
+                <span className="text-[8px] font-black uppercase tracking-widest text-primary">Sync input</span>
+                <button onClick={() => void runSync('Back', () => ws.broadcastAction('back'))} disabled={ws.busy} className={batchBtn}><ChevronLeft size={12} /> Back</button>
+                <button onClick={() => void runSync('Home', () => ws.broadcastAction('home'))} disabled={ws.busy} className={batchBtn}><Home size={12} /> Home</button>
+                <button onClick={() => void runSync('Recents', () => ws.broadcastAction('recents'))} disabled={ws.busy} className={batchBtn}><SquareStack size={12} /> Recents</button>
+                <input
+                  value={broadcastText}
+                  onChange={(event) => setBroadcastText(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && broadcastText.trim()) {
+                      void runSync('Text', () => ws.broadcastText(broadcastText))
+                      setBroadcastText('')
+                    }
+                  }}
+                  placeholder="Text to selected devices…"
+                  className="min-w-44 flex-1 rounded-lg border border-zinc-800 bg-black/40 px-3 py-1.5 text-[10px] text-zinc-200 outline-none focus:border-primary/50"
+                />
+                <button onClick={() => { void runSync('Text', () => ws.broadcastText(broadcastText)); setBroadcastText('') }} disabled={ws.busy || !broadcastText.trim()} className={batchBtn}><Send size={12} /> Send</button>
+                <div className="basis-full" />
+                <span className="text-[8px] font-black uppercase tracking-widest text-zinc-600">Tap</span>
+                <input aria-label="Tap X" value={tapPoint.x} onChange={(event) => setTapPoint((value) => ({ ...value, x: event.target.value }))} className="w-16 rounded-md border border-zinc-800 bg-black/40 px-2 py-1.5 text-[9px] text-zinc-200" placeholder="X" />
+                <input aria-label="Tap Y" value={tapPoint.y} onChange={(event) => setTapPoint((value) => ({ ...value, y: event.target.value }))} className="w-16 rounded-md border border-zinc-800 bg-black/40 px-2 py-1.5 text-[9px] text-zinc-200" placeholder="Y" />
+                <button onClick={() => void runSync('Tap', () => ws.broadcastInput({ kind: 'tap', x: Number(tapPoint.x) || 0, y: Number(tapPoint.y) || 0 }))} disabled={ws.busy} className={batchBtn}>Tap all</button>
+                <span className="ml-2 text-[8px] font-black uppercase tracking-widest text-zinc-600">Swipe</span>
+                {(['x1', 'y1', 'x2', 'y2'] as const).map((key) => <input key={key} aria-label={`Swipe ${key}`} value={swipe[key]} onChange={(event) => setSwipe((value) => ({ ...value, [key]: event.target.value }))} className="w-14 rounded-md border border-zinc-800 bg-black/40 px-2 py-1.5 text-[9px] text-zinc-200" placeholder={key.toUpperCase()} />)}
+                <button onClick={() => void runSync('Swipe', () => ws.broadcastInput({ kind: 'swipe', x1: Number(swipe.x1) || 0, y1: Number(swipe.y1) || 0, x2: Number(swipe.x2) || 0, y2: Number(swipe.y2) || 0, durationMs: 300 }))} disabled={ws.busy} className={batchBtn}>Swipe all</button>
+                <select value={macroName} onChange={(event) => setMacroName(event.target.value)} className="ml-auto min-w-36 rounded-lg border border-zinc-800 bg-black/40 px-2 py-1.5 text-[9px] text-zinc-300"><option value="">Saved macro…</option>{macros.map((macro) => <option key={macro.name} value={macro.name}>{macro.name}</option>)}</select>
+                <button onClick={() => { const macro = macros.find((item) => item.name === macroName); if (macro) void runSync(`Macro ${macro.name}`, () => ws.broadcastMacro(macro)) }} disabled={ws.busy || !macroName} className={batchBtn}><Play size={12} /> Run macro</button>
               </div>
             </>
           )}

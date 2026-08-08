@@ -310,6 +310,23 @@ export default function ControlPanel({
                             </div>
 
                             <div className={`space-y-2.5 pt-0.5 transition-all duration-300 ${config.otgPure ? 'opacity-30 pointer-events-none grayscale' : 'opacity-100'}`}>
+                                <CustomSelect
+                                    label="Quality Mode"
+                                    value={config.qualityMode || 'manual'}
+                                    onChange={(val) => handleChange('qualityMode', val)}
+                                    options={[
+                                        { value: 'manual', label: 'Manual' },
+                                        { value: 'adaptive', label: 'Adaptive (USB / Wi-Fi)' },
+                                        { value: 'quality', label: 'Quality · 1080p / 60 / 16M' },
+                                        { value: 'balanced', label: 'Balanced · 900p / 60 / 8M' },
+                                        { value: 'low-latency', label: 'Low Latency · 720p / 30 / 4M' },
+                                    ]}
+                                />
+                                {config.qualityMode && config.qualityMode !== 'manual' && (
+                                    <p className="rounded-lg border border-primary/20 bg-primary/5 px-2.5 py-2 text-[8px] leading-relaxed text-zinc-500">
+                                        The selected profile is applied when the next session starts. Adaptive uses Quality for USB and Balanced for wireless devices.
+                                    </p>
+                                )}
                                 <PerformanceGrid />
                                 <BitrateControl label={t('controlPanel.bitrate')} value={config.bitrate || 8} onChange={(v) => handleChange('bitrate', v)} />
                             </div>

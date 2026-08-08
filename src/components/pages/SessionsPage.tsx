@@ -4,19 +4,34 @@ import {
   Eye,
   MonitorPlay,
   Settings2,
+  RotateCcw,
+  Trash2,
   Square,
   X,
 } from 'lucide-react'
 import { useDeviceStatus } from '../../hooks/useDeviceStatus'
+import type { SessionHistoryEntry } from '../../types/history'
 
 interface SessionsPageProps {
   runningDevices: string[]
+  activeSessions: Record<string, SessionHistoryEntry>
+  history: SessionHistoryEntry[]
   activeDevice: string
   customPath?: string
   onSelectDevice: (serial: string) => void
   onView: (serial: string) => void
   onStop: (serial: string) => void
+  onRunAgain: (entry: SessionHistoryEntry) => void
+  onClearHistory: () => void
   settings: ReactNode
+}
+
+function formatDuration(durationMs: number): string {
+  const seconds = Math.max(0, Math.round(durationMs / 1000))
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const tail = `${String(minutes).padStart(hours ? 2 : 1, '0')}:${String(seconds % 60).padStart(2, '0')}`
+  return hours ? `${hours}:${tail}` : tail
 }
 
 function SessionRow({
@@ -26,6 +41,8 @@ function SessionRow({
   onSelect,
   onView,
   onStop,
+  startedAt,
+  now,
 }: {
   serial: string
   selected: boolean
@@ -33,6 +50,8 @@ function SessionRow({
   onSelect: () => void
   onView: () => void
   onStop: () => void
+  startedAt?: string
+  now: number
 }) {
   const { status } = useDeviceStatus({
     activeDevice: serial,
@@ -50,8 +69,8 @@ function SessionRow({
           <span className="mt-0.5 block truncate text-[8px] text-[var(--text-subtle)]">{serial}{status?.androidVersion ? ` · Android ${status.androidVersion}` : ''}</span>
         </span>
       </button>
-      <span className="text-[var(--text-subtle)]">—</span>
-      <span className="text-[var(--text-subtle)]">—</span>
+      <span className="text-[var(--text-subtle)]">{startedAt ? new Date(startedAt).toLocaleTimeString() : '—'}</span>
+      <span className="tabular-nums text-[var(--text-subtle)]">{startedAt ? formatDuration(now - new Date(startedAt).getTime()) : '—'}</span>
       <span><span className="rounded bg-emerald-500/15 px-2 py-1 text-[8px] font-semibold text-emerald-400">Active</span></span>
       <div className="flex items-center justify-end gap-1">
         <button type="button" onClick={onView} className="flex h-7 items-center gap-1 rounded-md px-2 text-[9px] text-[var(--text-muted)] hover:bg-white/5 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"><Eye size={11} /> View</button>
@@ -63,14 +82,25 @@ function SessionRow({
 
 export default function SessionsPage({
   runningDevices,
+  activeSessions,
+  history,
   activeDevice,
   customPath,
   onSelectDevice,
   onView,
   onStop,
+  onRunAgain,
+  onClearHistory,
   settings,
 }: SessionsPageProps) {
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [now, setNow] = useState(Date.now())
+
+  useEffect(() => {
+    if (runningDevices.length === 0) return
+    const interval = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(interval)
+  }, [runningDevices.length])
 
   useEffect(() => {
     if (!settingsOpen) return
@@ -114,15 +144,42 @@ export default function SessionsPage({
                 onSelect={() => onSelectDevice(serial)}
                 onView={() => onView(serial)}
                 onStop={() => onStop(serial)}
+                startedAt={activeSessions[serial]?.startedAt}
+                now={now}
               />
             ))
           )}
         </div>
       </section>
 
+      <section aria-labelledby="session-history-title" className="mt-4 overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
+        <div className="flex items-center justify-between border-b border-[var(--border-subtle)] px-4 py-3">
+          <div>
+            <h2 id="session-history-title" className="text-[10px] font-semibold text-[var(--text-muted)]">Recent Sessions</h2>
+            <p className="mt-0.5 text-[8px] text-[var(--text-subtle)]">Saved locally · latest {history.length}</p>
+          </div>
+          {history.length > 0 && <button type="button" onClick={onClearHistory} className="flex items-center gap-1 text-[9px] text-[var(--text-subtle)] hover:text-red-400"><Trash2 size={11} /> Clear</button>}
+        </div>
+        {history.length === 0 ? (
+          <div className="flex min-h-28 items-center justify-center px-4 text-[10px] text-[var(--text-subtle)]">Completed sessions will appear here.</div>
+        ) : (
+          <div className="custom-scrollbar max-h-72 overflow-auto">
+            {history.map((entry) => (
+              <div key={entry.id} className="grid min-w-[690px] grid-cols-[minmax(220px,1.5fr)_130px_110px_100px_120px] items-center border-b border-[var(--border-subtle)] px-4 py-3 text-[10px] last:border-0 hover:bg-white/[.025]">
+                <div className="min-w-0"><p className="truncate font-medium text-[var(--text-base)]">{entry.deviceSerial}</p><p className="mt-0.5 text-[8px] text-[var(--text-subtle)]">{entry.config.sessionMode} · {entry.config.res === '0' ? 'Original' : entry.config.res || 'Original'} · {entry.config.bitrate || 8}M</p></div>
+                <span className="text-[var(--text-subtle)]">{new Date(entry.startedAt).toLocaleString()}</span>
+                <span className="tabular-nums text-[var(--text-subtle)]">{formatDuration(entry.durationMs || 0)}</span>
+                <span className="text-[8px] text-[var(--text-subtle)]">Completed</span>
+                <button type="button" onClick={() => onRunAgain(entry)} className="flex h-7 items-center justify-center gap-1 rounded-md text-[9px] text-primary hover:bg-primary/10"><RotateCcw size={11} /> Run again</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
       <aside className="mt-4 flex items-start gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]/55 p-4 text-[10px] text-[var(--text-subtle)]">
         <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[var(--border-base)]">i</span>
-        <p>This application currently exposes live runtime sessions only. Start time, duration, and completed history are not persisted by the existing session store.</p>
+        <p>Session history is stored locally on this computer. “Run again” restores the saved launch configuration.</p>
       </aside>
 
       {settingsOpen && (

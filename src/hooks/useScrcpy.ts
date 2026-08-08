@@ -3,6 +3,8 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { isTauri } from '../utils/tauriEnv'
 import { useI18n } from '../i18n'
+import { useSessionHistory } from './useSessionHistory'
+import { applyQualityMode, type QualityMode } from '../utils/adaptiveQuality'
 
 export interface RenderDriverOption {
   id: string
@@ -58,7 +60,20 @@ export interface ScrcpyConfig {
   windowY?: number
   windowWidth?: number
   windowHeight?: number
+  /** Applies a launch-time performance profile. Manual preserves explicit values. */
+  qualityMode?: QualityMode
 }
+
+export const DEFAULT_SCRCPY_CONFIG: ScrcpyConfig = {
+  device: '', sessionMode: 'mirror', bitrate: 8, fps: undefined,
+  stayAwake: false, turnOff: false, audioEnabled: true, audioCodec: 'auto',
+  alwaysOnTop: false, res: '0', recordPath: '', vdWidth: 1920,
+  vdHeight: 1080, vdDpi: 420, aspectRatioLock: true, hidKeyboard: false,
+  hidMouse: false, flexDisplay: false, cameraTorch: false, cameraZoom: 1.0,
+  backgroundColor: '', keepActive: false, vsync: true, qualityMode: 'manual',
+}
+
+export const SESSION_LAUNCH_REQUESTED_EVENT = 'scrcpy-session-launch-requested'
 
 export function useScrcpy() {
   const { t } = useI18n()
@@ -103,33 +118,12 @@ export function useScrcpy() {
       }
     },
   )
-  const [config, setConfig] = useState<ScrcpyConfig>({
-    device: '',
-    sessionMode: 'mirror',
-    bitrate: 8,
-    fps: undefined,
-    stayAwake: false,
-    turnOff: false,
-    audioEnabled: true,
-    audioCodec: 'auto',
-    alwaysOnTop: false,
-    res: '0',
-    recordPath: '',
-    vdWidth: 1920,
-    vdHeight: 1080,
-    vdDpi: 420,
-    aspectRatioLock: true,
-    hidKeyboard: false,
-    hidMouse: false,
-    // v4 features
-    flexDisplay: false,
-    cameraTorch: false,
-    cameraZoom: 1.0,
-    backgroundColor: '',
-    keepActive: false,
-    vsync: true,
-  })
+  const [config, setConfig] = useState<ScrcpyConfig>({ ...DEFAULT_SCRCPY_CONFIG })
   const prevDevicesRef = useRef<string[]>([])
+  const pendingSessionConfigsRef = useRef<Record<string, ScrcpyConfig>>({})
+  const latestConfigRef = useRef(config)
+  latestConfigRef.current = config
+  const sessionHistory = useSessionHistory()
 
   useEffect(() => {
     const savedAuto = localStorage.getItem('scrcpy_auto_connect')
@@ -242,6 +236,14 @@ export function useScrcpy() {
     // Event listeners rely on Tauri IPC; skip outside the Tauri webview.
     if (!isTauri()) return
 
+    const registerLaunch = (event: Event) => {
+      const launchConfig = (event as CustomEvent<ScrcpyConfig>).detail
+      if (launchConfig?.device) {
+        pendingSessionConfigsRef.current[launchConfig.device] = launchConfig
+      }
+    }
+    window.addEventListener(SESSION_LAUNCH_REQUESTED_EVENT, registerLaunch)
+
     const unlistenLog = listen<string>('scrcpy-log', (event) => {
       const newLines = event.payload.split('\n')
       setLogs((prev) => [...prev.slice(-(100 - newLines.length)), ...newLines])
@@ -257,6 +259,18 @@ export function useScrcpy() {
             return prev.filter((d) => d !== data.device)
           }
         })
+        if (data.running) {
+          sessionHistory.startSession(
+            data.device,
+            pendingSessionConfigsRef.current[data.device] || {
+              ...latestConfigRef.current,
+              device: data.device,
+            },
+          )
+        } else {
+          sessionHistory.endSession(data.device)
+          delete pendingSessionConfigsRef.current[data.device]
+        }
       } else if (data.type === 'downloading') {
         setIsDownloading(true)
         setStatus(data.message)
@@ -271,10 +285,11 @@ export function useScrcpy() {
     })
 
     return () => {
+      window.removeEventListener(SESSION_LAUNCH_REQUESTED_EVENT, registerLaunch)
       unlistenLog.then((f) => f())
       unlistenStatus.then((f) => f())
     }
-  }, [t])
+  }, [t, sessionHistory.startSession, sessionHistory.endSession])
 
   // Auto-scan USB devices every 3 seconds when auto-connect is enabled.
   // This detects newly plugged-in USB devices without requiring a manual refresh.
@@ -427,14 +442,25 @@ export function useScrcpy() {
     }
   }
 
-  const runScrcpy = async (config: ScrcpyConfig) => {
+  const runScrcpy = async (launchConfig: ScrcpyConfig) => {
+    const resolvedConfig = applyQualityMode(launchConfig)
+    if (resolvedConfig.device === activeDevice && resolvedConfig !== launchConfig) {
+      setConfig((previous) => ({
+        ...previous,
+        bitrate: resolvedConfig.bitrate,
+        fps: resolvedConfig.fps,
+        res: resolvedConfig.res,
+      }))
+    }
+    pendingSessionConfigsRef.current[resolvedConfig.device] = resolvedConfig
     try {
       setLogs((prev) => [
         ...prev.slice(-100),
-        t('logs.initializingScrcpy', { device: config.device }),
+        t('logs.initializingScrcpy', { device: resolvedConfig.device }),
       ])
-      await invoke('run_scrcpy', { config })
+      await invoke('run_scrcpy', { config: resolvedConfig })
     } catch (e: any) {
+      delete pendingSessionConfigsRef.current[resolvedConfig.device]
       setLogs((prev) => [
         ...prev.slice(-100),
         t('logs.failedToStartScrcpy', { error: String(e) }),
@@ -879,6 +905,7 @@ export function useScrcpy() {
     installApk,
     historyDevices,
     clearHistory,
+    sessionHistory,
     sessionRunning: runningDevices.includes(activeDevice || ''),
     isOnboardingOpen,
     setIsOnboardingOpen,

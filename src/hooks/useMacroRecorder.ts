@@ -16,6 +16,7 @@ import {
 } from '../types/macro'
 import {
   findNodeBySelector,
+  flattenNodes,
   nodeCenter,
   parseUiHierarchy,
   type UiNode,
@@ -36,6 +37,38 @@ function loadMacros(): Macro[] {
   } catch {
     return []
   }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+export function validateImportedMacro(value: unknown): value is Macro {
+  if (!isPlainObject(value) || value.version !== 1 || typeof value.name !== 'string') return false
+  if (value.name.length > 100 || !Array.isArray(value.steps) || value.steps.length > 500) return false
+  return value.steps.every((raw) => {
+    if (!isPlainObject(raw) || typeof raw.kind !== 'string') return false
+    const finite = (...keys: string[]) => keys.every((key) => Number.isFinite(raw[key]))
+    switch (raw.kind) {
+      case 'tap': return finite('x', 'y')
+      case 'swipe': return finite('x1', 'y1', 'x2', 'y2', 'durationMs')
+      case 'text': return typeof raw.value === 'string' && raw.value.length <= 1000
+      case 'keyevent': return finite('keycode')
+      case 'wait': return finite('ms') && Number(raw.ms) >= 0 && Number(raw.ms) <= 300000
+      case 'screenshot': return raw.label === undefined || typeof raw.label === 'string'
+      case 'tapElement': return isPlainObject(raw.selector) && finite('x', 'y')
+      case 'waitForElement': return isPlainObject(raw.selector) && finite('timeoutMs')
+      case 'launch':
+      case 'assertPackage': return typeof raw.package === 'string' && /^[A-Za-z0-9_.]+$/.test(raw.package)
+      case 'recordScreen': return finite('seconds') && Number(raw.seconds) >= 1 && Number(raw.seconds) <= 180
+      case 'assertText': return typeof raw.value === 'string' && raw.value.length <= 500
+      // Imported macros are untrusted: filesystem/install/arbitrary adb steps
+      // must be recreated explicitly in the local editor.
+      case 'install':
+      case 'command': return false
+      default: return false
+    }
+  })
 }
 
 /**
@@ -129,8 +162,8 @@ export function useMacroRecorder({
 
   const importJson = useCallback((json: string): boolean => {
     try {
-      const parsed = JSON.parse(json) as Macro
-      if (!parsed || !Array.isArray(parsed.steps)) return false
+      const parsed: unknown = JSON.parse(json)
+      if (!validateImportedMacro(parsed)) return false
       setName(parsed.name || 'Macro')
       setSteps(parsed.steps)
       return true
@@ -224,6 +257,32 @@ export function useMacroRecorder({
             customPath,
           )
           if (!res.success) return { ok: false, failedAt: i }
+          continue
+        }
+        if (step.kind === 'assertText' || step.kind === 'assertPackage') {
+          const captureFailure = () => captureScreenshot({
+            deviceSerial: serial,
+            outputDir: outputDir || undefined,
+            customPath,
+          }).catch(() => undefined)
+          const dump = await dumpUiHierarchy(serial, customPath)
+          if (!dump.success || !dump.xml) {
+            await captureFailure()
+            return { ok: false, failedAt: i }
+          }
+          const root = parseUiHierarchy(dump.xml)
+          if (!root) {
+            await captureFailure()
+            return { ok: false, failedAt: i }
+          }
+          const nodes = flattenNodes(root)
+          const matched = step.kind === 'assertText'
+            ? nodes.some((node) => node.text.includes(step.value) || node.contentDesc.includes(step.value))
+            : nodes.some((node) => node.packageName === step.package)
+          if (!matched) {
+            await captureFailure()
+            return { ok: false, failedAt: i }
+          }
           continue
         }
         // Resolve element taps to the element's current center, falling back to
@@ -328,6 +387,8 @@ export function useMacroRecorder({
         step.kind === 'install' ||
         step.kind === 'command' ||
         step.kind === 'recordScreen'
+        || step.kind === 'assertText'
+        || step.kind === 'assertPackage'
       ) {
         addStep(step)
         return { success: true }

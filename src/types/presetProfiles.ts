@@ -21,6 +21,7 @@ export const PRESET_PROFILES: PresetProfile[] = [
         descKey: 'presets.gamingDesc',
         // High bitrate + fps, low latency (VSync off), audio on.
         config: {
+            qualityMode: 'manual',
             bitrate: 20,
             fps: 60,
             res: '0',
@@ -36,6 +37,7 @@ export const PRESET_PROFILES: PresetProfile[] = [
         descKey: 'presets.testingDesc',
         // Balanced, stay awake, keep the device active for QA sessions.
         config: {
+            qualityMode: 'manual',
             bitrate: 8,
             fps: 30,
             res: '0',
@@ -51,6 +53,7 @@ export const PRESET_PROFILES: PresetProfile[] = [
         descKey: 'presets.presentationDesc',
         // Crisp visuals for demos, always-on-top, audio on.
         config: {
+            qualityMode: 'manual',
             bitrate: 16,
             fps: 60,
             res: '0',
@@ -67,6 +70,7 @@ export const PRESET_PROFILES: PresetProfile[] = [
         descKey: 'presets.lowBandwidthDesc',
         // Minimal bitrate/resolution for weak / remote links.
         config: {
+            qualityMode: 'manual',
             bitrate: 2,
             fps: 15,
             res: '800',
@@ -81,6 +85,8 @@ export const PRESET_PROFILES: PresetProfile[] = [
 export type DeviceProfileMap = Record<string, PresetId>;
 
 export const DEVICE_PROFILES_KEY = 'scrcpy_device_profiles';
+export const DEVICE_CONFIG_PROFILES_KEY = 'scrcpy_device_config_profiles';
+export type DeviceConfigProfileMap = Record<string, Partial<ScrcpyConfig>>;
 
 export function getPreset(id: PresetId): PresetProfile | undefined {
     return PRESET_PROFILES.find((p) => p.id === id);

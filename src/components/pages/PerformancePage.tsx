@@ -4,9 +4,11 @@ import ConnectionHealth from '../connection-health'
 interface PerformancePageProps {
   connected: boolean
   bitrateMbps?: number
+  adaptiveEnabled?: boolean
+  onApplySaferProfile?: (profile: 'balanced' | 'low-latency') => void
 }
 
-export default function PerformancePage({ connected, bitrateMbps }: PerformancePageProps) {
+export default function PerformancePage({ connected, bitrateMbps, adaptiveEnabled, onApplySaferProfile }: PerformancePageProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col px-4 pb-6 lg:px-6">
       <header className="flex min-h-[72px] items-center border-b border-[var(--border-subtle)] py-4">
@@ -30,6 +32,8 @@ export default function PerformancePage({ connected, bitrateMbps }: PerformanceP
           onClose={() => {}}
           connected={connected}
           bitrateMbps={bitrateMbps}
+          adaptiveEnabled={adaptiveEnabled}
+          onApplySaferProfile={onApplySaferProfile}
         />
       </section>
     </div>

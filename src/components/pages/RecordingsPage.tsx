@@ -2,10 +2,13 @@ import { useState, type ReactNode } from 'react'
 import {
   FolderOpen,
   MonitorPlay,
+  Play,
   Settings2,
+  Trash2,
   Video,
   X,
 } from 'lucide-react'
+import type { RecordingHistoryEntry } from '../../types/history'
 
 export interface RecordingsPageProps {
   /** Existing recording controls. This page never creates or replaces commands. */
@@ -17,6 +20,22 @@ export interface RecordingsPageProps {
   onChangeRecordPath: () => void
   onOpenRecordPath?: () => void
   onOpenDashboard?: () => void
+  history: RecordingHistoryEntry[]
+  onOpenRecording: (path: string) => void
+  onRevealRecording: (path: string) => void
+  onRemoveEntry: (id: string, deleteFile: boolean) => void
+  onClearHistory: () => void
+}
+
+function formatDuration(durationMs: number): string {
+  const seconds = Math.max(0, Math.round(durationMs / 1000))
+  const minutes = Math.floor(seconds / 60)
+  return `${minutes}:${String(seconds % 60).padStart(2, '0')}`
+}
+
+function formatDate(value: string): string {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 
 export default function RecordingsPage({
@@ -27,6 +46,11 @@ export default function RecordingsPage({
   onChangeRecordPath,
   onOpenRecordPath,
   onOpenDashboard,
+  history,
+  onOpenRecording,
+  onRevealRecording,
+  onRemoveEntry,
+  onClearHistory,
 }: RecordingsPageProps) {
   const [settingsOpen, setSettingsOpen] = useState(false)
 
@@ -36,7 +60,7 @@ export default function RecordingsPage({
         <div>
           <h1 className="text-lg font-semibold text-[var(--text-base)]">Recordings</h1>
           <p className="mt-1 text-[10px] text-[var(--text-subtle)]">
-            Screen recordings from the selected Android device
+            {history.length} saved {history.length === 1 ? 'recording' : 'recordings'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -70,25 +94,29 @@ export default function RecordingsPage({
               Recording Library
             </h2>
           </div>
-          <span className="text-[9px] text-[var(--text-subtle)]">History is not persisted</span>
+          {history.length > 0 && (
+            <button type="button" onClick={onClearHistory} className="flex items-center gap-1.5 text-[9px] text-[var(--text-subtle)] hover:text-red-400">
+              <Trash2 size={11} /> Clear history
+            </button>
+          )}
         </div>
 
         <div className="custom-scrollbar overflow-x-auto">
           <div className="grid min-w-[620px] grid-cols-[minmax(260px,1fr)_100px_110px_120px] border-b border-[var(--border-subtle)] px-4 py-3 text-[8px] font-semibold uppercase tracking-wider text-[var(--text-subtle)]">
             <span>Name</span>
             <span>Duration</span>
-            <span>Size</span>
+            <span>Actions</span>
             <span>Recorded</span>
           </div>
         </div>
 
-        <div className="flex min-h-[310px] flex-col items-center justify-center px-6 py-10 text-center">
+        {history.length === 0 ? <div className="flex min-h-[310px] flex-col items-center justify-center px-6 py-10 text-center">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-primary/20 bg-primary/[.08] text-primary">
             <Video size={23} />
           </div>
           <h3 className="mt-4 text-sm font-semibold text-[var(--text-base)]">No recording history available</h3>
           <p className="mt-2 max-w-md text-[10px] leading-relaxed text-[var(--text-subtle)]">
-            The current recording service returns the saved file path when recording stops, but does not maintain a browsable history. Use the existing recording control to save a new file.
+            Stop a recording from the Dashboard or device toolbar and it will appear here automatically.
           </p>
           <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
             {onOpenDashboard && (
@@ -108,7 +136,29 @@ export default function RecordingsPage({
               <Video size={13} /> Recording controls
             </button>
           </div>
-        </div>
+        </div> : (
+          <div className="custom-scrollbar max-h-[430px] overflow-auto">
+            {history.map((entry) => (
+              <div key={entry.id} className="grid min-w-[620px] grid-cols-[minmax(260px,1fr)_100px_110px_120px] items-center border-b border-[var(--border-subtle)] px-4 py-3 text-[10px] last:border-b-0 hover:bg-white/[.025]">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/25 bg-primary/10 text-primary"><Video size={14} /></span>
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium text-[var(--text-base)]">{entry.filename}</span>
+                    <span className="mt-0.5 block truncate text-[8px] text-[var(--text-subtle)]">{entry.deviceSerial}</span>
+                  </span>
+                </div>
+                <span className="tabular-nums text-[var(--text-muted)]">{formatDuration(entry.durationMs)}</span>
+                <div className="flex items-center gap-1">
+                  <button type="button" onClick={() => onOpenRecording(entry.path)} title="Play" className="rounded-md p-1.5 text-[var(--text-muted)] hover:bg-primary/10 hover:text-primary"><Play size={12} /></button>
+                  <button type="button" onClick={() => onRevealRecording(entry.path)} title="Show in folder" className="rounded-md p-1.5 text-[var(--text-muted)] hover:bg-white/5 hover:text-[var(--text-base)]"><FolderOpen size={12} /></button>
+                  <button type="button" onClick={() => onRemoveEntry(entry.id, false)} title="Remove from history" className="rounded-md p-1.5 text-[var(--text-muted)] hover:bg-white/5 hover:text-[var(--text-base)]"><X size={12} /></button>
+                  <button type="button" onClick={() => { if (window.confirm(`Delete ${entry.filename} from disk?`)) onRemoveEntry(entry.id, true) }} title="Delete file" className="rounded-md p-1.5 text-[var(--text-muted)] hover:bg-red-500/10 hover:text-red-400"><Trash2 size={12} /></button>
+                </div>
+                <span className="text-[8px] text-[var(--text-subtle)]">{formatDate(entry.completedAt)}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <aside className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]/55 p-4">

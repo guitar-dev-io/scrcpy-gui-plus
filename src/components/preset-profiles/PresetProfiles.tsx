@@ -3,6 +3,7 @@ import { X, Wand2, Gamepad2, FlaskConical, Presentation, Gauge, Check } from 'lu
 import { useI18n } from '../../i18n';
 import {
     DEVICE_PROFILES_KEY,
+    DEVICE_CONFIG_PROFILES_KEY,
     PRESET_PROFILES,
     type DeviceProfileMap,
     type PresetId
@@ -59,7 +60,21 @@ export default function PresetProfiles({
     const applyPreset = (id: PresetId) => {
         const preset = PRESET_PROFILES.find((p) => p.id === id);
         if (!preset) return;
-        setConfig((prev) => ({ ...prev, ...preset.config }));
+        setConfig((prev) => {
+            const next = { ...prev, ...preset.config };
+            if (activeDevice) {
+                try {
+                    const stored = JSON.parse(
+                        localStorage.getItem(DEVICE_CONFIG_PROFILES_KEY) || '{}'
+                    );
+                    stored[activeDevice] = { ...next, device: activeDevice };
+                    localStorage.setItem(DEVICE_CONFIG_PROFILES_KEY, JSON.stringify(stored));
+                } catch {
+                    // The active config still applies when persistence is unavailable.
+                }
+            }
+            return next;
+        });
         if (activeDevice) {
             const next = { ...profiles, [activeDevice]: id };
             setProfiles(next);
