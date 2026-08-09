@@ -307,6 +307,7 @@ export const id: DeepPartialTranslations = {
     deviceDisconnected: '[SISTEM] Perangkat terputus: {device}',
     discoveryActive: '[SISTEM] Pemindaian aktif: {count} HP terdeteksi.',
     discoveryError: '[SISTEM] Gagal mendeteksi perangkat: {error}',
+    discoveryPending: '[SISTEM] Penemuan perangkat menunggu ADB/scrcpy',
     errorRefreshingDevices: '[SISTEM] Gagal menemukan perangkat: {error}',
     initializingScrcpy:
       '[SISTEM] Menginisialisasi sesi scrcpy untuk {device}...',

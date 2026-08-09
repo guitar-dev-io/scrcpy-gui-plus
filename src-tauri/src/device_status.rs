@@ -25,6 +25,14 @@ pub struct DeviceStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sdk: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub abi: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub security_patch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bootloader: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uptime_seconds: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub resolution: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub density: Option<String>,
@@ -45,6 +53,10 @@ pub struct DeviceStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mem_available_kb: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_rotate: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub screen_timeout_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error_code: Option<String>,
@@ -59,6 +71,10 @@ impl DeviceStatus {
             manufacturer: None,
             android_version: None,
             sdk: None,
+            abi: None,
+            security_patch: None,
+            bootloader: None,
+            uptime_seconds: None,
             resolution: None,
             density: None,
             battery_level: None,
@@ -69,6 +85,8 @@ impl DeviceStatus {
             storage_available_kb: None,
             mem_total_kb: None,
             mem_available_kb: None,
+            auto_rotate: None,
+            screen_timeout_ms: None,
             error: None,
             error_code: None,
         }
@@ -177,6 +195,14 @@ fn parse_meminfo(text: &str) -> (Option<u64>, Option<u64>) {
     (total, available)
 }
 
+fn parse_uptime_seconds(text: &str) -> Option<u64> {
+    text.split_whitespace()
+        .next()
+        .and_then(|value| value.parse::<f64>().ok())
+        .filter(|value| value.is_finite() && *value >= 0.0)
+        .map(|value| value.floor() as u64)
+}
+
 /// Gather a full status snapshot for a device.
 #[tauri::command]
 pub async fn get_device_status(serial: String, custom_path: Option<String>) -> DeviceStatus {
@@ -194,6 +220,54 @@ pub async fn get_device_status(serial: String, custom_path: Option<String>) -> D
     status.manufacturer = getprop(&serial, "ro.product.manufacturer", &custom_path).await;
     status.android_version = getprop(&serial, "ro.build.version.release", &custom_path).await;
     status.sdk = getprop(&serial, "ro.build.version.sdk", &custom_path).await;
+    status.abi = getprop(&serial, "ro.product.cpu.abi", &custom_path).await;
+    status.security_patch = getprop(&serial, "ro.build.version.security_patch", &custom_path).await;
+    status.bootloader = getprop(&serial, "ro.bootloader", &custom_path)
+        .await
+        .filter(|value| !value.eq_ignore_ascii_case("unknown"));
+
+    if let Ok(value) = adb::run_adb_text(
+        Some(&serial),
+        &["shell", "cat", "/proc/uptime"],
+        custom_path.clone(),
+        TIMEOUT_SECS,
+    )
+    .await
+    {
+        status.uptime_seconds = parse_uptime_seconds(&value);
+    }
+
+    if let Ok(value) = adb::run_adb_text(
+        Some(&serial),
+        &[
+            "shell",
+            "settings",
+            "get",
+            "system",
+            "accelerometer_rotation",
+        ],
+        custom_path.clone(),
+        TIMEOUT_SECS,
+    )
+    .await
+    {
+        status.auto_rotate = match value.trim() {
+            "1" => Some(true),
+            "0" => Some(false),
+            _ => None,
+        };
+    }
+
+    if let Ok(value) = adb::run_adb_text(
+        Some(&serial),
+        &["shell", "settings", "get", "system", "screen_off_timeout"],
+        custom_path.clone(),
+        TIMEOUT_SECS,
+    )
+    .await
+    {
+        status.screen_timeout_ms = value.trim().parse::<u64>().ok();
+    }
 
     if let Ok(t) = adb::run_adb_text(
         Some(&serial),
@@ -346,5 +420,11 @@ mod tests {
         let (total, available) = parse_meminfo(text);
         assert_eq!(total, Some(3908456));
         assert_eq!(available, Some(1500000));
+    }
+
+    #[test]
+    fn parse_uptime_uses_elapsed_seconds() {
+        assert_eq!(parse_uptime_seconds("93784.42 18233.10\n"), Some(93784));
+        assert_eq!(parse_uptime_seconds("invalid"), None);
     }
 }

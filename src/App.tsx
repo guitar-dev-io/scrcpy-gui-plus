@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open } from '@tauri-apps/plugin-dialog'
+import { Smartphone } from 'lucide-react'
 import Sidebar from './components/Sidebar'
 import ControlPanel from './components/ControlPanel'
 import LogPanel from './components/LogPanel'
@@ -12,6 +13,10 @@ import Footer from './components/Footer'
 import AppNavigation from './components/app-shell/AppNavigation'
 import AppShell from './components/app-shell/AppShell'
 import DashboardLayout from './components/dashboard/DashboardLayout'
+import IosWorkspaceStage from './components/dashboard/IosWorkspaceStage'
+import WorkspaceTabBar from './components/workspace-tabs'
+import WorkspaceToolSurface from './components/workspace-tabs/WorkspaceToolSurface'
+import TestRunnerPanel from './components/test-runner'
 import OnboardingModal from './components/OnboardingModal'
 import ThemedModal from './components/ThemedModal'
 import DeviceControlToolbar from './components/device-control-toolbar'
@@ -21,6 +26,7 @@ import MirrorStage from './components/mirror-stage'
 import BugReportModal from './components/bug-report'
 import AppManager from './components/app-manager'
 import LogcatViewer from './components/logcat-viewer'
+import CompactLogcatPanel from './components/logcat-viewer/CompactLogcatPanel'
 import DeepLinkLauncher from './components/deep-link-launcher'
 import TestSession from './components/test-session'
 import UiInspector from './components/ui-inspector'
@@ -33,24 +39,23 @@ import PresetProfiles from './components/preset-profiles'
 import MacroRecorder from './components/macro-recorder'
 import CustomCommand from './components/custom-command'
 import FileManager from './components/file-manager'
-import IosMirrorModal from './components/ios-mirror'
 import WidgetLayout from './components/widget-layout'
 import KeymapController from './components/keymap-controller'
 import { DEFAULT_SCRCPY_CONFIG, useScrcpy } from './hooks/useScrcpy'
 import { useScreenshot } from './hooks/useScreenshot'
 import { useRecordingLibrary } from './hooks/useRecordingLibrary'
+import { useDeviceStatus } from './hooks/useDeviceStatus'
+import { useWorkspaceShell } from './hooks/useWorkspaceShell'
 import { useEmbeddedMirror } from './hooks/useEmbeddedMirror'
 import { useIosMirror, type IosDeviceInfo } from './hooks/useIosMirror'
 import { getVersion } from '@tauri-apps/api/app'
 import { isTauri } from './utils/tauriEnv'
 import { createBugReport } from './services/bugReportService'
 import { applyQualityMode } from './utils/adaptiveQuality'
+import { persistScrcpyLaunchConfig } from './utils/scrcpyLaunch'
+import { openWorkspaceModal, type WorkspaceModal } from './types/workspaceModal'
 import { useI18n } from './i18n'
-import {
-  appRouteFromHash,
-  appRouteToHash,
-  type AppRouteId,
-} from './navigation/appRoutes'
+import { ShellUiProvider, useShellUi } from './contexts/ShellUiContext'
 import {
   DEVICE_PROFILES_KEY,
   DEVICE_CONFIG_PROFILES_KEY,
@@ -75,30 +80,16 @@ const AutomationPage = lazy(() => import('./components/pages/AutomationPage'))
 const ScriptManagerPage = lazy(() => import('./components/pages/ScriptManagerPage'))
 const TaskSchedulerPage = lazy(() => import('./components/pages/TaskSchedulerPage'))
 
-function App() {
+function AppContent() {
   const { t } = useI18n()
-  const [activeRoute, setActiveRoute] = useState<AppRouteId>(() =>
-    appRouteFromHash(window.location.hash),
-  )
-  const [dashboardBottomTab, setDashboardBottomTab] = useState<
-    'logcat' | 'shell' | 'events'
-  >('logcat')
-  const [navigationCollapsed, setNavigationCollapsed] = useState(false)
-
-  useEffect(() => {
-    const syncRoute = () => setActiveRoute(appRouteFromHash(window.location.hash))
-    window.addEventListener('hashchange', syncRoute)
-    return () => window.removeEventListener('hashchange', syncRoute)
-  }, [])
-
-  const handleNavigate = (route: AppRouteId) => {
-    const hash = appRouteToHash(route)
-    if (window.location.hash === hash) {
-      setActiveRoute(route)
-      return
-    }
-    window.location.hash = hash
-  }
+  const {
+    activeRoute,
+    navigate: handleNavigate,
+    dashboardBottomTab,
+    activeWorkspaceTool,
+    selectWorkspaceTool,
+    activateDeviceWorkspace,
+  } = useShellUi()
   const {
     devices,
     logs,
@@ -141,6 +132,13 @@ function App() {
     setIsOnboardingOpen,
     completeOnboarding,
   } = useScrcpy()
+  const { status: workspaceDeviceStatus } = useDeviceStatus({
+    activeDevice,
+    customPath: config.scrcpyPath,
+    autoRefresh: true,
+    enabled: Boolean(activeDevice),
+  })
+  const workspaceShell = useWorkspaceShell(runTerminalCommand)
   const recordingLibrary = useRecordingLibrary()
   const appliedDeviceProfileRef = useRef('')
   const latestActiveDeviceRef = useRef(activeDevice)
@@ -230,18 +228,6 @@ function App() {
     kind: 'success' | 'error' | 'info' | 'warning',
   ) => showAlert(title, message, kind)
 
-  const persistDeviceConfig = (serial: string, launchConfig: typeof config) => {
-    try {
-      const saved = JSON.parse(
-        localStorage.getItem(DEVICE_CONFIG_PROFILES_KEY) || '{}',
-      ) as DeviceConfigProfileMap
-      saved[serial] = { ...launchConfig, device: serial }
-      localStorage.setItem(DEVICE_CONFIG_PROFILES_KEY, JSON.stringify(saved))
-    } catch {
-      // Launch remains available if profile persistence is unavailable.
-    }
-  }
-
   const screenshot = useScreenshot({
     activeDevice,
     customPath: config.scrcpyPath,
@@ -293,11 +279,97 @@ function App() {
 
   const embeddedMirror = useEmbeddedMirror()
   const [isMirrorStageOpen, setIsMirrorStageOpen] = useState(false)
+  const [embeddedConnections, setEmbeddedConnections] = useState<Record<string, boolean>>({})
+  const [openDeviceWorkspaces, setOpenDeviceWorkspaces] = useState<string[]>([])
+  const [deviceWorkspaceLabels, setDeviceWorkspaceLabels] = useState<Record<string, string>>({})
+  const [multiDeviceView, setMultiDeviceView] = useState(true)
+  const [embeddedSessionCommands, setEmbeddedSessionCommands] = useState<Record<
+    string,
+    { id: number; action: 'start' | 'stop' }
+  >>({})
+  const embeddedDashboardConnected = Boolean(activeDevice && embeddedConnections[activeDevice])
+
+  const requestEmbeddedSession = (action: 'start' | 'stop', serial = activeDevice) => {
+    if (!serial) return
+    setEmbeddedSessionCommands((current) => ({
+      ...current,
+      [serial]: { id: (current[serial]?.id ?? 0) + 1, action },
+    }))
+  }
+
+  const openDeviceWorkspace = (serial: string) => {
+    setOpenDeviceWorkspaces((current) => (
+      current.includes(serial) ? current : [...current, serial]
+    ))
+    setActiveDevice(serial)
+    setActiveIosUdid(null)
+    activateDeviceWorkspace()
+    handleNavigate('dashboard')
+  }
+
+  const closeDeviceWorkspace = (serial: string) => {
+    if (embeddedConnections[serial]) requestEmbeddedSession('stop', serial)
+    if (runningDevices.includes(serial)) void stopScrcpy(serial)
+    setEmbeddedConnections((current) => ({ ...current, [serial]: false }))
+    const remaining = Array.from(new Set([
+      ...openDeviceWorkspaces,
+      ...runningDevices,
+    ])).filter((item) => item !== serial)
+    setOpenDeviceWorkspaces((current) => current.filter((item) => item !== serial))
+    if (serial === activeDevice) setActiveDevice(remaining[remaining.length - 1] ?? '')
+  }
+
+  useEffect(() => {
+    const connected = Object.entries(embeddedConnections)
+      .filter(([, value]) => value)
+      .map(([serial]) => serial)
+    if (connected.length === 0) return
+    setOpenDeviceWorkspaces((current) => Array.from(new Set([...current, ...connected])))
+  }, [embeddedConnections])
+
+  useEffect(() => {
+    if (
+      !activeDevice
+      || workspaceDeviceStatus?.serial !== activeDevice
+      || !workspaceDeviceStatus.model
+    ) return
+    const model = workspaceDeviceStatus.model
+    setDeviceWorkspaceLabels((current) => (
+      current[activeDevice] === model
+        ? current
+        : { ...current, [activeDevice]: model }
+    ))
+  }, [activeDevice, workspaceDeviceStatus?.model, workspaceDeviceStatus?.serial])
 
   const ios = useIosMirror(config.scrcpyPath)
-  const [iosMirrorDevice, setIosMirrorDevice] = useState<IosDeviceInfo | null>(
-    null,
-  )
+  const [openIosWorkspaces, setOpenIosWorkspaces] = useState<string[]>([])
+  const [iosWorkspaceDevices, setIosWorkspaceDevices] = useState<Record<string, IosDeviceInfo>>({})
+  const [activeIosUdid, setActiveIosUdid] = useState<string | null>(null)
+  const [iosStreaming, setIosStreaming] = useState<Record<string, boolean>>({})
+  const activeAndroidWorkspaceDevice = activeIosUdid ? '' : activeDevice
+
+  const openIosWorkspace = (device: IosDeviceInfo) => {
+    setOpenIosWorkspaces((current) => (
+      current.includes(device.udid) ? current : [...current, device.udid]
+    ))
+    setIosWorkspaceDevices((current) => ({ ...current, [device.udid]: device }))
+    setActiveIosUdid(device.udid)
+    activateDeviceWorkspace()
+    handleNavigate('dashboard')
+  }
+
+  const closeIosWorkspace = (udid: string) => {
+    setOpenIosWorkspaces((current) => current.filter((item) => item !== udid))
+    setIosStreaming((current) => ({ ...current, [udid]: false }))
+    setIosWorkspaceDevices((current) => {
+      const next = { ...current }
+      delete next[udid]
+      return next
+    })
+    if (activeIosUdid !== udid) return
+    const remaining = openIosWorkspaces.filter((item) => item !== udid)
+    setActiveIosUdid(remaining[remaining.length - 1] ?? null)
+  }
 
   // Detect iOS mirroring support (macOS + pymobiledevice3) and scan once on mount.
   useEffect(() => {
@@ -318,8 +390,7 @@ function App() {
   const [isTestSessionOpen, setIsTestSessionOpen] = useState(false)
   const [isUiInspectorOpen, setIsUiInspectorOpen] = useState(false)
   const [isDeviceStatusOpen, setIsDeviceStatusOpen] = useState(false)
-  const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(false)
-  const [isEmbeddedWorkspaceOpen, setIsEmbeddedWorkspaceOpen] = useState(false)
+  const [workspaceModal, setWorkspaceModal] = useState<WorkspaceModal>(null)
   const [isPairingOpen, setIsPairingOpen] = useState(false)
   const [isConnHealthOpen, setIsConnHealthOpen] = useState(false)
   const [isPresetsOpen, setIsPresetsOpen] = useState(false)
@@ -581,7 +652,6 @@ function App() {
       return
     }
     let launchConfig = config
-    persistDeviceConfig(activeDevice, config)
     if (embeddedMirror.embedEnabled) {
       // Open the dedicated full-window stage first, then wait for it to lay
       // out so we can measure it and dock scrcpy to fill it.
@@ -725,7 +795,7 @@ function App() {
       onToggleAuto={toggleAutoConnect}
       isRefreshing={isRefreshing}
       onFilePush={handleFileBrowse}
-      onOpenWorkspace={() => setIsWorkspaceOpen(true)}
+      onOpenWorkspace={() => setWorkspaceModal((current) => openWorkspaceModal(current, 'batch'))}
       onOpenPairing={() => setIsPairingOpen(true)}
       historyDevices={historyDevices}
       clearHistory={clearHistory}
@@ -746,7 +816,7 @@ function App() {
           res.success ? 'success' : 'error',
         )
       }}
-      onIosMirror={(device) => setIosMirrorDevice(device)}
+      onIosMirror={openIosWorkspace}
     />
   )
 
@@ -755,7 +825,7 @@ function App() {
       compact
       activeDevice={activeDevice}
       customPath={config.scrcpyPath}
-      isRunning={sessionRunning}
+      isRunning={sessionRunning || embeddedDashboardConnected}
       recordingOutputDir={screenshot.screenshotDir}
       fullscreenActive={!!config.fullscreen}
       onToggleFullscreen={() =>
@@ -782,7 +852,7 @@ function App() {
       onOpenFileManager={() => setIsFileManagerOpen(true)}
       onOpenWidgetLayout={() => setIsWidgetLayoutOpen(true)}
       onOpenKeymap={() => setIsKeymapOpen(true)}
-      onOpenEmbeddedWorkspace={() => setIsEmbeddedWorkspaceOpen(true)}
+      onOpenEmbeddedWorkspace={() => setWorkspaceModal((current) => openWorkspaceModal(current, 'embedded'))}
       notify={notify}
     />
   )
@@ -852,102 +922,266 @@ function App() {
     />
   )
 
-  const dashboardLogPanel = (
+  const renderDashboardLogPanel = (serial: string, enabled: boolean) => (
+    dashboardBottomTab === 'logcat' ? (
+      <CompactLogcatPanel
+        activeDevice={serial}
+        customPath={config.scrcpyPath}
+        enabled={enabled && activeRoute === 'dashboard' && !activeWorkspaceTool}
+      />
+    ) : <LogPanel
+      dashboard
+      mode={dashboardBottomTab === 'test-runner' ? 'logcat' : dashboardBottomTab}
+      logs={dashboardBottomTab === 'shell' ? workspaceShell.logs : logs}
+      stableEntries={dashboardBottomTab === 'shell' ? workspaceShell.entries : undefined}
+      onClear={dashboardBottomTab === 'shell' ? workspaceShell.clear : clearLogs}
+      onAddLog={dashboardBottomTab === 'shell'
+        ? workspaceShell.addLog
+        : (message) => setLogs((prev: string[]) => [...prev.slice(-100), message])}
+      onRunCommand={dashboardBottomTab === 'shell'
+        ? workspaceShell.runCommand
+        : runTerminalCommand}
+    />
+  )
+
+  const embeddedRunningDevices = Object.entries(embeddedConnections)
+    .filter(([, connected]) => connected)
+    .map(([serial]) => serial)
+  const dashboardWorkspaceSerials = Array.from(new Set([
+    ...openDeviceWorkspaces,
+    ...(activeDevice ? [activeDevice] : []),
+  ]))
+  const iosDevicesByUdid = new Map([
+    ...Object.values(iosWorkspaceDevices),
+    ...ios.devices,
+  ].map((device) => [device.udid, device]))
+  const dashboardWorkspaceIds = Array.from(new Set([
+    ...dashboardWorkspaceSerials,
+    ...openIosWorkspaces.filter((udid) => iosDevicesByUdid.has(udid)),
+  ]))
+  const activeWorkspaceDevice = activeIosUdid ?? activeDevice
+  const iosRunningDevices = Object.entries(iosStreaming)
+    .filter(([, streaming]) => streaming)
+    .map(([udid]) => udid)
+  const workspaceDeviceLabels = {
+    ...deviceWorkspaceLabels,
+    ...Object.fromEntries(Array.from(iosDevicesByUdid.values()).map((device) => [device.udid, device.name || device.productType])),
+  }
+  const workspaceDeviceKinds = Object.fromEntries([
+    ...dashboardWorkspaceSerials.map((serial) => [serial, 'android'] as const),
+    ...openIosWorkspaces.map((udid) => [udid, 'ios'] as const),
+  ])
+
+  const workspaceShellPanel = (
     <LogPanel
       dashboard
-      mode={dashboardBottomTab}
-      logs={logs}
-      onClear={clearLogs}
-      onAddLog={(message) =>
-        setLogs((prev: string[]) => [...prev.slice(-100), message])
-      }
-      onRunCommand={runTerminalCommand}
+      mode="shell"
+      logs={workspaceShell.logs}
+      stableEntries={workspaceShell.entries}
+      onClear={workspaceShell.clear}
+      onAddLog={workspaceShell.addLog}
+      onRunCommand={workspaceShell.runCommand}
+    />
+  )
+
+  const iosToolUnavailable = (
+    <div className="flex h-full min-h-64 flex-col items-center justify-center gap-2 px-6 text-center">
+      <Smartphone size={24} className="text-[var(--text-subtle)]" />
+      <p className="text-[11px] font-semibold text-[var(--text-muted)]">Unavailable for iOS view-only sessions</p>
+      <p className="max-w-md text-[9px] leading-relaxed text-[var(--text-subtle)]">
+        Logcat, shell, files and Android automation require ADB. Select an Android workspace to use this tool.
+      </p>
+    </div>
+  )
+
+  const appHeader = (compact = false) => (
+    <Header
+      compact={compact}
+      onThemeChange={setTheme}
+      currentTheme={theme}
+      colorMode={colorMode}
+      onColorModeChange={setColorMode}
+      binaryStatus={scrcpyStatus}
+      activeDevice={activeAndroidWorkspaceDevice}
+      customPath={config.scrcpyPath}
+      connected={activeIosUdid ? false : sessionRunning}
+      isRefreshing={isRefreshing}
+      onRefresh={handleRefresh}
+      onOpenSettings={() => handleNavigate('settings')}
+      onDownload={downloadScrcpy}
+      onSetPath={handleSetPath}
+      onResetPath={handleResetPath}
+      isDownloading={isDownloading}
+      downloadProgress={downloadProgress}
+      version={appVersion}
     />
   )
 
   return (
     <AppShell
-      header={
-        <Header
-          onThemeChange={setTheme}
-          currentTheme={theme}
-          colorMode={colorMode}
-          onColorModeChange={setColorMode}
-          binaryStatus={scrcpyStatus}
-          activeDevice={activeDevice}
-          customPath={config.scrcpyPath}
-          connected={sessionRunning}
-          isRefreshing={isRefreshing}
-          onRefresh={handleRefresh}
-          onOpenSettings={() => handleNavigate('settings')}
-          onDownload={downloadScrcpy}
-          onSetPath={handleSetPath}
-          onResetPath={handleResetPath}
-          isDownloading={isDownloading}
-          downloadProgress={downloadProgress}
-          version={appVersion}
-        />
-      }
+      header={undefined}
       navigation={
         <AppNavigation
-          activeRoute={activeRoute}
-          onNavigate={handleNavigate}
           actions={{
             'shell-terminal': () => {
-              setDashboardBottomTab('shell')
-              handleNavigate('dashboard')
+              selectWorkspaceTool('shell')
             },
           }}
-          collapsed={navigationCollapsed}
-          onCollapsedChange={setNavigationCollapsed}
+          activeDevice={activeAndroidWorkspaceDevice}
+          customPath={config.scrcpyPath}
+          sessionRunning={sessionRunning || embeddedDashboardConnected}
+          onStopSession={() => {
+            if (embeddedDashboardConnected) requestEmbeddedSession('stop')
+            if (sessionRunning) void handleStop()
+          }}
         />
       }
       footer={
         <Footer
           version={appVersion}
-          activeRoute={activeRoute}
-          onNavigate={handleNavigate}
-          navigationCollapsed={navigationCollapsed}
-          onToggleNavigation={() => setNavigationCollapsed((value) => !value)}
         />
       }
       content={
-        activeRoute === 'dashboard' ? (
-          <DashboardLayout
-            devices={devices}
-            activeDevice={activeDevice}
-            runningDevices={runningDevices}
-            customPath={config.scrcpyPath}
-            outputDir={screenshot.screenshotDir}
-            config={config}
-            setConfig={setConfig}
-            onSelectDevice={setActiveDevice}
+        <>
+          <WorkspaceTabBar
+            deviceWorkspaces={Array.from(new Set([
+              ...openDeviceWorkspaces,
+              ...runningDevices,
+              ...embeddedRunningDevices,
+              ...openIosWorkspaces,
+            ]))}
+            deviceLabels={workspaceDeviceLabels}
+            deviceKinds={workspaceDeviceKinds}
+            runningDevices={Array.from(new Set([
+              ...runningDevices,
+              ...embeddedRunningDevices,
+              ...iosRunningDevices,
+            ]))}
+            activeDevice={activeWorkspaceDevice}
+            onSelectDevice={(workspaceId) => {
+              const iosDevice = iosDevicesByUdid.get(workspaceId)
+              if (iosDevice) openIosWorkspace(iosDevice)
+              else openDeviceWorkspace(workspaceId)
+            }}
+            onCloseDevice={(workspaceId) => {
+              if (iosDevicesByUdid.has(workspaceId)) closeIosWorkspace(workspaceId)
+              else closeDeviceWorkspace(workspaceId)
+            }}
             onAddDevice={() => setIsPairingOpen(true)}
-            onInstallApk={handleInstallApkBrowse}
-            onOpenLogcat={() => setIsLogcatOpen(true)}
-            onOpenSettings={() => handleNavigate('settings')}
-            onStart={handleStart}
-            onStop={handleStop}
-            isRunning={sessionRunning}
-            onScreenshot={() => handleScreenshotCapture()}
-            onScreenshotSecondary={(serial) => handleScreenshotCapture(serial)}
-            screenshotBusy={screenshot.isCapturing}
-            sessionBehavior={sessionBehavior}
-            screenshotPanel={renderScreenshotManager(true)}
-            logPanel={dashboardLogPanel}
-            controlPanel={controlPanel}
-            advancedTools={
-              <>
-                {deviceToolbar}
-                <div className="mt-4"><ShortcutsPanel /></div>
-              </>
-            }
-            bottomTab={dashboardBottomTab}
-            onBottomTabChange={setDashboardBottomTab}
-            notify={notify}
+            multiDeviceView={multiDeviceView}
+            onToggleMultiDeviceView={() => setMultiDeviceView((current) => !current)}
+            toolbar={appHeader(true)}
           />
-        ) : (
-          <Suspense
+          <div
+            aria-hidden={activeRoute !== 'dashboard' ? true : undefined}
+            className={
+              activeRoute !== 'dashboard' || (activeWorkspaceTool && activeWorkspaceTool !== 'file-explorer')
+                ? 'hidden'
+                : multiDeviceView && dashboardWorkspaceIds.length > 1
+                  ? 'grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto p-3 xl:grid-cols-2'
+                  : 'contents'
+            }
+          >
+            {(dashboardWorkspaceIds.length > 0 ? dashboardWorkspaceIds : ['']).map((workspaceId) => {
+            const iosDevice = iosDevicesByUdid.get(workspaceId)
+            const serial = workspaceId
+            return (
+            <div
+              key={workspaceId || 'empty-device-workspace'}
+              className={
+                (!multiDeviceView || dashboardWorkspaceIds.length <= 1) && workspaceId !== activeWorkspaceDevice
+                  ? 'hidden'
+                  : multiDeviceView && dashboardWorkspaceIds.length > 1
+                    ? 'min-h-[430px] min-w-0'
+                    : 'contents'
+              }
+              aria-hidden={
+                (!multiDeviceView || dashboardWorkspaceIds.length <= 1) && workspaceId !== activeWorkspaceDevice
+                  ? true
+                  : undefined
+              }
+            >
+              {iosDevice ? (
+                <IosWorkspaceStage
+                  device={iosDevice}
+                  customPath={config.scrcpyPath}
+                  compact={multiDeviceView && dashboardWorkspaceIds.length > 1}
+                  onStreamingChange={(streaming) => {
+                    setIosStreaming((current) => (
+                      current[iosDevice.udid] === streaming
+                        ? current
+                        : { ...current, [iosDevice.udid]: streaming }
+                    ))
+                  }}
+                />
+              ) : (
+              <DashboardLayout
+              devices={devices}
+              activeDevice={serial}
+              runningDevices={runningDevices}
+              customPath={config.scrcpyPath}
+              outputDir={screenshot.screenshotDir}
+              config={{ ...config, device: serial }}
+              setConfig={setConfig}
+              onSelectDevice={openDeviceWorkspace}
+              onAddDevice={() => setIsPairingOpen(true)}
+              onInstallApk={handleInstallApkBrowse}
+              onOpenSettings={() => handleNavigate('settings')}
+              onOpenFileExplorer={() => handleNavigate('file-explorer')}
+              onOpenWirelessAdb={() => handleNavigate('wireless-adb')}
+              onStart={() => void runScrcpy({ ...config, device: serial })}
+              onStop={() => void stopScrcpy(serial)}
+              isRunning={runningDevices.includes(serial)}
+              onScreenshot={() => handleScreenshotCapture(serial)}
+              onScreenshotSecondary={(serial) => handleScreenshotCapture(serial)}
+              screenshotBusy={screenshot.isCapturing}
+              sessionBehavior={sessionBehavior}
+              screenshotPanel={renderScreenshotManager(true)}
+              logPanel={renderDashboardLogPanel(serial, serial === activeDevice)}
+              controlPanel={controlPanel}
+              advancedTools={
+                <>
+                  {deviceToolbar}
+                  <div className="mt-4"><ShortcutsPanel /></div>
+                </>
+              }
+              notify={notify}
+              onEmbeddedSessionChange={(connected) => {
+                setEmbeddedConnections((current) => (
+                  current[serial] === connected ? current : { ...current, [serial]: connected }
+                ))
+              }}
+              embeddedSessionCommand={embeddedSessionCommands[serial]}
+              onRequestEmbeddedSession={(action) => requestEmbeddedSession(action, serial)}
+              compactWorkspace={multiDeviceView && dashboardWorkspaceIds.length > 1}
+              />
+              )}
+            </div>
+            )})}
+          </div>
+          {activeWorkspaceTool && activeWorkspaceTool !== 'file-explorer' ? (
+            <WorkspaceToolSurface tool={activeWorkspaceTool}>
+              {activeIosUdid ? iosToolUnavailable : activeWorkspaceTool === 'test-runner' ? (
+                <TestRunnerPanel
+                  activeDevice={activeDevice}
+                  customPath={config.scrcpyPath}
+                  outputDir={screenshot.screenshotDir}
+                />
+              ) : activeWorkspaceTool === 'logcat' ? (
+                <LogcatViewer
+                  embedded
+                  isOpen={false}
+                  onClose={() => undefined}
+                  activeDevice={activeDevice}
+                  customPath={config.scrcpyPath}
+                  notify={notify}
+                />
+              ) : (
+                workspaceShellPanel
+              )}
+            </WorkspaceToolSurface>
+          ) : activeRoute !== 'dashboard' ? (
+            <Suspense
             fallback={
               <div
                 role="status"
@@ -970,8 +1204,7 @@ function App() {
                 onAddDevice={() => setIsPairingOpen(true)}
                 onSelectDevice={setActiveDevice}
                 onView={(serial) => {
-                  setActiveDevice(serial)
-                  handleNavigate('dashboard')
+                  openDeviceWorkspace(serial)
                 }}
                 onControl={(serial) => {
                   setActiveDevice(serial)
@@ -983,14 +1216,16 @@ function App() {
                 }}
                 onShell={(serial) => {
                   setActiveDevice(serial)
-                  setDashboardBottomTab('shell')
-                  handleNavigate('dashboard')
+                  selectWorkspaceTool('shell')
                 }}
                 onMore={(serial) => {
                   setActiveDevice(serial)
                   setIsDeviceStatusOpen(true)
                 }}
                 connectionTools={deviceSidebar}
+                iosDevices={ios.devices}
+                iosReady={ios.support.supported && ios.support.found}
+                onViewIos={openIosWorkspace}
               />
             }
             sessions={
@@ -1002,14 +1237,16 @@ function App() {
                 customPath={config.scrcpyPath}
                 onSelectDevice={setActiveDevice}
                 onView={(serial) => {
-                  setActiveDevice(serial)
-                  handleNavigate('dashboard')
+                  openDeviceWorkspace(serial)
                 }}
                 onStop={(serial) => void stopScrcpy(serial)}
                 onRunAgain={(entry) => {
                   setActiveDevice(entry.deviceSerial)
                   setConfig(entry.config)
-                  persistDeviceConfig(entry.deviceSerial, entry.config)
+                  persistScrcpyLaunchConfig(localStorage, {
+                    ...entry.config,
+                    device: entry.deviceSerial,
+                  })
                   void runScrcpy(entry.config)
                 }}
                 onClearHistory={sessionHistory.clearHistory}
@@ -1061,10 +1298,10 @@ function App() {
             }
             fileExplorer={
               <FileExplorerPage
-                activeDevice={activeDevice}
+                activeDevice={activeAndroidWorkspaceDevice}
                 customPath={config.scrcpyPath}
                 manager={
-                  <FileManager
+                  activeIosUdid ? iosToolUnavailable : <FileManager
                     embedded
                     isOpen={false}
                     onClose={() => undefined}
@@ -1089,7 +1326,7 @@ function App() {
             }
             appManager={
               <AppManagerPage
-                activeDevice={activeDevice}
+                activeDevice={activeAndroidWorkspaceDevice}
                 customPath={config.scrcpyPath}
                 notify={notify}
                 confirmAction={confirmAction}
@@ -1098,14 +1335,14 @@ function App() {
             }
             logcatViewer={
               <LogcatViewerPage
-                activeDevice={activeDevice}
+                activeDevice={activeAndroidWorkspaceDevice}
                 customPath={config.scrcpyPath}
                 notify={notify}
               />
             }
             performance={
               <PerformancePage
-                connected={sessionRunning}
+                connected={!activeIosUdid && sessionRunning}
                 bitrateMbps={config.bitrate}
                 adaptiveEnabled={
                   config.qualityMode === 'adaptive' ||
@@ -1115,7 +1352,10 @@ function App() {
                 onApplySaferProfile={(profile) => {
                   const nextConfig = applyQualityMode({ ...config, qualityMode: profile })
                   setConfig(nextConfig)
-                  if (activeDevice) persistDeviceConfig(activeDevice, nextConfig)
+                  if (activeDevice) persistScrcpyLaunchConfig(localStorage, {
+                    ...nextConfig,
+                    device: activeDevice,
+                  })
                   if (sessionRunning && activeDevice) {
                     const serial = activeDevice
                     if (adaptiveRestartTimerRef.current !== null) {
@@ -1135,7 +1375,7 @@ function App() {
             }
             inputControl={
               <InputControlPage
-                activeDevice={activeDevice}
+                activeDevice={activeAndroidWorkspaceDevice}
                 devices={devices}
                 customPath={config.scrcpyPath}
                 notify={notify}
@@ -1143,7 +1383,7 @@ function App() {
             }
             automation={
               <AutomationPage
-                activeDevice={activeDevice}
+                activeDevice={activeAndroidWorkspaceDevice}
                 customPath={config.scrcpyPath}
                 outputDir={screenshot.screenshotDir}
                 notify={notify}
@@ -1151,14 +1391,14 @@ function App() {
             }
             scriptManager={
               <ScriptManagerPage
-                activeDevice={activeDevice}
+                activeDevice={activeAndroidWorkspaceDevice}
                 customPath={config.scrcpyPath}
                 notify={notify}
               />
             }
             taskScheduler={
               <TaskSchedulerPage
-                activeDevice={activeDevice}
+                activeDevice={activeAndroidWorkspaceDevice}
                 customPath={config.scrcpyPath}
                 outputDir={screenshot.screenshotDir}
                 notify={notify}
@@ -1179,8 +1419,9 @@ function App() {
               />
             }
             />
-          </Suspense>
-        )
+            </Suspense>
+          ) : null}
+        </>
       }
     >
 
@@ -1267,8 +1508,8 @@ function App() {
         />
 
         <DeviceWorkspace
-          isOpen={isWorkspaceOpen}
-          onClose={() => setIsWorkspaceOpen(false)}
+          isOpen={workspaceModal === 'batch'}
+          onClose={() => setWorkspaceModal(null)}
           devices={devices}
           runningDevices={runningDevices}
           baseConfig={config}
@@ -1277,11 +1518,12 @@ function App() {
           notify={notify}
           iosDevices={ios.devices}
           iosReady={ios.support.supported && ios.support.found}
+          launchDevice={runScrcpy}
         />
 
         <EmbeddedDeviceWorkspace
-          isOpen={isEmbeddedWorkspaceOpen}
-          onClose={() => setIsEmbeddedWorkspaceOpen(false)}
+          isOpen={workspaceModal === 'embedded'}
+          onClose={() => setWorkspaceModal(null)}
           devices={devices}
           runningDevices={runningDevices}
           activeDevice={activeDevice}
@@ -1326,13 +1568,6 @@ function App() {
           activeDevice={activeDevice}
           setConfig={setConfig}
           notify={notify}
-        />
-
-        <IosMirrorModal
-          isOpen={!!iosMirrorDevice}
-          onClose={() => setIosMirrorDevice(null)}
-          device={iosMirrorDevice}
-          customPath={config.scrcpyPath}
         />
 
         <MacroRecorder
@@ -1383,4 +1618,10 @@ function App() {
   )
 }
 
-export default App
+export default function App() {
+  return (
+    <ShellUiProvider>
+      <AppContent />
+    </ShellUiProvider>
+  )
+}

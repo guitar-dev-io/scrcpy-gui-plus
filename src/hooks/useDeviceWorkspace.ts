@@ -15,10 +15,8 @@ import {
     type DeviceGroupMap
 } from '../types/deviceWorkspace';
 import {
-    SESSION_LAUNCH_REQUESTED_EVENT,
     type ScrcpyConfig
 } from './useScrcpy';
-import { applyQualityMode } from '../utils/adaptiveQuality';
 import {
     RECORDING_COMPLETED_EVENT,
     RECORDING_STARTED_EVENT
@@ -30,6 +28,7 @@ interface UseDeviceWorkspaceOptions {
     outputDir: string;
     baseConfig: ScrcpyConfig;
     enabled: boolean;
+    launchDevice: (config: ScrcpyConfig) => Promise<void>;
 }
 
 function loadGroups(): DeviceGroupMap {
@@ -51,7 +50,8 @@ export function useDeviceWorkspace({
     customPath,
     outputDir,
     baseConfig,
-    enabled
+    enabled,
+    launchDevice
 }: UseDeviceWorkspaceOptions) {
     const [groups, setGroups] = useState<DeviceGroupMap>(() => loadGroups());
     const [statuses, setStatuses] = useState<Record<string, DeviceStatus>>({});
@@ -130,22 +130,9 @@ export function useDeviceWorkspace({
 
     const launch = useCallback(
         async (serial: string) => {
-            const config: ScrcpyConfig = applyQualityMode({ ...baseConfig, device: serial });
-            window.dispatchEvent(
-                new CustomEvent(SESSION_LAUNCH_REQUESTED_EVENT, { detail: config })
-            );
-            try {
-                const stored = JSON.parse(
-                    localStorage.getItem('scrcpy_device_config_profiles') || '{}'
-                );
-                stored[serial] = config;
-                localStorage.setItem('scrcpy_device_config_profiles', JSON.stringify(stored));
-            } catch {
-                // Launch remains available if persistence is unavailable.
-            }
-            await invoke('run_scrcpy', { config }).catch(() => undefined);
+            await launchDevice({ ...baseConfig, device: serial });
         },
-        [baseConfig]
+        [baseConfig, launchDevice]
     );
 
     const stop = useCallback(async (serial: string) => {

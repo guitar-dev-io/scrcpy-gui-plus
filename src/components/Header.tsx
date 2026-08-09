@@ -22,6 +22,7 @@ import { SUPPORTED_LOCALES, useI18n, type Locale } from '../i18n'
 import { useDeviceStatus } from '../hooks/useDeviceStatus'
 
 interface HeaderProps {
+  compact?: boolean
   onThemeChange: (theme: string) => void
   currentTheme: string
   colorMode: 'light' | 'dark' | 'system'
@@ -50,6 +51,7 @@ const THEMES = [
 ] as const
 
 export default function Header({
+  compact = false,
   onThemeChange,
   currentTheme,
   colorMode,
@@ -109,8 +111,8 @@ export default function Header({
 
   return (
     <>
-      <header className="flex h-[58px] items-stretch gap-4">
-        <section className="flex min-w-0 flex-1 items-center gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 shadow-[var(--shadow-sm)]">
+      <header className={`flex items-stretch ${compact ? 'h-10 gap-0' : 'h-[58px] gap-4'}`}>
+        <section className={`${compact ? 'hidden' : 'flex'} min-w-0 flex-1 items-center gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 shadow-[var(--shadow-sm)]`}>
           <Smartphone size={20} className="shrink-0 text-[var(--text-muted)]" />
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -134,8 +136,8 @@ export default function Header({
           </div>
         </section>
 
-        <div ref={menuRef} className="relative flex min-w-0 items-center rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 shadow-[var(--shadow-sm)] sm:min-w-[340px] sm:px-4">
-          <div className="mr-auto min-w-0">
+        <div ref={menuRef} className={`relative flex min-w-0 items-center px-2 ${compact ? 'bg-transparent sm:min-w-0' : 'rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] shadow-[var(--shadow-sm)] sm:min-w-[340px] sm:px-4'}`}>
+          <div className={`${compact ? 'mr-2 hidden xl:block' : 'mr-auto'} min-w-0`}>
             <div className="flex items-center gap-2">
               <p className="text-[9px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Scrcpy Engine</p>
               <span className={`h-1.5 w-1.5 rounded-full ${binaryStatus.found ? 'bg-emerald-400' : 'bg-amber-400'}`} />

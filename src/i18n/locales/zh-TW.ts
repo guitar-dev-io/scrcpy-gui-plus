@@ -288,6 +288,7 @@ export const zhTW: DeepPartialTranslations = {
     deviceDisconnected: '[系統] 裝置已斷開：{device}',
     discoveryActive: '[系統] 偵測運作中：找到 {count} 台裝置。',
     discoveryError: '[系統] 偵測錯誤：{error}',
+    discoveryPending: '[系統] 正在等待 ADB/scrcpy 以偵測裝置',
     errorRefreshingDevices: '[系統] 重新整理裝置錯誤：{error}',
     initializingScrcpy: '[系統] 正在為 {device} 初始化 scrcpy 工作階段...',
     failedToStartScrcpy: '[錯誤] 啟動 scrcpy 失敗：{error}',

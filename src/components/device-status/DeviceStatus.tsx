@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { useI18n } from '../../i18n';
 import { useDeviceStatus } from '../../hooks/useDeviceStatus';
-import { connectionTypeOf, formatKb, type DeviceStatus as DeviceStatusModel } from '../../types/deviceStatus';
+import { connectionTypeOf, formatKb, formatUptime, type DeviceStatus as DeviceStatusModel } from '../../types/deviceStatus';
 
 interface DeviceStatusProps {
     isOpen: boolean;
@@ -154,6 +154,10 @@ export default function DeviceStatus({
                                         : '—'
                                 }
                             />
+                            <StatCard icon={Activity} label="ABI" value={s?.abi || '—'} />
+                            <StatCard icon={CheckCircle2} label="Security Patch" value={s?.securityPatch || '—'} />
+                            <StatCard icon={Activity} label="Bootloader" value={s?.bootloader || '—'} />
+                            <StatCard icon={Activity} label="Uptime" value={formatUptime(s?.uptimeSeconds)} />
                             <StatCard
                                 icon={s?.charging ? BatteryCharging : BatteryMedium}
                                 label={t('deviceStatus.battery')}

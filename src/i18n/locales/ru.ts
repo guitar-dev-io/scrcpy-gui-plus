@@ -328,6 +328,7 @@ export const ru: DeepPartialTranslations = {
     discoveryActive:
       '[SYSTEM] Обнаружение активно: найдено устройств: {count}.',
     discoveryError: '[SYSTEM] Ошибка обнаружения: {error}',
+    discoveryPending: '[SYSTEM] Обнаружение устройства ожидает ADB/scrcpy',
     errorRefreshingDevices: '[SYSTEM] Ошибка при обновлении устройств: {error}',
     initializingScrcpy: '[SYSTEM] Инициализация сессии scrcpy для {device}...',
     failedToStartScrcpy: '[ERROR] Не удалось запустить scrcpy: {error}',

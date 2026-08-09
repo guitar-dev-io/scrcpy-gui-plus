@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react'
 import { useDeviceStatus } from '../../hooks/useDeviceStatus'
+import type { IosDeviceInfo } from '../../hooks/useIosMirror'
 import { connectionTypeOf } from '../../types/deviceStatus'
 
 interface DevicesPageProps {
@@ -32,6 +33,47 @@ interface DevicesPageProps {
   onShell: (serial: string) => void
   onMore: (serial: string) => void
   connectionTools: ReactNode
+  iosDevices?: IosDeviceInfo[]
+  iosReady?: boolean
+  onViewIos?: (device: IosDeviceInfo) => void
+}
+
+function IosDeviceCard({
+  device,
+  onView,
+}: {
+  device: IosDeviceInfo
+  onView: () => void
+}) {
+  const ConnectionIcon = device.connectionType.toLowerCase().includes('usb') ? Usb : Wifi
+  return (
+    <article className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4 shadow-[0_14px_36px_rgba(0,0,0,.16)] transition-colors hover:border-[var(--border-base)]">
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-primary/30 bg-primary/10 text-primary">
+          <Smartphone size={20} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h2 className="truncate text-[12px] font-semibold text-[var(--text-base)]">{device.name || device.productType}</h2>
+            <span className="rounded bg-white/7 px-1.5 py-0.5 text-[8px] font-semibold text-[var(--text-muted)]">iOS</span>
+            <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[8px] font-semibold text-emerald-400">Available</span>
+          </div>
+          <p className="mt-1 truncate font-mono text-[9px] text-[var(--text-subtle)]">{device.udid}</p>
+        </div>
+      </div>
+      <div className="mt-4 grid grid-cols-3 gap-4 border-y border-[var(--border-subtle)] py-3 text-[9px]">
+        <div><span className="block text-[var(--text-subtle)]">Product</span><span className="mt-1 block truncate text-[var(--text-muted)]">{device.productType || '—'}</span></div>
+        <div><span className="block text-[var(--text-subtle)]">System</span><span className="mt-1 block text-[var(--text-muted)]">iOS {device.productVersion || '—'}</span></div>
+        <div><span className="block text-[var(--text-subtle)]">Connection</span><span className="mt-1 flex items-center gap-1 text-[var(--text-muted)]"><ConnectionIcon size={11} />{device.connectionType || '—'}</span></div>
+      </div>
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <span className="text-[9px] text-[var(--text-subtle)]">View-only developer stream</span>
+        <button type="button" onClick={onView} className="flex h-8 items-center gap-1.5 rounded-md bg-primary/15 px-3 text-[9px] font-semibold text-primary hover:bg-primary/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]">
+          <Eye size={11} /> Open Workspace
+        </button>
+      </div>
+    </article>
+  )
 }
 
 function DeviceCard({
@@ -135,6 +177,9 @@ export default function DevicesPage({
   onShell,
   onMore,
   connectionTools,
+  iosDevices = [],
+  iosReady = false,
+  onViewIos,
 }: DevicesPageProps) {
   const [toolsOpen, setToolsOpen] = useState(false)
 
@@ -152,7 +197,7 @@ export default function DevicesPage({
       <header className="flex min-h-[72px] flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] py-4">
         <div>
           <h1 className="text-lg font-semibold text-[var(--text-base)]">Devices</h1>
-          <p className="mt-1 text-[10px] text-[var(--text-subtle)]">{devices.length} connected {devices.length === 1 ? 'device' : 'devices'}</p>
+          <p className="mt-1 text-[10px] text-[var(--text-subtle)]">{devices.length + (iosReady ? iosDevices.length : 0)} connected {devices.length + (iosReady ? iosDevices.length : 0) === 1 ? 'device' : 'devices'}</p>
         </div>
         <div className="flex items-center gap-2">
           <button type="button" onClick={() => setToolsOpen(true)} className="flex h-9 items-center gap-2 rounded-lg border border-[var(--border-base)] px-3 text-[10px] text-[var(--text-muted)] hover:border-primary/50 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]">
@@ -168,7 +213,7 @@ export default function DevicesPage({
       </header>
 
       <section aria-label="Connected devices" className="mx-auto w-full max-w-3xl space-y-3 py-5">
-        {devices.length === 0 ? (
+        {devices.length === 0 && (!iosReady || iosDevices.length === 0) ? (
           <div className="flex min-h-72 flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border-base)] bg-[var(--bg-surface)]/45 px-6 text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-[var(--border-base)] bg-black/15 text-[var(--text-subtle)]"><Smartphone size={21} /></div>
             <h2 className="mt-4 text-sm font-semibold text-[var(--text-muted)]">No devices detected</h2>
@@ -176,7 +221,8 @@ export default function DevicesPage({
             <button type="button" onClick={onAddDevice} className="mt-4 flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-[10px] font-semibold text-on-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"><Plus size={13} /> Add Device</button>
           </div>
         ) : (
-          devices.map((serial) => (
+          <>
+          {devices.map((serial) => (
             <DeviceCard
               key={serial}
               serial={serial}
@@ -190,7 +236,15 @@ export default function DevicesPage({
               onShell={() => onShell(serial)}
               onMore={() => onMore(serial)}
             />
-          ))
+          ))}
+          {iosReady && iosDevices.map((device) => (
+            <IosDeviceCard
+              key={device.udid}
+              device={device}
+              onView={() => onViewIos?.(device)}
+            />
+          ))}
+          </>
         )}
       </section>
 

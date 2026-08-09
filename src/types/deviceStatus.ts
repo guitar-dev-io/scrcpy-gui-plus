@@ -8,6 +8,10 @@ export interface DeviceStatus {
     manufacturer?: string;
     androidVersion?: string;
     sdk?: string;
+    abi?: string;
+    securityPatch?: string;
+    bootloader?: string;
+    uptimeSeconds?: number;
     resolution?: string;
     density?: string;
     batteryLevel?: number;
@@ -18,6 +22,8 @@ export interface DeviceStatus {
     storageAvailableKb?: number;
     memTotalKb?: number;
     memAvailableKb?: number;
+    autoRotate?: boolean;
+    screenTimeoutMs?: number;
     error?: string;
     errorCode?: string;
 }
@@ -35,4 +41,15 @@ export function formatKb(kb?: number): string {
     if (kb >= 1024 * 1024) return `${(kb / 1024 / 1024).toFixed(1)} GB`;
     if (kb >= 1024) return `${(kb / 1024).toFixed(0)} MB`;
     return `${kb} KB`;
+}
+
+export function formatUptime(seconds?: number): string {
+    if (seconds === undefined || seconds === null || !Number.isFinite(seconds)) return '—';
+    const whole = Math.max(0, Math.floor(seconds));
+    const days = Math.floor(whole / 86400);
+    const hours = Math.floor((whole % 86400) / 3600);
+    const minutes = Math.floor((whole % 3600) / 60);
+    if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
 }

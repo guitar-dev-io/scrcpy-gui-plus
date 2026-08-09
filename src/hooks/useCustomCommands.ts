@@ -1,6 +1,12 @@
 import { useCallback, useState } from 'react';
 import { runCustomCommand } from '../services/customCommandService';
 import {
+    loadTestingCatalog,
+    replaceCatalogScripts,
+    saveTestingCatalog,
+    scriptsToCommandPresets
+} from '../services/testingCatalogService';
+import {
     CUSTOM_COMMANDS_KEY,
     DEFAULT_COMMAND_PRESETS,
     tokenizeTemplate,
@@ -16,12 +22,18 @@ interface UseCustomCommandsOptions {
 
 function loadPresets(): CommandPreset[] {
     try {
-        const raw = localStorage.getItem(CUSTOM_COMMANDS_KEY);
-        if (raw) return JSON.parse(raw) as CommandPreset[];
+        const scripts = scriptsToCommandPresets(loadTestingCatalog().scripts);
+        if (scripts.length > 0) return scripts;
     } catch {
         // ignore
     }
     return DEFAULT_COMMAND_PRESETS;
+}
+
+function persistPresets(next: CommandPreset[]) {
+    saveTestingCatalog(replaceCatalogScripts(loadTestingCatalog(), next));
+    // Transitional compatibility for users who return to an older build.
+    localStorage.setItem(CUSTOM_COMMANDS_KEY, JSON.stringify(next));
 }
 
 /**
@@ -45,7 +57,7 @@ export function useCustomCommands({
     const persist = useCallback((next: CommandPreset[]) => {
         setPresets(next);
         try {
-            localStorage.setItem(CUSTOM_COMMANDS_KEY, JSON.stringify(next));
+            persistPresets(next);
         } catch {
             // ignore storage failures
         }
@@ -59,7 +71,7 @@ export function useCustomCommands({
                     ? prev.map((p) => (p.id === preset.id ? preset : p))
                     : [...prev, preset];
                 try {
-                    localStorage.setItem(CUSTOM_COMMANDS_KEY, JSON.stringify(next));
+                    persistPresets(next);
                 } catch {
                     // ignore
                 }

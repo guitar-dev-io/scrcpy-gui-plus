@@ -291,6 +291,7 @@ export const zhCN: DeepPartialTranslations = {
     deviceDisconnected: '[系统] 设备已断开：{device}',
     discoveryActive: '[系统] 正在发现设备：找到 {count} 台设备。',
     discoveryError: '[系统] 发现错误：{error}',
+    discoveryPending: '[系统] 正在等待 ADB/scrcpy 以发现设备',
     errorRefreshingDevices: '[系统] 刷新设备时出错：{error}',
     initializingScrcpy: '[系统] 正在为 {device} 初始化 scrcpy 会话...',
     failedToStartScrcpy: '[错误] 启动 scrcpy 失败：{error}',

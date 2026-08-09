@@ -13,13 +13,10 @@ import {
   Youtube,
 } from 'lucide-react'
 import type { AppRouteId } from '../navigation/appRoutes'
+import { useShellUi } from '../contexts/ShellUiContext'
 
 interface FooterProps {
   version: string
-  activeRoute: AppRouteId
-  onNavigate: (route: AppRouteId) => void
-  navigationCollapsed: boolean
-  onToggleNavigation: () => void
 }
 
 const dockItems: Array<{
@@ -38,9 +35,15 @@ const dockItems: Array<{
   { route: 'settings', label: 'Settings', icon: Settings },
 ]
 
-export default function Footer({ version, activeRoute, onNavigate, navigationCollapsed, onToggleNavigation }: FooterProps) {
+export default function Footer({ version }: FooterProps) {
+  const {
+    activeRoute,
+    navigate: onNavigate,
+    navigationCollapsed,
+    toggleNavigation: onToggleNavigation,
+  } = useShellUi()
   return (
-    <footer className="flex h-[68px] w-full min-w-0 items-center border-t border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 shadow-[0_-16px_40px_rgba(0,0,0,.12)]">
+    <footer className="flex h-[60px] w-full min-w-0 items-center border-t border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 lg:hidden">
       <div className={`hidden shrink-0 items-center border-r border-[var(--border-subtle)] text-[9px] text-[var(--text-subtle)] min-[1181px]:flex ${navigationCollapsed ? 'w-[72px] justify-center' : 'w-[284px]'}`}>
         <button type="button" onClick={onToggleNavigation} className="flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-[var(--bg-hover)] hover:text-[var(--text-base)]" aria-label={navigationCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
           <AppWindow size={13} /> {!navigationCollapsed && <span>Collapse · v{version}</span>}

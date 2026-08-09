@@ -315,6 +315,7 @@ export const ptBR: DeepPartialTranslations = {
     discoveryActive:
       '[SYSTEM] Descoberta ativa: {count} dispositivo(s) encontrado(s).',
     discoveryError: '[SYSTEM] Erro na descoberta: {error}',
+    discoveryPending: '[SYSTEM] A descoberta aguarda ADB/scrcpy',
     errorRefreshingDevices: '[SYSTEM] Erro ao atualizar dispositivos: {error}',
     initializingScrcpy: '[SYSTEM] Inicializando sessão scrcpy para {device}...',
     failedToStartScrcpy: '[ERROR] Falha ao iniciar o scrcpy: {error}',

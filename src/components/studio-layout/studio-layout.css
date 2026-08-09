@@ -1,0 +1,73 @@
+.studio-layout {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-base);
+}
+
+.studio-layout .flexlayout__layout {
+  --color-text: var(--text-base);
+  --color-background: var(--bg-base);
+  --color-base: var(--bg-base);
+  --color-1: var(--bg-sidebar);
+  --color-2: var(--bg-surface);
+  --color-3: var(--bg-elevated);
+  --color-4: var(--border-base);
+  --color-5: var(--bg-hover);
+  --color-6: var(--bg-elevated);
+  --color-drag1: var(--primary);
+  --color-drag2: var(--status-success);
+  --color-drag1-background: rgb(var(--primary-rgb) / 0.14);
+  --color-drag2-background: color-mix(
+    in srgb,
+    var(--status-success) 14%,
+    transparent
+  );
+  --color-icon: var(--text-subtle);
+  --color-overflow: var(--text-muted);
+  --color-focus: var(--focus-ring);
+  --color-tab-selected: var(--text-base);
+  --color-tab-selected-background: rgb(var(--primary-rgb) / 0.12);
+  --color-tab-unselected: var(--text-muted);
+  --color-tab-unselected-background: transparent;
+  --color-tab-content: var(--bg-base);
+  --color-tabset-background: var(--bg-sidebar);
+  --color-tabset-background-selected: var(--bg-sidebar);
+  --color-tabset-divider-line: var(--border-subtle);
+  --color-border-divider-line: var(--border-subtle);
+  --font-family: var(--font-sans);
+  --font-size: var(--font-size-label);
+  --splitter-size: 6px;
+  --splitter-active-size: 10px;
+}
+
+.studio-layout .flexlayout__splitter:hover,
+.studio-layout .flexlayout__splitter_drag {
+  background-color: rgb(var(--primary-rgb) / 0.32);
+}
+
+.studio-layout .flexlayout__tab_button--selected {
+  box-shadow: inset 0 -2px 0 var(--primary);
+}
+
+.studio-layout .flexlayout__tab_button_content {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.studio-layout .flexlayout__tabset-selected {
+  border-color: var(--border-base);
+}
+
+.studio-layout__missing-panel {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  padding: var(--space-4);
+  color: var(--text-subtle);
+  font-size: var(--font-size-body-sm);
+}

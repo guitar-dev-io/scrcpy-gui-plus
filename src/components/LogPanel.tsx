@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, memo } from 'react'
+import { useRef, useEffect, useMemo, useState, memo } from 'react'
 import {
   Download,
   Pause,
@@ -10,9 +10,11 @@ import {
 } from 'lucide-react'
 import { invoke } from '@tauri-apps/api/core'
 import { useI18n } from '../i18n'
+import { reconcileStableLogEntries, type StableLogEntry } from '../utils/stableLogEntries'
 
 interface LogPanelProps {
   logs: string[]
+  stableEntries?: readonly StableLogEntry[]
   onClear: () => void
   onAddLog?: (msg: string) => void
   onRunCommand?: (cmd: string) => void
@@ -21,17 +23,27 @@ interface LogPanelProps {
 }
 
 const LogPanel = memo(
-  ({ logs, onClear, onAddLog, onRunCommand, dashboard = false, mode = 'logcat' }: LogPanelProps) => {
+  ({ logs, stableEntries, onClear, onAddLog, onRunCommand, dashboard = false, mode = 'logcat' }: LogPanelProps) => {
     const { t } = useI18n()
     const containerRef = useRef<HTMLDivElement>(null)
     const [isLive, setIsLive] = useState(false)
     const [command, setCommand] = useState('')
     const [query, setQuery] = useState('')
     const [paused, setPaused] = useState(false)
+    const stableEntriesRef = useRef<StableLogEntry[]>([])
+    const timestampedLogs = useMemo(() => {
+      if (stableEntries) return [...stableEntries]
+      const next = reconcileStableLogEntries(stableEntriesRef.current, logs)
+      stableEntriesRef.current = next
+      return next
+    }, [logs, stableEntries])
 
+    const modeLogs = mode === 'events'
+      ? timestampedLogs.filter(({ text }) => /touch|key|input|event|rotation|device|session|connect|disconnect/i.test(text))
+      : timestampedLogs
     const visibleLogs = query.trim()
-      ? logs.filter((log) => log.toLowerCase().includes(query.trim().toLowerCase()))
-      : logs
+      ? modeLogs.filter(({ text }) => text.toLowerCase().includes(query.trim().toLowerCase()))
+      : modeLogs
 
     useEffect(() => {
       if (!paused && containerRef.current) {
@@ -163,11 +175,11 @@ const LogPanel = memo(
             <div className="space-y-1">
               {visibleLogs.map((log, i) => (
                 <div
-                  key={i}
+                  key={`${log.timestamp}-${i}`}
                   className="group flex gap-3 text-[11px] leading-relaxed py-0.5 border-l border-zinc-900 hover:border-primary/30 transition-colors pl-3"
                 >
                   <span className="text-zinc-500 font-bold shrink-0 tabular-nums opacity-60 group-hover:opacity-100 transition-opacity">
-                    {new Date().toLocaleTimeString([], {
+                    {new Date(log.timestamp).toLocaleTimeString([], {
                       hour12: false,
                       hour: '2-digit',
                       minute: '2-digit',
@@ -175,7 +187,7 @@ const LogPanel = memo(
                     })}
                   </span>
                   <span className="text-zinc-300 break-all selection:bg-primary/30 selection:text-on-primary">
-                    {log}
+                    {log.text}
                   </span>
                 </div>
               ))}

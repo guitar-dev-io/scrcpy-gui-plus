@@ -56,6 +56,54 @@ fn action_args(action: &str) -> Option<Vec<&'static str>> {
         "screen_on" => vec!["shell", "input", "keyevent", "KEYCODE_WAKEUP"],
         "expand_notifications" => vec!["shell", "cmd", "statusbar", "expand-notifications"],
         "collapse_notifications" => vec!["shell", "cmd", "statusbar", "collapse"],
+        "screen_timeout_15s" => vec![
+            "shell",
+            "settings",
+            "put",
+            "system",
+            "screen_off_timeout",
+            "15000",
+        ],
+        "screen_timeout_30s" => vec![
+            "shell",
+            "settings",
+            "put",
+            "system",
+            "screen_off_timeout",
+            "30000",
+        ],
+        "screen_timeout_60s" => vec![
+            "shell",
+            "settings",
+            "put",
+            "system",
+            "screen_off_timeout",
+            "60000",
+        ],
+        "screen_timeout_120s" => vec![
+            "shell",
+            "settings",
+            "put",
+            "system",
+            "screen_off_timeout",
+            "120000",
+        ],
+        "screen_timeout_300s" => vec![
+            "shell",
+            "settings",
+            "put",
+            "system",
+            "screen_off_timeout",
+            "300000",
+        ],
+        "screen_timeout_600s" => vec![
+            "shell",
+            "settings",
+            "put",
+            "system",
+            "screen_off_timeout",
+            "600000",
+        ],
         _ => return None,
     };
     Some(args)
@@ -64,7 +112,8 @@ fn action_args(action: &str) -> Option<Vec<&'static str>> {
 /// Whether an action name is part of the recognized allowlist (including the
 /// specially-handled `rotate`).
 pub fn is_allowed_action(action: &str) -> bool {
-    action == "rotate" || action_args(action).is_some()
+    matches!(action, "rotate" | "auto_rotate_on" | "auto_rotate_off")
+        || action_args(action).is_some()
 }
 
 fn ok(action: &str, output: Option<String>) -> ActionResult {
@@ -155,6 +204,59 @@ async fn rotate_device(serial: &str, custom_path: Option<String>) -> ActionResul
     }
 }
 
+/// Toggle accelerometer-driven rotation through WindowManager. This works on
+/// Android builds (including Xiaomi/HyperOS) that reject direct
+/// `settings put system accelerometer_rotation` calls from the shell user.
+async fn set_auto_rotate(serial: &str, enabled: bool, custom_path: Option<String>) -> ActionResult {
+    let action = if enabled {
+        "auto_rotate_on"
+    } else {
+        "auto_rotate_off"
+    };
+
+    if enabled {
+        return match adb::run_adb_text(
+            Some(serial),
+            &["shell", "cmd", "window", "user-rotation", "free"],
+            custom_path,
+            ACTION_TIMEOUT_SECS,
+        )
+        .await
+        {
+            Ok(_) => ok(action, Some("auto_rotation=enabled".to_string())),
+            Err(e) => err(action, &e),
+        };
+    }
+
+    let current = match adb::run_adb_text(
+        Some(serial),
+        &["shell", "settings", "get", "system", "user_rotation"],
+        custom_path.clone(),
+        ACTION_TIMEOUT_SECS,
+    )
+    .await
+    {
+        Ok(value) => value.trim().parse::<i32>().unwrap_or(0).clamp(0, 3),
+        Err(e) => return err(action, &e),
+    };
+    let current = current.to_string();
+
+    match adb::run_adb_text(
+        Some(serial),
+        &["shell", "cmd", "window", "user-rotation", "lock", &current],
+        custom_path,
+        ACTION_TIMEOUT_SECS,
+    )
+    .await
+    {
+        Ok(_) => ok(
+            action,
+            Some(format!("auto_rotation=disabled;rotation={current}")),
+        ),
+        Err(e) => err(action, &e),
+    }
+}
+
 /// Execute a single validated device action.
 #[tauri::command]
 pub async fn device_action(
@@ -177,6 +279,9 @@ pub async fn device_action(
 
     if action == "rotate" {
         return rotate_device(&serial, custom_path).await;
+    }
+    if action == "auto_rotate_on" || action == "auto_rotate_off" {
+        return set_auto_rotate(&serial, action == "auto_rotate_on", custom_path).await;
     }
 
     let args = match action_args(&action) {
@@ -359,6 +464,14 @@ mod tests {
             "screen_on",
             "expand_notifications",
             "collapse_notifications",
+            "auto_rotate_on",
+            "auto_rotate_off",
+            "screen_timeout_15s",
+            "screen_timeout_30s",
+            "screen_timeout_60s",
+            "screen_timeout_120s",
+            "screen_timeout_300s",
+            "screen_timeout_600s",
             "rotate",
         ] {
             assert!(is_allowed_action(a), "expected {} to be allowed", a);

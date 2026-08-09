@@ -1,6 +1,6 @@
-import { useState } from 'react'
 import {
   AppWindow,
+  BatteryMedium,
   Bot,
   Braces,
   ChevronLeft,
@@ -20,23 +20,25 @@ import {
   Wifi,
   type LucideIcon,
 } from 'lucide-react'
+import { useDeviceStatus } from '../../hooks/useDeviceStatus'
+import { connectionTypeOf } from '../../types/deviceStatus'
 import {
   APP_ROUTES,
   type AppRouteDefinition,
   type AppRouteId,
 } from '../../navigation/appRoutes'
 import { classNames } from '../ui/classNames'
+import { useShellUi } from '../../contexts/ShellUiContext'
 
 export type NavigationActionId = 'shell-terminal'
 
 interface AppNavigationProps {
-  activeRoute: AppRouteId
-  onNavigate: (route: AppRouteId) => void
   actions?: Partial<Record<NavigationActionId, () => void>>
-  defaultCollapsed?: boolean
-  collapsed?: boolean
-  onCollapsedChange?: (collapsed: boolean) => void
   routes?: readonly AppRouteDefinition[]
+  activeDevice?: string
+  customPath?: string
+  sessionRunning?: boolean
+  onStopSession?: () => void
 }
 
 const routeIcons: Record<AppRouteId, LucideIcon> = {
@@ -64,31 +66,42 @@ const shellTerminalItem = {
 }
 
 export default function AppNavigation({
-  activeRoute,
-  onNavigate,
   actions = {},
-  defaultCollapsed = false,
-  collapsed: controlledCollapsed,
-  onCollapsedChange,
   routes = APP_ROUTES,
+  activeDevice = '',
+  customPath,
+  sessionRunning = false,
+  onStopSession,
 }: AppNavigationProps) {
-  const [internalCollapsed, setInternalCollapsed] = useState(defaultCollapsed)
-  const collapsed = controlledCollapsed ?? internalCollapsed
-  const setCollapsed = (next: boolean) => {
-    setInternalCollapsed(next)
-    onCollapsedChange?.(next)
-  }
+  const {
+    activeRoute,
+    navigate: onNavigate,
+    navigationCollapsed: collapsed,
+    setNavigationCollapsed: setCollapsed,
+  } = useShellUi()
   const mainRoutes = routes.filter((route) => route.group === 'main')
+  const testingRoutes = routes.filter((route) => route.group === 'testing')
   const toolRoutes = routes.filter((route) => route.group === 'tools')
-  const extraRoutes = routes.filter((route) => route.group === 'extra')
-  const settingsRoute = routes.find((route) => route.group === 'settings')
+  const systemRoutes = routes.filter((route) => route.group === 'system')
+  const { status: deviceStatus, loading: deviceStatusLoading } = useDeviceStatus({
+    activeDevice,
+    customPath,
+    autoRefresh: false,
+    enabled: Boolean(activeDevice),
+  })
+  const deviceConnection = deviceStatus?.success
+    ? { label: 'Connected', dot: 'bg-emerald-400', text: 'text-emerald-400' }
+    : deviceStatusLoading || deviceStatus === null
+      ? { label: 'Checking…', dot: 'bg-amber-400', text: 'text-amber-400' }
+      : { label: 'Unavailable', dot: 'bg-rose-400', text: 'text-rose-400' }
+  const activeDeviceName = deviceStatus?.model || activeDevice
 
   const itemClass = (active = false) =>
     classNames(
-      'group flex h-9 w-full items-center rounded-lg text-left text-[12px] font-medium transition-[color,background-color] duration-[var(--duration-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] max-[1180px]:justify-center max-[1180px]:gap-0 max-[1180px]:px-2',
+      'group relative flex h-9 w-full items-center rounded-md text-left text-[11px] font-medium transition-[color,background-color] duration-[var(--duration-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] max-[1180px]:justify-center max-[1180px]:gap-0 max-[1180px]:px-2',
       collapsed ? 'justify-center px-2' : 'gap-3 px-3',
       active
-        ? 'bg-gradient-to-r from-primary/30 to-primary/15 text-primary shadow-[inset_0_0_0_1px_rgba(var(--primary-rgb),.12)]'
+        ? 'bg-primary/20 text-[var(--text-base)] shadow-[inset_2px_0_0_rgb(var(--primary-rgb))]'
         : 'text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-base)]',
     )
 
@@ -97,20 +110,40 @@ export default function AppNavigation({
       <span className="truncate max-[1180px]:hidden">{label}</span>
     )
 
+  const renderRouteButton = (route: AppRouteDefinition) => {
+    const Icon = routeIcons[route.id]
+    const active = activeRoute === route.id
+    return (
+      <button
+        key={route.id}
+        type="button"
+        onClick={() => onNavigate(route.id)}
+        aria-current={active ? 'page' : undefined}
+        aria-label={route.label}
+        title={route.label}
+        className={itemClass(active)}
+      >
+        <Icon size={16} className="shrink-0" />
+        {renderLabel(route.label)}
+      </button>
+    )
+  }
+
   return (
     <nav
       aria-label="Primary navigation"
+      data-collapsed={collapsed ? 'true' : 'false'}
       className={classNames(
-        'flex h-full flex-col border-r border-[var(--border-subtle)] bg-[radial-gradient(circle_at_30%_10%,rgba(var(--primary-rgb),.08),transparent_28%),var(--bg-sidebar)] transition-[width] duration-[var(--duration-slow)] max-[1180px]:w-[72px]',
-        collapsed ? 'w-[72px]' : 'w-[300px]',
+        'flex h-full flex-col border-r border-[var(--border-subtle)] bg-[var(--bg-sidebar)] transition-[width] duration-[var(--duration-slow)] max-[1180px]:w-[64px]',
+        collapsed ? 'w-[64px]' : 'w-[228px]',
       )}
     >
-      <div className="flex h-[72px] items-center gap-3 px-4 max-[1180px]:justify-center max-[1180px]:px-0">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-on-primary shadow-[0_7px_20px_rgba(var(--primary-rgb),.28)]">
+      <div className="flex h-[60px] items-center gap-3 border-b border-[var(--border-subtle)] px-4 max-[1180px]:justify-center max-[1180px]:px-0">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-on-primary">
           <Smartphone size={17} />
         </div>
         {!collapsed && (
-          <span className="truncate text-[13px] font-bold tracking-tight text-[var(--text-base)] max-[1180px]:hidden">
+          <span className="whitespace-nowrap text-[10px] font-bold tracking-[0.01em] text-[var(--text-base)] max-[1180px]:hidden">
             MOBILE DEVICE STUDIO
           </span>
         )}
@@ -125,61 +158,35 @@ export default function AppNavigation({
         </button>
       </div>
 
-      <div className="custom-scrollbar flex-1 space-y-5 overflow-y-auto px-3 py-2">
+      <div className="custom-scrollbar flex-1 space-y-4 overflow-y-auto px-2.5 py-3.5">
         <section aria-label="Main navigation">
           {!collapsed && (
-            <p className="mb-2 px-3 text-[9px] font-medium uppercase tracking-[0.12em] text-[var(--text-subtle)] max-[1180px]:hidden">
+            <p className="mb-1.5 px-3 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--text-subtle)] max-[1180px]:hidden">
               Main
             </p>
           )}
-          <div className="space-y-0.5">
-            {mainRoutes.map((route) => {
-              const Icon = routeIcons[route.id]
-              const active = activeRoute === route.id
-              return (
-                <button
-                  key={route.id}
-                  type="button"
-                  onClick={() => onNavigate(route.id)}
-                  aria-current={active ? 'page' : undefined}
-                  aria-label={route.label}
-                  title={route.label}
-                  className={itemClass(active)}
-                >
-                  <Icon size={16} className="shrink-0" />
-                  {renderLabel(route.label)}
-                </button>
-              )
-            })}
-          </div>
+          <div className="space-y-0.5">{mainRoutes.map(renderRouteButton)}</div>
         </section>
+
+        {testingRoutes.length > 0 && (
+          <section aria-label="Testing navigation">
+            {!collapsed && (
+              <p className="mb-1.5 px-3 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--text-subtle)] max-[1180px]:hidden">
+                Testing
+              </p>
+            )}
+            <div className="space-y-0.5">{testingRoutes.map(renderRouteButton)}</div>
+          </section>
+        )}
 
         <section aria-label="Tools navigation">
           {!collapsed && (
-            <p className="mb-2 px-3 text-[9px] font-medium uppercase tracking-[0.12em] text-[var(--text-subtle)] max-[1180px]:hidden">
+            <p className="mb-1.5 px-3 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--text-subtle)] max-[1180px]:hidden">
               Tools
             </p>
           )}
           <div className="space-y-0.5">
-            {toolRoutes[0] && (() => {
-              const route = toolRoutes[0]
-              const Icon = routeIcons[route.id]
-              const active = activeRoute === route.id
-              return (
-                <button
-                  key={route.id}
-                  type="button"
-                  onClick={() => onNavigate(route.id)}
-                  aria-current={active ? 'page' : undefined}
-                  aria-label={route.label}
-                  title={route.label}
-                  className={itemClass(active)}
-                >
-                  <Icon size={16} className="shrink-0" />
-                  {renderLabel(route.label)}
-                </button>
-              )
-            })()}
+            {toolRoutes[0] && renderRouteButton(toolRoutes[0])}
             <button
               type="button"
               onClick={actions['shell-terminal']}
@@ -190,68 +197,62 @@ export default function AppNavigation({
               <shellTerminalItem.icon size={16} className="shrink-0" />
               {renderLabel(shellTerminalItem.label)}
             </button>
-            {toolRoutes.slice(1).map((route) => {
-              const Icon = routeIcons[route.id]
-              const active = activeRoute === route.id
-              return (
-                <button
-                  key={route.id}
-                  type="button"
-                  onClick={() => onNavigate(route.id)}
-                  aria-current={active ? 'page' : undefined}
-                  aria-label={route.label}
-                  title={route.label}
-                  className={itemClass(active)}
-                >
-                  <Icon size={16} className="shrink-0" />
-                  {renderLabel(route.label)}
-                </button>
-              )
-            })}
-            {settingsRoute && (
-              <button
-                type="button"
-                onClick={() => onNavigate(settingsRoute.id)}
-                aria-label={settingsRoute.label}
-                aria-current={activeRoute === 'settings' ? 'page' : undefined}
-                title={settingsRoute.label}
-                className={itemClass(activeRoute === 'settings')}
-              >
-                <Settings size={16} className="shrink-0" />
-                {renderLabel(settingsRoute.label)}
-              </button>
-            )}
+            {toolRoutes.slice(1).map(renderRouteButton)}
           </div>
         </section>
 
-        <section aria-label="Extra navigation">
+        <section aria-label="System navigation">
           {!collapsed && (
-            <p className="mb-2 px-3 text-[9px] font-medium uppercase tracking-[0.12em] text-[var(--text-subtle)] max-[1180px]:hidden">
-              Extra
+            <p className="mb-1.5 px-3 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--text-subtle)] max-[1180px]:hidden">
+              System
             </p>
           )}
-          <div className="space-y-0.5">
-            {extraRoutes.map((route) => {
-              const Icon = routeIcons[route.id]
-              const active = activeRoute === route.id
-              return (
-                <button
-                  key={route.id}
-                  type="button"
-                  onClick={() => onNavigate(route.id)}
-                  aria-current={active ? 'page' : undefined}
-                  aria-label={route.label}
-                  title={route.label}
-                  className={itemClass(active)}
-                >
-                  <Icon size={16} className="shrink-0" />
-                  {renderLabel(route.label)}
-                </button>
-              )
-            })}
-          </div>
+          <div className="space-y-0.5">{systemRoutes.map(renderRouteButton)}</div>
         </section>
       </div>
+
+      {activeDevice && !collapsed && (
+        <section className="mx-2.5 mb-3 shrink-0 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3 shadow-[0_8px_24px_rgba(0,0,0,.12)] max-[1180px]:hidden" aria-label="Active device summary">
+          <div className="flex items-center gap-2.5 border-b border-[var(--border-subtle)] pb-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
+              <Smartphone size={15} />
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-[10px] font-semibold text-[var(--text-base)]">{activeDeviceName}</p>
+              <p className={classNames('mt-0.5 flex items-center gap-1.5 text-[8px] font-semibold', deviceConnection.text)}>
+                <span className={classNames('h-1.5 w-1.5 rounded-full', deviceConnection.dot)} aria-hidden="true" />
+                {deviceConnection.label}
+              </p>
+            </div>
+          </div>
+          <div className="space-y-2 py-3 text-[9px] text-[var(--text-muted)]">
+            <p className="flex items-center gap-2"><Smartphone size={11} className="text-[var(--text-subtle)]" /> Android {deviceStatus?.androidVersion || '—'}</p>
+            <p className="flex items-center gap-2"><Wifi size={11} className="text-[var(--text-subtle)]" /> {connectionTypeOf(activeDevice).toUpperCase()}{deviceStatus?.charging === true ? ' · Charging' : ''}</p>
+            <p className="flex items-center gap-2"><BatteryMedium size={11} className="text-[var(--text-subtle)]" /> {deviceStatus?.batteryLevel === undefined ? '—' : `${deviceStatus.batteryLevel}%`}</p>
+          </div>
+          {sessionRunning && onStopSession && (
+            <button type="button" onClick={onStopSession} className="flex h-8 w-full items-center justify-center rounded-md border border-rose-500/30 bg-rose-500/10 text-[9px] font-semibold text-rose-400 hover:bg-rose-500/15">
+              Stop Session
+            </button>
+          )}
+        </section>
+      )}
+
+      {activeDevice && (
+        <section
+          className={classNames(
+            'mx-auto mb-3 h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)]',
+            collapsed ? 'flex' : 'hidden max-[1180px]:flex',
+          )}
+          aria-label={`Active device: ${activeDeviceName}. ${deviceConnection.label}`}
+          title={`${activeDeviceName} · ${deviceConnection.label}`}
+        >
+          <span className="relative text-[var(--text-muted)]">
+            <Smartphone size={17} />
+            <span className={classNames('absolute -right-1 -top-1 h-2 w-2 rounded-full ring-2 ring-[var(--bg-surface)]', deviceConnection.dot)} aria-hidden="true" />
+          </span>
+        </section>
+      )}
     </nav>
   )
 }

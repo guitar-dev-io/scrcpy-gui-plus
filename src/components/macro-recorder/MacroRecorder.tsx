@@ -102,7 +102,7 @@ const QUICK_KEYS: { code: number; icon: typeof Play; labelKey: string }[] = [
   { code: 67, icon: Delete, labelKey: 'macro.keyDelete' },
 ]
 
-function describeStep(s: MacroStep): string {
+export function describeStep(s: MacroStep): string {
   switch (s.kind) {
     case 'tap':
       return `tap (${s.x}, ${s.y})`

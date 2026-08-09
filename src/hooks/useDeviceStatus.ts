@@ -26,22 +26,32 @@ export function useDeviceStatus({
     const [status, setStatus] = useState<DeviceStatus | null>(null);
     const [loading, setLoading] = useState(false);
     const inFlight = useRef(false);
+    const refreshQueued = useRef(false);
     const serial = (activeDevice || '').trim();
 
     const refresh = useCallback(async () => {
-        if (!serial || inFlight.current) return;
+        if (!serial) return;
+        if (inFlight.current) {
+            refreshQueued.current = true;
+            return;
+        }
         inFlight.current = true;
         setLoading(true);
         try {
-            const res = await getDeviceStatus(serial, customPath);
-            setStatus(res);
-        } catch (e) {
-            setStatus({
-                success: false,
-                serial,
-                error: String(e),
-                errorCode: 'invoke_failed'
-            });
+            do {
+                refreshQueued.current = false;
+                try {
+                    const res = await getDeviceStatus(serial, customPath);
+                    setStatus(res);
+                } catch (e) {
+                    setStatus({
+                        success: false,
+                        serial,
+                        error: String(e),
+                        errorCode: 'invoke_failed'
+                    });
+                }
+            } while (refreshQueued.current);
         } finally {
             inFlight.current = false;
             setLoading(false);

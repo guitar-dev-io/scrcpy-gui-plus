@@ -220,11 +220,13 @@ export function useIosDevicePreview({
   const [frameSrc, setFrameSrc] = useState<string>('')
   const [error, setError] = useState<string>('')
   const [isLoading, setIsLoading] = useState(false)
+  const [fps, setFps] = useState(0)
 
   const udidRef = useRef(udid)
   const customPathRef = useRef(customPath)
   const unlistenRef = useRef<UnlistenFn[]>([])
   const runningRef = useRef(false)
+  const frameTimesRef = useRef<number[]>([])
 
   useEffect(() => {
     udidRef.current = udid
@@ -242,6 +244,8 @@ export function useIosDevicePreview({
     runningRef.current = false
     setIsPreviewing(false)
     setIsLoading(false)
+    setFps(0)
+    frameTimesRef.current = []
     cleanupListeners()
     await invoke('stop_ios_mirror', { udid: udidRef.current }).catch(
       () => undefined,
@@ -260,6 +264,8 @@ export function useIosDevicePreview({
     setIsLoading(true)
     setError('')
     setFrameSrc('')
+    setFps(0)
+    frameTimesRef.current = []
 
     const unFrame = await listen<{ udid: string; data: string }>(
       'ios-frame',
@@ -267,6 +273,12 @@ export function useIosDevicePreview({
         if (e.payload.udid !== u) return
         setFrameSrc(e.payload.data)
         setIsLoading(false)
+        const now = performance.now()
+        frameTimesRef.current.push(now)
+        frameTimesRef.current = frameTimesRef.current.filter(
+          (capturedAt) => now - capturedAt <= 1000,
+        )
+        setFps(frameTimesRef.current.length)
       },
     )
     const unStatus = await listen<{ udid: string; running: boolean }>(
@@ -319,6 +331,7 @@ export function useIosDevicePreview({
     frameSrc,
     error,
     isLoading,
+    fps,
     start,
     stop,
     toggle,

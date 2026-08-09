@@ -26,7 +26,7 @@ const THREADTIME_RE =
 let entryId = 0;
 
 /** Parse a single `-v threadtime` line into a structured entry. */
-function parseLine(raw: string): LogEntry {
+export function parseLogcatLine(raw: string): LogEntry {
     const m = THREADTIME_RE.exec(raw);
     let time = '';
     let pid = '';
@@ -53,6 +53,27 @@ function parseLine(raw: string): LogEntry {
     const anr = /ANR in |Input dispatching timed out/.test(haystack);
 
     return { id: entryId++, time, pid, tid, level, tag, message, raw, crash, anr };
+}
+
+export interface LogcatFilters {
+    minLevel: LogLevel;
+    tagFilter: string;
+    search: string;
+    crashOnly: boolean;
+}
+
+export function filterLogcatEntries(entries: readonly LogEntry[], filters: LogcatFilters): LogEntry[] {
+    const q = filters.search.trim().toLowerCase();
+    const tag = filters.tagFilter.trim().toLowerCase();
+    const minRank = LEVEL_ORDER[filters.minLevel];
+    return entries.filter((entry) => {
+        if (filters.crashOnly && !entry.crash && !entry.anr) return false;
+        if (LEVEL_ORDER[entry.level] < minRank) return false;
+        if (tag && !entry.tag.toLowerCase().includes(tag) && !entry.message.toLowerCase().includes(tag))
+            return false;
+        if (q && !entry.raw.toLowerCase().includes(q)) return false;
+        return true;
+    });
 }
 
 /**
@@ -98,7 +119,7 @@ export function useLogcat({ activeDevice, customPath, enabled }: UseLogcatOption
             const parsed = payload.chunk
                 .split('\n')
                 .filter((l) => l.length > 0)
-                .map(parseLine);
+                .map(parseLogcatLine);
             if (parsed.length === 0) return;
             if (pausedRef.current) {
                 pausedBuffer.current.push(...parsed);
@@ -174,17 +195,7 @@ export function useLogcat({ activeDevice, customPath, enabled }: UseLogcatOption
     }, [appendEntries]);
 
     const filtered = useMemo(() => {
-        const q = search.trim().toLowerCase();
-        const tag = tagFilter.trim().toLowerCase();
-        const minRank = LEVEL_ORDER[minLevel];
-        return entries.filter((e) => {
-            if (crashOnly && !e.crash && !e.anr) return false;
-            if (LEVEL_ORDER[e.level] < minRank) return false;
-            if (tag && !e.tag.toLowerCase().includes(tag) && !e.message.toLowerCase().includes(tag))
-                return false;
-            if (q && !e.raw.toLowerCase().includes(q)) return false;
-            return true;
-        });
+        return filterLogcatEntries(entries, { minLevel, tagFilter, search, crashOnly });
     }, [entries, search, tagFilter, minLevel, crashOnly]);
 
     const crashCount = useMemo(

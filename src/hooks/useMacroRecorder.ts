@@ -4,6 +4,13 @@ import { runAppAction } from '../services/appManagerService'
 import { runCustomCommand } from '../services/customCommandService'
 import { captureScreenshot } from '../services/screenshotService'
 import {
+  appendAutomationTestRun,
+  automationsToMacros,
+  loadTestingCatalog,
+  replaceCatalogAutomations,
+  saveTestingCatalog,
+} from '../services/testingCatalogService'
+import {
   captureScreenBase64,
   dumpUiHierarchy,
 } from '../services/uiInspectorService'
@@ -28,12 +35,31 @@ interface UseMacroRecorderOptions {
   outputDir: string
 }
 
+export interface MacroReplayResult {
+  ok: boolean
+  failedAt?: number
+  stopped?: boolean
+  /** Reserved for engine-authored conditional skips; current macro replay does not emit it. */
+  skippedIndices?: number[]
+  /** Real artifacts produced by screenshot steps during this run. */
+  artifacts?: MacroReplayArtifact[]
+  /** Real wall-clock time spent by the replay engine. */
+  durationMs: number
+}
+
+export interface MacroReplayArtifact {
+  stepIndex: number
+  kind: 'screenshot'
+  path: string
+  filename: string
+  capturedAt: string
+}
+
 const STORAGE_KEY = 'scrcpy_macros'
 
 function loadMacros(): Macro[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? (JSON.parse(raw) as Macro[]) : []
+    return automationsToMacros(loadTestingCatalog().automations)
   } catch {
     return []
   }
@@ -87,6 +113,7 @@ export function useMacroRecorder({
   const [saved, setSaved] = useState<Macro[]>(() => loadMacros())
   const [replaying, setReplaying] = useState(false)
   const [replayIndex, setReplayIndex] = useState(-1)
+  const [stopping, setStopping] = useState(false)
   const abortRef = useRef(false)
 
   // Interactive recording: a live device screenshot the user taps / drags on
@@ -104,6 +131,9 @@ export function useMacroRecorder({
   const persist = useCallback((next: Macro[]) => {
     setSaved(next)
     try {
+      saveTestingCatalog(replaceCatalogAutomations(loadTestingCatalog(), next))
+      // Keep the legacy key during the v1 catalog transition so older builds
+      // can still read user data after a downgrade.
       localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
     } catch {
       // ignore storage failures
@@ -173,19 +203,47 @@ export function useMacroRecorder({
   }, [])
 
   const stop = useCallback(() => {
+    if (!replaying) return
     abortRef.current = true
-  }, [])
+    // The current backend operation cannot always be interrupted, so expose
+    // the real "stopping" state until replay reaches its next abort check.
+    setStopping(true)
+  }, [replaying])
 
-  const replay = useCallback(async (): Promise<{
-    ok: boolean
-    failedAt?: number
-  }> => {
-    if (!serial || replaying || steps.length === 0) return { ok: false }
+  const replay = useCallback(async (): Promise<MacroReplayResult> => {
+    if (!serial || replaying || steps.length === 0) return { ok: false, durationMs: 0 }
+    const startedAt = performance.now()
+    const startedAtIso = new Date().toISOString()
+    const artifacts: MacroReplayArtifact[] = []
+    const outcome = (
+      result: Omit<MacroReplayResult, 'durationMs'>,
+    ): MacroReplayResult => {
+      const completed: MacroReplayResult = {
+        ...result,
+        artifacts: [...artifacts],
+        durationMs: Math.max(0, performance.now() - startedAt),
+      }
+      try {
+        const catalog = appendAutomationTestRun(
+          loadTestingCatalog(),
+          name.trim() || 'Macro',
+          serial,
+          startedAtIso,
+          new Date().toISOString(),
+          completed,
+        )
+        saveTestingCatalog(catalog)
+      } catch {
+        // Execution remains valid if run-history persistence is unavailable.
+      }
+      return completed
+    }
     setReplaying(true)
+    setStopping(false)
     abortRef.current = false
     try {
       for (let i = 0; i < steps.length; i++) {
-        if (abortRef.current) return { ok: false, failedAt: i }
+        if (abortRef.current) return outcome({ ok: false, stopped: true, failedAt: i })
         setReplayIndex(i)
         const step = steps[i]
         if (step.kind === 'wait') {
@@ -193,11 +251,19 @@ export function useMacroRecorder({
           continue
         }
         if (step.kind === 'screenshot') {
-          await captureScreenshot({
+          const captured = await captureScreenshot({
             deviceSerial: serial,
             outputDir: outputDir || undefined,
             customPath,
           }).catch(() => undefined)
+          if (!captured?.success) return outcome({ ok: false, failedAt: i })
+          artifacts.push({
+            stepIndex: i,
+            kind: 'screenshot',
+            path: captured.path,
+            filename: captured.filename,
+            capturedAt: captured.capturedAt,
+          })
           continue
         }
         if (step.kind === 'waitForElement') {
@@ -205,14 +271,14 @@ export function useMacroRecorder({
           const deadline = Date.now() + step.timeoutMs
           let found = false
           while (Date.now() < deadline) {
-            if (abortRef.current) return { ok: false, failedAt: i }
+            if (abortRef.current) return outcome({ ok: false, stopped: true, failedAt: i })
             if (await resolveElementCenter(step.selector)) {
               found = true
               break
             }
             await new Promise((r) => setTimeout(r, 500))
           }
-          if (!found) return { ok: false, failedAt: i }
+          if (!found) return outcome({ ok: false, failedAt: i })
           continue
         }
         // Extended operations delegate to existing, allowlisted backends.
@@ -223,7 +289,7 @@ export function useMacroRecorder({
             'launch',
             customPath,
           )
-          if (!res.success) return { ok: false, failedAt: i }
+          if (!res.success) return outcome({ ok: false, failedAt: i })
           await new Promise((r) => setTimeout(r, 500))
           continue
         }
@@ -234,19 +300,19 @@ export function useMacroRecorder({
             undefined,
             customPath,
           )
-          if (!res.success) return { ok: false, failedAt: i }
+          if (!res.success) return outcome({ ok: false, failedAt: i })
           continue
         }
         if (step.kind === 'command') {
           const tokens = step.command.trim().split(/\s+/).filter(Boolean)
-          if (tokens.length === 0) return { ok: false, failedAt: i }
+          if (tokens.length === 0) return outcome({ ok: false, failedAt: i })
           const res = await runCustomCommand(
             serial,
             tokens,
             undefined,
             customPath,
           )
-          if (!res.success) return { ok: false, failedAt: i }
+          if (!res.success) return outcome({ ok: false, failedAt: i })
           continue
         }
         if (step.kind === 'recordScreen') {
@@ -256,7 +322,7 @@ export function useMacroRecorder({
             outputDir,
             customPath,
           )
-          if (!res.success) return { ok: false, failedAt: i }
+          if (!res.success) return outcome({ ok: false, failedAt: i })
           continue
         }
         if (step.kind === 'assertText' || step.kind === 'assertPackage') {
@@ -268,12 +334,12 @@ export function useMacroRecorder({
           const dump = await dumpUiHierarchy(serial, customPath)
           if (!dump.success || !dump.xml) {
             await captureFailure()
-            return { ok: false, failedAt: i }
+            return outcome({ ok: false, failedAt: i })
           }
           const root = parseUiHierarchy(dump.xml)
           if (!root) {
             await captureFailure()
-            return { ok: false, failedAt: i }
+            return outcome({ ok: false, failedAt: i })
           }
           const nodes = flattenNodes(root)
           const matched = step.kind === 'assertText'
@@ -281,7 +347,7 @@ export function useMacroRecorder({
             : nodes.some((node) => node.packageName === step.package)
           if (!matched) {
             await captureFailure()
-            return { ok: false, failedAt: i }
+            return outcome({ ok: false, failedAt: i })
           }
           continue
         }
@@ -297,16 +363,20 @@ export function useMacroRecorder({
           action = step
         }
         const res = await runMacroAction(serial, action, customPath)
-        if (!res.success) return { ok: false, failedAt: i }
+        if (!res.success) return outcome({ ok: false, failedAt: i })
         // Small settle delay between input actions.
         await new Promise((r) => setTimeout(r, 120))
       }
-      return { ok: true }
+      if (abortRef.current) {
+        return outcome({ ok: false, stopped: true, failedAt: steps.length - 1 })
+      }
+      return outcome({ ok: true })
     } finally {
       setReplaying(false)
+      setStopping(false)
       setReplayIndex(-1)
     }
-  }, [serial, customPath, outputDir, steps, replaying])
+  }, [serial, customPath, outputDir, steps, replaying, name])
 
   // --- Interactive recording -------------------------------------------------
 
@@ -418,6 +488,7 @@ export function useMacroRecorder({
     saved,
     replaying,
     replayIndex,
+    stopping,
     recording,
     liveShot,
     liveHierarchy,

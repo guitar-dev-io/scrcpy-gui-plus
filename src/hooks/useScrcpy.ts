@@ -5,6 +5,7 @@ import { isTauri } from '../utils/tauriEnv'
 import { useI18n } from '../i18n'
 import { useSessionHistory } from './useSessionHistory'
 import { applyQualityMode, type QualityMode } from '../utils/adaptiveQuality'
+import { persistScrcpyLaunchConfig } from '../utils/scrcpyLaunch'
 
 export interface RenderDriverOption {
   id: string
@@ -72,8 +73,6 @@ export const DEFAULT_SCRCPY_CONFIG: ScrcpyConfig = {
   hidMouse: false, flexDisplay: false, cameraTorch: false, cameraZoom: 1.0,
   backgroundColor: '', keepActive: false, vsync: true, qualityMode: 'manual',
 }
-
-export const SESSION_LAUNCH_REQUESTED_EVENT = 'scrcpy-session-launch-requested'
 
 export function useScrcpy() {
   const { t } = useI18n()
@@ -236,14 +235,6 @@ export function useScrcpy() {
     // Event listeners rely on Tauri IPC; skip outside the Tauri webview.
     if (!isTauri()) return
 
-    const registerLaunch = (event: Event) => {
-      const launchConfig = (event as CustomEvent<ScrcpyConfig>).detail
-      if (launchConfig?.device) {
-        pendingSessionConfigsRef.current[launchConfig.device] = launchConfig
-      }
-    }
-    window.addEventListener(SESSION_LAUNCH_REQUESTED_EVENT, registerLaunch)
-
     const unlistenLog = listen<string>('scrcpy-log', (event) => {
       const newLines = event.payload.split('\n')
       setLogs((prev) => [...prev.slice(-(100 - newLines.length)), ...newLines])
@@ -285,7 +276,6 @@ export function useScrcpy() {
     })
 
     return () => {
-      window.removeEventListener(SESSION_LAUNCH_REQUESTED_EVENT, registerLaunch)
       unlistenLog.then((f) => f())
       unlistenStatus.then((f) => f())
     }
@@ -393,6 +383,9 @@ export function useScrcpy() {
       if (!res.error) {
         const newDevices = res.devices as string[]
         const prevDevices = prevDevicesRef.current
+        const pendingDiscoveryMessage = t('logs.discoveryPending')
+
+        setLogs((prev) => prev.filter((line) => line !== pendingDiscoveryMessage))
 
         // Identify connections/disconnections
         const added = newDevices.filter((d) => !prevDevices.includes(d))
@@ -426,9 +419,12 @@ export function useScrcpy() {
           setActiveDevice(newDevices[0])
         }
       } else {
+        const error = typeof res.error === 'string' && res.error.trim() && res.error !== 'true'
+          ? t('logs.discoveryError', { error: res.error })
+          : t('logs.discoveryPending')
         setLogs((prev) => [
-          ...prev.slice(-100),
-          t('logs.discoveryError', { error: res.error }),
+          ...prev.filter((line) => line !== error).slice(-100),
+          error,
         ])
       }
     } catch (e) {
@@ -452,6 +448,7 @@ export function useScrcpy() {
         res: resolvedConfig.res,
       }))
     }
+    persistScrcpyLaunchConfig(localStorage, resolvedConfig)
     pendingSessionConfigsRef.current[resolvedConfig.device] = resolvedConfig
     try {
       setLogs((prev) => [
@@ -830,13 +827,19 @@ export function useScrcpy() {
     }
   }
 
-  const runTerminalCommand = async (command: string, customPath?: string) => {
+  const runTerminalCommand = async (
+    command: string,
+    customPath?: string,
+    logToSystem: boolean = true,
+  ) => {
     try {
       // Check if user specifically typed scrcpy or adb to format log nicely
       const lower = command.trim().toLowerCase()
       const prefix =
         lower.startsWith('scrcpy') || lower.startsWith('adb') ? '' : 'adb '
-      setLogs((prev) => [...prev.slice(-100), `> ${prefix}${command}`])
+      if (logToSystem) {
+        setLogs((prev) => [...prev.slice(-100), `> ${prefix}${command}`])
+      }
 
       const res: any = await invoke('run_terminal_command', {
         device: activeDevice,
@@ -844,11 +847,11 @@ export function useScrcpy() {
         customPath: customPath || config.scrcpyPath,
       })
 
-      if (res.stdout) {
+      if (logToSystem && res.stdout) {
         const lines = res.stdout.trim().split('\n')
         setLogs((prev) => [...prev.slice(-100), ...lines])
       }
-      if (res.stderr) {
+      if (logToSystem && res.stderr) {
         const lines = res.stderr
           .trim()
           .split('\n')
@@ -857,10 +860,12 @@ export function useScrcpy() {
       }
       return res
     } catch (e: any) {
-      setLogs((prev) => [
-        ...prev.slice(-100),
-        t('logs.commandFailed', { error: String(e) }),
-      ])
+      if (logToSystem) {
+        setLogs((prev) => [
+          ...prev.slice(-100),
+          t('logs.commandFailed', { error: String(e) }),
+        ])
+      }
       return { success: false, message: e }
     }
   }

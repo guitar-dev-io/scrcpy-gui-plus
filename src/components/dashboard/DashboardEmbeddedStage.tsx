@@ -1,16 +1,12 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
-  BatteryMedium,
   Circle,
-  Maximize2,
   Minus,
-  MonitorSmartphone,
   Plus,
   Play,
   Smartphone,
   Square,
   Wifi,
-  X,
 } from 'lucide-react'
 import { useEmbeddedSession } from '../../hooks/useEmbeddedSession'
 import { useDeviceInput } from '../../hooks/useDeviceInput'
@@ -20,6 +16,7 @@ import {
 } from '../../hooks/useEmbeddedWorkspaceSettings'
 import DeviceDisplay from '../embedded-workspace/DeviceDisplay'
 import FullscreenDeviceView from '../embedded-workspace/FullscreenDeviceView'
+import DeviceHeader from './DeviceHeader'
 
 type NotifyKind = 'success' | 'error' | 'info' | 'warning'
 type Notify = (title: string, message: string, kind: NotifyKind) => void
@@ -27,6 +24,7 @@ type Notify = (title: string, message: string, kind: NotifyKind) => void
 interface DashboardEmbeddedStageProps {
   deviceName: string
   deviceSerial: string
+  androidVersion?: string
   connection: string
   batteryLevel?: number
   customPath?: string
@@ -43,6 +41,22 @@ interface DashboardEmbeddedStageProps {
   compact?: boolean
   /** Shows a close control in the header; used to unpin a secondary device. */
   onClose?: () => void
+  showHeader?: boolean
+  fullscreenRequest?: number
+  onMetricsChange?: (metrics: EmbeddedStageMetrics) => void
+  sessionCommand?: EmbeddedSessionCommand
+}
+
+export interface EmbeddedSessionCommand {
+  id: number
+  action: 'start' | 'stop'
+}
+
+export interface EmbeddedStageMetrics {
+  connected: boolean
+  busy: boolean
+  dimensions: { width: number; height: number } | null
+  fps: number
 }
 
 const focusRing =
@@ -51,7 +65,7 @@ const focusRing =
 const ZOOM_MIN = 50
 const ZOOM_MAX = 200
 const ZOOM_STEP = 25
-const BASE_PHONE_HEIGHT = 470
+const BASE_PHONE_HEIGHT = 500
 
 /**
  * Dashboard-styled shell around the embedded workspace streaming engine
@@ -63,6 +77,7 @@ const BASE_PHONE_HEIGHT = 470
 export default function DashboardEmbeddedStage({
   deviceName,
   deviceSerial,
+  androidVersion,
   connection,
   batteryLevel,
   customPath,
@@ -77,12 +92,29 @@ export default function DashboardEmbeddedStage({
   onAddDevice,
   compact = false,
   onClose,
+  showHeader = true,
+  fullscreenRequest = 0,
+  onMetricsChange,
+  sessionCommand,
 }: DashboardEmbeddedStageProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const { settings } = useEmbeddedWorkspaceSettings()
   const [zoom, setZoom] = useState(100)
   const [fullscreen, setFullscreen] = useState(false)
   const basePhoneHeight = compact ? 300 : BASE_PHONE_HEIGHT
+  const handledSessionCommandRef = useRef(0)
+  const sessionOptions = useMemo(() => {
+    const preferred = settingsToOptions(settings)
+    if (!compact) return preferred
+    // A grid may decode several devices concurrently. Keep every stream live
+    // while bounding aggregate encoder/decoder pressure on the desktop GPU.
+    return {
+      ...preferred,
+      maxSize: Math.min(preferred.maxSize ?? 1280, 1280),
+      maxFps: Math.min(preferred.maxFps ?? 30, 30),
+      bitRate: Math.min(preferred.bitRate ?? 4_000_000, 4_000_000),
+    }
+  }, [compact, settings])
 
   const {
     canvasRef,
@@ -100,11 +132,15 @@ export default function DashboardEmbeddedStage({
   } = useEmbeddedSession({
     serial: deviceSerial,
     customPath,
-    options: settingsToOptions(settings),
+    options: sessionOptions,
   })
 
   const connected = state === 'connected'
   const busy = state === 'starting' || state === 'stopping'
+
+  useEffect(() => {
+    onMetricsChange?.({ connected, busy, dimensions, fps })
+  }, [busy, connected, dimensions, fps, onMetricsChange])
 
   useDeviceInput({
     canvasRef,
@@ -124,6 +160,10 @@ export default function DashboardEmbeddedStage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceSerial])
 
+  useEffect(() => {
+    if (fullscreenRequest > 0) setFullscreen(true)
+  }, [fullscreenRequest])
+
   // Auto-start streaming as soon as a device is selected, so the Dashboard
   // shows the live view immediately instead of requiring a manual Start
   // click. Triggered off `deviceSerial` (not `state`): useEmbeddedSession
@@ -135,6 +175,16 @@ export default function DashboardEmbeddedStage({
     void start()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceSerial])
+
+  useEffect(() => {
+    if (!sessionCommand || sessionCommand.id <= handledSessionCommandRef.current) return
+    handledSessionCommandRef.current = sessionCommand.id
+    if (sessionCommand.action === 'stop') {
+      void stop()
+    } else if (deviceSerial) {
+      void start()
+    }
+  }, [deviceSerial, sessionCommand, start, stop])
 
   const handleToggle = async () => {
     if (connected || state === 'starting') {
@@ -181,79 +231,25 @@ export default function DashboardEmbeddedStage({
 
   return (
     <section
-      className={`flex min-w-0 flex-col overflow-hidden rounded-2xl border border-(--border-subtle) bg-[var(--bg-surface)] shadow-[var(--shadow-md)] ${compact ? 'min-h-80' : 'min-h-127.5'}`}
+      className={`flex min-w-0 flex-col overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] shadow-sm ${compact ? 'min-h-80' : 'min-h-[560px]'}`}
     >
-      <div className="flex min-h-12 shrink-0 flex-wrap items-center gap-3 border-b border-(--border-subtle) bg-[var(--bg-elevated)]/75 px-4 py-2">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-primary/25 bg-primary/10 text-primary">
-          <MonitorSmartphone size={15} />
-        </div>
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <h2 className="truncate text-[11px] font-semibold text-(--text-base)">
-              {deviceName || 'Device Workspace'}
-            </h2>
-            <span
-              className={`rounded px-1.5 py-0.5 text-[8px] font-semibold ${
-                connected
-                  ? 'bg-emerald-500/15 text-emerald-400'
-                  : busy
-                    ? 'bg-amber-500/15 text-amber-400'
-                    : 'bg-[var(--bg-input)] text-(--text-subtle)'
-              }`}
-            >
-              {connected
-                ? 'Session active'
-                : busy
-                  ? 'Connecting'
-                  : deviceSerial
-                    ? 'Ready'
-                    : 'Offline'}
-            </span>
-          </div>
-          <p className="mt-0.5 max-w-52 truncate text-[8px] text-(--text-subtle)">
-            {deviceSerial || 'Select a device to begin'}
-          </p>
-        </div>
+      {showHeader && (
+        <DeviceHeader
+          deviceName={deviceName}
+          deviceSerial={deviceSerial}
+          androidVersion={androidVersion}
+          connection={connection}
+          batteryLevel={batteryLevel}
+          connected={connected}
+          busy={busy}
+          dimensions={dimensions}
+          fps={fps}
+          onFullscreen={() => setFullscreen(true)}
+          onClose={onClose}
+        />
+      )}
 
-        <div className="ml-auto hidden items-center gap-4 text-[9px] text-[var(--text-subtle)] sm:flex">
-          <span className="flex items-center gap-1.5">
-            <Maximize2 size={11} />
-            {connected && dimensions ? `${dimensions.width}x${dimensions.height}` : '—'}
-          </span>
-          <span className="flex items-center gap-1.5">
-            <BatteryMedium size={11} />
-            {batteryLevel === undefined ? '—' : `${batteryLevel}%`}
-          </span>
-          <span className="flex items-center gap-1.5">
-            <Wifi size={11} /> {connection || '—'}
-          </span>
-          {connected && (
-            <span className="flex items-center gap-1.5">{fps} FPS</span>
-          )}
-          <button
-            type="button"
-            onClick={() => setFullscreen(true)}
-            disabled={!connected}
-            title="Expand to fullscreen"
-            className={`flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-subtle)] transition-colors hover:bg-primary/15 hover:text-primary disabled:cursor-not-allowed disabled:opacity-30 ${focusRing}`}
-          >
-            <Maximize2 size={12} />
-          </button>
-          {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              title="Unpin secondary device"
-              aria-label="Unpin secondary device"
-              className={`flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-subtle)] transition-colors hover:bg-red-500/15 hover:text-red-400 ${focusRing}`}
-            >
-              <X size={12} />
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className={`relative flex min-w-0 flex-1 items-stretch overflow-hidden bg-[radial-gradient(circle_at_50%_42%,rgba(var(--primary-rgb),.09),transparent_43%),var(--bg-base)] ${compact ? 'min-h-64' : 'min-h-102.5'}`}>
+      <div className={`relative flex min-w-0 flex-1 items-stretch overflow-hidden bg-[var(--bg-base)] ${compact ? 'min-h-64' : 'min-h-[460px]'}`}>
         <aside
           aria-label="Device controls"
           className="z-10 flex w-12 shrink-0 flex-col items-center justify-center border-r border-(--border-subtle) bg-[var(--bg-elevated)]/72 p-1.5"
@@ -261,9 +257,9 @@ export default function DashboardEmbeddedStage({
           {actionRail}
         </aside>
 
-        <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-auto p-3 sm:p-5">
+        <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-auto p-2 sm:p-3">
           <div
-            className="relative aspect-[9/19] max-h-full max-w-full shrink-0 overflow-hidden rounded-[27px] border-[3px] border-[#454b59] bg-[#05070b] p-[3px] shadow-[0_24px_70px_rgba(0,0,0,.48),0_0_0_1px_rgba(255,255,255,.13)]"
+            className="relative aspect-[9/19] max-h-full max-w-full shrink-0 overflow-hidden rounded-[25px] border-[3px] border-[#3b414d] bg-[#05070b] p-[3px] shadow-[0_12px_32px_rgba(0,0,0,.38)]"
             style={{ height: `${Math.round((basePhoneHeight * zoom) / 100)}px` }}
           >
             <div className="flex h-full w-full overflow-hidden rounded-[22px] bg-[radial-gradient(circle_at_50%_22%,rgba(var(--primary-rgb),.22),transparent_38%),linear-gradient(165deg,#151c2c,#090c13_62%)]">

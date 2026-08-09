@@ -311,6 +311,7 @@ export const en = {
     deviceDisconnected: '[SYSTEM] Device disconnected: {device}',
     discoveryActive: '[SYSTEM] Discovery active: {count} device(s) found.',
     discoveryError: '[SYSTEM] Discovery error: {error}',
+    discoveryPending: '[SYSTEM] Device discovery is waiting for ADB/scrcpy',
     errorRefreshingDevices: '[SYSTEM] Error refreshing devices: {error}',
     initializingScrcpy: '[SYSTEM] Initializing scrcpy session for {device}...',
     failedToStartScrcpy: '[ERROR] Failed to start scrcpy: {error}',

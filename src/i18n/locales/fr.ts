@@ -320,6 +320,7 @@ export const fr: DeepPartialTranslations = {
     discoveryActive:
       '[SYSTEM] Détection active : {count} appareil(s) trouvé(s).',
     discoveryError: '[SYSTEM] Erreur de détection : {error}',
+    discoveryPending: '[SYSTEM] La détection attend ADB/scrcpy',
     errorRefreshingDevices:
       "[SYSTEM] Erreur lors de l'actualisation des appareils : {error}",
     initializingScrcpy:

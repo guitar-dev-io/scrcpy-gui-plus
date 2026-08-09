@@ -2,10 +2,10 @@ import type { ReactNode } from 'react'
 import ErrorBoundary from '../ErrorBoundary'
 
 interface AppShellProps {
-  header: ReactNode
+  header?: ReactNode
   navigation?: ReactNode
   content: ReactNode
-  footer: ReactNode
+  footer?: ReactNode
   children?: ReactNode
 }
 
@@ -49,9 +49,11 @@ export default function AppShell({
               </div>
             )}
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <div className="z-[var(--z-topbar)] shrink-0 bg-[var(--bg-base)] p-3 pb-0">
-                {header}
-              </div>
+              {header && (
+                <div className="z-[var(--z-topbar)] shrink-0 bg-[var(--bg-base)] p-3 pb-0">
+                  {header}
+                </div>
+              )}
               <main
                 id="app-main-content"
                 tabIndex={-1}
@@ -61,7 +63,7 @@ export default function AppShell({
               </main>
             </div>
           </div>
-          <div className="z-[var(--z-topbar)] shrink-0">{footer}</div>
+          {footer && <div className="z-[var(--z-topbar)] shrink-0">{footer}</div>}
         </div>
 
         <div id="app-overlays">{children}</div>

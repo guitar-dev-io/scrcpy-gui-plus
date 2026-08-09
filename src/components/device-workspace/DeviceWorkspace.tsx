@@ -49,6 +49,7 @@ interface DeviceWorkspaceProps {
   notify: ToolbarNotifier
   iosDevices?: IosDeviceInfo[]
   iosReady?: boolean
+  launchDevice: (config: ScrcpyConfig) => Promise<void>
 }
 
 const FILTERS: WorkspaceFilter[] = ['all', 'ungrouped', 'qa', 'pos', 'demo']
@@ -73,6 +74,7 @@ export default function DeviceWorkspace({
   notify,
   iosDevices = [],
   iosReady = false,
+  launchDevice,
 }: DeviceWorkspaceProps) {
   const { t } = useI18n()
   const ws = useDeviceWorkspace({
@@ -81,6 +83,7 @@ export default function DeviceWorkspace({
     outputDir,
     baseConfig,
     enabled: isOpen,
+    launchDevice,
   })
   const [filter, setFilter] = useState<WorkspaceFilter>('all')
   const [restartPkg, setRestartPkg] = useState('')
