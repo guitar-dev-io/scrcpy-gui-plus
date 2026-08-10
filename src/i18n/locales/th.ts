@@ -39,6 +39,8 @@ export const th: DeepPartialTranslations = {
     openFolder: 'เปิดโฟลเดอร์',
     copyImage: 'คัดลอกรูปภาพ',
     deleteEntry: 'ลบออกจากประวัติ',
+    deleteFile: 'ลบไฟล์',
+    deleteFileConfirm: 'ลบ {filename} ออกจากเครื่องหรือไม่? การกระทำนี้ไม่สามารถย้อนกลับได้',
     captureSuccessTitle: 'บันทึกภาพหน้าจอแล้ว',
     captureSuccessMessage: 'บันทึกไปที่ {path}',
     captureFailedTitle: 'จับภาพหน้าจอไม่สำเร็จ',

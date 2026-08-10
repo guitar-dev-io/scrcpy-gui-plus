@@ -359,6 +359,8 @@ export const en = {
     openFolder: 'Open folder',
     copyImage: 'Copy image',
     deleteEntry: 'Remove from history',
+    deleteFile: 'Delete file',
+    deleteFileConfirm: 'Delete {filename} from disk? This cannot be undone.',
     captureSuccessTitle: 'Screenshot Saved',
     captureSuccessMessage: 'Saved to {path}',
     captureFailedTitle: 'Screenshot Failed',

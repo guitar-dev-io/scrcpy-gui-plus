@@ -1,4 +1,4 @@
-import { Camera, FolderCog, ExternalLink, FolderOpen, Copy, Trash2, Loader2, ImageOff } from 'lucide-react';
+import { Camera, FolderCog, ExternalLink, FolderOpen, Copy, Trash2, X, Loader2, ImageOff } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { useI18n } from '../../i18n';
 import type { ScreenshotHistoryEntry } from '../../types/screenshot';
@@ -14,7 +14,7 @@ interface ScreenshotManagerProps {
     onOpenImage: (path: string) => void;
     onOpenFolder: (path: string) => void;
     onCopyImage: (path: string) => void;
-    onDeleteEntry: (id: string) => void;
+    onDeleteEntry: (id: string, deleteFile: boolean) => void;
     onClearHistory: () => void;
     dashboard?: boolean;
 }
@@ -180,8 +180,19 @@ export default function ScreenshotManager({
                                             <Copy size={11} />
                                         </button>
                                         <button
-                                            onClick={() => onDeleteEntry(entry.id)}
+                                            onClick={() => onDeleteEntry(entry.id, false)}
                                             title={t('screenshot.deleteEntry')}
+                                            className="p-1 rounded text-zinc-500 hover:text-zinc-300 transition-colors"
+                                        >
+                                            <X size={11} />
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                if (window.confirm(t('screenshot.deleteFileConfirm', { filename: entry.filename }))) {
+                                                    onDeleteEntry(entry.id, true);
+                                                }
+                                            }}
+                                            title={t('screenshot.deleteFile')}
                                             className="p-1 rounded text-zinc-500 hover:text-red-400 transition-colors"
                                         >
                                             <Trash2 size={11} />

@@ -12,6 +12,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
+import { useI18n } from '../../i18n'
 import type { ScreenshotHistoryEntry } from '../../types/screenshot'
 
 type DateFilter = 'all' | 'today' | 'week' | 'month'
@@ -27,7 +28,7 @@ export interface ScreenshotsPageProps {
   onOpenImage: (path: string) => void
   onOpenFolder: (path: string) => void
   onCopyImage: (path: string) => void
-  onDeleteEntry: (id: string) => void
+  onDeleteEntry: (id: string, deleteFile: boolean) => void
   onClearHistory: () => void
 }
 
@@ -99,6 +100,7 @@ export default function ScreenshotsPage({
   onDeleteEntry,
   onClearHistory,
 }: ScreenshotsPageProps) {
+  const { t } = useI18n()
   const [search, setSearch] = useState('')
   const [deviceFilter, setDeviceFilter] = useState('all')
   const [dateFilter, setDateFilter] = useState<DateFilter>('all')
@@ -242,7 +244,18 @@ export default function ScreenshotsPage({
                 <div className="flex shrink-0 flex-col gap-0.5 opacity-65 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                   <button type="button" onClick={() => onOpenFolder(entry.path)} aria-label={`Show ${entry.filename} in folder`} title="Show in folder" className="rounded p-1.5 text-[var(--text-subtle)] hover:bg-white/5 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"><FolderOpen size={12} /></button>
                   <button type="button" onClick={() => onCopyImage(entry.path)} aria-label={`Copy ${entry.filename}`} title="Copy image" className="rounded p-1.5 text-[var(--text-subtle)] hover:bg-white/5 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"><Copy size={12} /></button>
-                  <button type="button" onClick={() => onDeleteEntry(entry.id)} aria-label={`Remove ${entry.filename} from history`} title="Remove from history" className="rounded p-1.5 text-[var(--text-subtle)] hover:bg-red-500/10 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"><Trash2 size={12} /></button>
+                  <button type="button" onClick={() => onDeleteEntry(entry.id, false)} aria-label={`Remove ${entry.filename} from history`} title="Remove from history" className="rounded p-1.5 text-[var(--text-subtle)] hover:bg-white/5 hover:text-[var(--text-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"><X size={12} /></button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm(t('screenshot.deleteFileConfirm', { filename: entry.filename }))) {
+                        onDeleteEntry(entry.id, true)
+                      }
+                    }}
+                    aria-label={`Delete ${entry.filename} from disk`}
+                    title={t('screenshot.deleteFile')}
+                    className="rounded p-1.5 text-[var(--text-subtle)] hover:bg-red-500/10 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
+                  ><Trash2 size={12} /></button>
                 </div>
               </div>
             </article>
