@@ -13,6 +13,7 @@ mod ios;
 mod logcat;
 mod macro_player;
 mod screenshot;
+mod simdeck;
 mod system;
 mod test_session;
 mod ui_inspector;
@@ -22,6 +23,7 @@ use embed_mirror::EmbedMirrorState;
 use embed_session::EmbedSessionState;
 use ios::IosState;
 use logcat::LogcatState;
+use simdeck::SimDeckState;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use tauri::Manager;
@@ -99,6 +101,8 @@ pub fn run() {
             app.manage(EmbedMirrorState::default());
 
             app.manage(EmbedSessionState::default());
+
+            app.manage(SimDeckState::default());
 
             // Show splashscreen instantly
             if let Some(splash_window) = app.get_webview_window("splashscreen") {
@@ -181,6 +185,12 @@ pub fn run() {
             embed_session::send_embedded_text,
             embed_session::send_embedded_action,
             embed_session::capture_embedded_screenshot,
+            simdeck::check_simdeck_available,
+            simdeck::install_simdeck,
+            simdeck::get_simdeck_status,
+            simdeck::list_simulators,
+            simdeck::simulator_action,
+            simdeck::simulator_screenshot,
             close_splashscreen,
             get_app_version
         ])

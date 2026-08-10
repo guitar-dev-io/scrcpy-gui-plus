@@ -73,6 +73,7 @@ const SettingsPage = lazy(() => import('./components/pages/SettingsPage'))
 const FileExplorerPage = lazy(() => import('./components/pages/FileExplorerPage'))
 const WirelessAdbPage = lazy(() => import('./components/pages/WirelessAdbPage'))
 const AppManagerPage = lazy(() => import('./components/pages/AppManagerPage'))
+const SimulatorsPage = lazy(() => import('./components/pages/SimulatorsPage'))
 const LogcatViewerPage = lazy(() => import('./components/pages/LogcatViewerPage'))
 const PerformancePage = lazy(() => import('./components/pages/PerformancePage'))
 const InputControlPage = lazy(() => import('./components/pages/InputControlPage'))
@@ -906,7 +907,7 @@ function AppContent() {
           notify(t('screenshot.actionFailedTitle'), String(error), 'error')
         }
       }}
-      onDeleteEntry={(id) => screenshot.deleteEntry(id)}
+      onDeleteEntry={(id, deleteFile) => void screenshot.deleteEntry(id, deleteFile)}
       onClearHistory={screenshot.clearHistory}
     />
   )
@@ -1277,7 +1278,7 @@ function AppContent() {
                     notify(t('screenshot.actionFailedTitle'), String(error), 'error')
                   }
                 }}
-                onDeleteEntry={(id) => screenshot.deleteEntry(id)}
+                onDeleteEntry={(id, deleteFile) => void screenshot.deleteEntry(id, deleteFile)}
                 onClearHistory={screenshot.clearHistory}
               />
             }
@@ -1333,6 +1334,7 @@ function AppContent() {
                 onInstallApk={handleInstallApkBrowse}
               />
             }
+            simulators={<SimulatorsPage notify={notify} />}
             logcatViewer={
               <LogcatViewerPage
                 activeDevice={activeAndroidWorkspaceDevice}

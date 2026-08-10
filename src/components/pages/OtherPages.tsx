@@ -12,6 +12,7 @@ interface OtherPagesProps {
   fileExplorer: ReactNode
   wirelessAdb: ReactNode
   appManager: ReactNode
+  simulators: ReactNode
   logcatViewer: ReactNode
   performance: ReactNode
   inputControl: ReactNode
@@ -30,6 +31,7 @@ export default function OtherPages({
   fileExplorer,
   wirelessAdb,
   appManager,
+  simulators,
   logcatViewer,
   performance,
   inputControl,
@@ -46,6 +48,7 @@ export default function OtherPages({
     'file-explorer': fileExplorer,
     'wireless-adb': wirelessAdb,
     'app-manager': appManager,
+    simulators,
     'logcat-viewer': logcatViewer,
     performance,
     'input-control': inputControl,

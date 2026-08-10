@@ -17,6 +17,7 @@ describe('app route registry', () => {
       'script-manager',
       'task-scheduler',
       'app-manager',
+      'simulators',
       'file-explorer',
       'logcat-viewer',
       'performance',
