@@ -310,6 +310,7 @@ export default function MaestroBuilder({ activeDevice, customPath, packageName, 
               onSelectorChange={builder.updateActionSelector}
               onFieldChange={builder.updateActionConfigField}
               onPickElement={(actionId) => setPickTargetActionId(actionId)}
+              onAddChildAction={builder.addChildAction}
               runStatusByActionId={hasLiveProgress ? runProgress.statusByActionId : undefined}
             />
           </div>

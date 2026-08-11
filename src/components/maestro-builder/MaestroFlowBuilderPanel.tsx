@@ -1,5 +1,5 @@
 import { AlertTriangle } from 'lucide-react'
-import type { MaestroBuilderSelector, MaestroFlow, MaestroValidationIssue } from '../../types/maestroBuilder'
+import type { MaestroBuilderSelector, MaestroCommandId, MaestroFlow, MaestroValidationIssue } from '../../types/maestroBuilder'
 import type { MaestroActionRunStatus } from '../../hooks/useMaestroRunProgress'
 import MaestroActionCard from './MaestroActionCard'
 
@@ -13,6 +13,7 @@ interface MaestroFlowBuilderPanelProps {
   onSelectorChange: (actionId: string, selector: MaestroBuilderSelector) => void
   onFieldChange: (actionId: string, fieldName: string, value: string | number | boolean | undefined) => void
   onPickElement?: (actionId: string) => void
+  onAddChildAction?: (parentActionId: string, command: MaestroCommandId) => void
   /** Live per-step status while a run is in flight, keyed by action id. Omit/leave empty when no run is active. */
   runStatusByActionId?: Record<string, MaestroActionRunStatus>
 }
@@ -27,6 +28,7 @@ export default function MaestroFlowBuilderPanel({
   onSelectorChange,
   onFieldChange,
   onPickElement,
+  onAddChildAction,
   runStatusByActionId,
 }: MaestroFlowBuilderPanelProps) {
   const actionIssues = issues.filter((issue) => issue.actionId !== '__flow__')
@@ -46,15 +48,16 @@ export default function MaestroFlowBuilderPanel({
             action={action}
             index={index}
             total={flow.actions.length}
-            issues={actionIssues.filter((issue) => issue.actionId === action.id).map((issue) => issue.message)}
-            onToggleEnabled={() => onToggleEnabled(action.id)}
-            onMove={(direction) => onMove(action.id, direction)}
-            onDuplicate={() => onDuplicate(action.id)}
-            onDelete={() => onDelete(action.id)}
-            onSelectorChange={(selector) => onSelectorChange(action.id, selector)}
-            onFieldChange={(fieldName, value) => onFieldChange(action.id, fieldName, value)}
-            onPickElement={onPickElement ? () => onPickElement(action.id) : undefined}
-            runStatus={runStatusByActionId?.[action.id]}
+            allIssues={actionIssues}
+            onToggleEnabled={onToggleEnabled}
+            onMove={onMove}
+            onDuplicate={onDuplicate}
+            onDelete={onDelete}
+            onSelectorChange={onSelectorChange}
+            onFieldChange={onFieldChange}
+            onPickElement={onPickElement}
+            onAddChildAction={onAddChildAction}
+            runStatusByActionId={runStatusByActionId}
           />
         ))}
         {flow.actions.length === 0 && (

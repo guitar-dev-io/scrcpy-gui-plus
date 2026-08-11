@@ -7,11 +7,13 @@ import type {
   MaestroValidationIssue,
 } from '../types/maestroBuilder'
 import {
+  addMaestroChildAction,
   createEmptyMaestroFlow,
   createMaestroFlowAction,
   duplicateMaestroFlowAction,
   moveMaestroFlowAction,
   removeMaestroFlowAction,
+  updateMaestroFlowAction,
 } from '../utils/maestroBuilderFlow'
 import { buildMaestroBuilderYaml } from '../utils/maestroBuilderSerializer'
 import { validateMaestroBuilderFlow } from '../utils/maestroBuilderValidator'
@@ -58,12 +60,13 @@ export function useMaestroBuilder(defaultAppId: string) {
     }))
   }, [])
 
+  // These four operate by action id regardless of nesting depth — a repeat/
+  // retry's nested children are just as addressable as top-level actions,
+  // via updateMaestroFlowAction's recursive tree walk.
   const updateAction = useCallback((actionId: string, patch: Partial<MaestroFlowAction>) => {
     setFlow((current) => ({
       ...current,
-      actions: current.actions.map((action) =>
-        action.id === actionId ? { ...action, ...patch } : action,
-      ),
+      actions: updateMaestroFlowAction(current.actions, actionId, (action) => ({ ...action, ...patch })),
       updatedAt: new Date().toISOString(),
     }))
   }, [])
@@ -72,8 +75,7 @@ export function useMaestroBuilder(defaultAppId: string) {
     (actionId: string, fieldName: string, value: string | number | boolean | undefined) => {
       setFlow((current) => ({
         ...current,
-        actions: current.actions.map((action) => {
-          if (action.id !== actionId) return action
+        actions: updateMaestroFlowAction(current.actions, actionId, (action) => {
           const config = { ...action.config }
           if (value === undefined) delete config[fieldName]
           else config[fieldName] = value
@@ -92,12 +94,21 @@ export function useMaestroBuilder(defaultAppId: string) {
   const toggleActionEnabled = useCallback((actionId: string) => {
     setFlow((current) => ({
       ...current,
-      actions: current.actions.map((action) =>
-        action.id === actionId ? { ...action, enabled: !action.enabled } : action,
-      ),
+      actions: updateMaestroFlowAction(current.actions, actionId, (action) => ({ ...action, enabled: !action.enabled })),
       updatedAt: new Date().toISOString(),
     }))
   }, [])
+
+  const addChildAction = useCallback(
+    (parentActionId: string, command: MaestroCommandId, selector?: MaestroBuilderSelector) => {
+      setFlow((current) => ({
+        ...current,
+        actions: addMaestroChildAction(current.actions, parentActionId, createMaestroFlowAction(command, selector)),
+        updatedAt: new Date().toISOString(),
+      }))
+    },
+    [],
+  )
 
   const moveAction = useCallback((actionId: string, direction: 'up' | 'down') => {
     setFlow((current) => ({
@@ -179,6 +190,7 @@ export function useMaestroBuilder(defaultAppId: string) {
     isValid: issues.length === 0,
     updateFlow,
     addAction,
+    addChildAction,
     updateAction,
     updateActionConfigField,
     updateActionSelector,

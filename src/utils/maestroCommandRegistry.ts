@@ -7,9 +7,10 @@
 //
 // This is a deliberately practical subset of Maestro's command set (the ones
 // useful inside a structured Flow Builder action card), not an exhaustive
-// mirror of every CLI command. Commands with nested child-command bodies
-// (repeat, retry, runFlow, runScript) and AI commands (gated behind Maestro
-// version detection, not yet verified) are intentionally deferred.
+// mirror of every CLI command. `repeat`/`retry` (via `requiresChildren`, see
+// maestroBuilderSerializer.ts) and `runFlow`/`runScript` are supported; AI
+// commands (gated behind Maestro version detection, not yet verified) are
+// intentionally deferred.
 import type {
   MaestroBuilderSelector,
   MaestroCommandDefinition,
@@ -405,6 +406,39 @@ export const MAESTRO_COMMAND_REGISTRY: MaestroCommandDefinition[] = [
       if (raw === undefined || raw === '') return ['- waitForAnimationToEnd']
       return ['- waitForAnimationToEnd:', `    timeout: ${Math.round(Number(raw))}`]
     },
+  },
+  // Flow control
+  {
+    id: 'repeat',
+    label: 'Repeat',
+    description: 'Repeat nested actions a fixed number of times.',
+    category: 'flowControl',
+    requiresChildren: true,
+    fields: [{ name: 'times', label: 'Times', type: 'number', defaultValue: 2, min: 1 }],
+  },
+  {
+    id: 'retry',
+    label: 'Retry',
+    description: 'Retry nested actions on failure, up to a maximum number of attempts.',
+    category: 'flowControl',
+    requiresChildren: true,
+    fields: [{ name: 'maxRetries', label: 'Max retries', type: 'number', defaultValue: 3, min: 1 }],
+  },
+  {
+    id: 'runFlow',
+    label: 'Run Flow',
+    description: 'Run another Maestro flow file.',
+    category: 'flowControl',
+    bareValueField: 'path',
+    fields: [{ name: 'path', label: 'Flow path', type: 'text' }],
+  },
+  {
+    id: 'runScript',
+    label: 'Run Script',
+    description: 'Run a JavaScript file in the Maestro sandbox.',
+    category: 'flowControl',
+    bareValueField: 'path',
+    fields: [{ name: 'path', label: 'Script path', type: 'text' }],
   },
   // Preserves a command block the registry doesn't understand (e.g. imported
   // YAML using repeat/retry/runFlow/AI commands) verbatim, so import never

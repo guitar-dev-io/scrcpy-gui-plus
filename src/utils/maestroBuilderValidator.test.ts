@@ -73,4 +73,28 @@ describe('validateMaestroBuilderFlow', () => {
     const issues = validateMaestroBuilderFlow(flowWithActions('com.example.app', [action]))
     expect(issues.some((i) => i.actionId === action.id && /unknown maestro command/i.test(i.message))).toBe(true)
   })
+
+  it('rejects a repeat/retry with no nested actions', () => {
+    const repeat = { ...createMaestroFlowAction('repeat'), config: { times: 2 } }
+    const retry = { ...createMaestroFlowAction('retry'), config: { maxRetries: 3 } }
+    const issues = validateMaestroBuilderFlow(flowWithActions('com.example.app', [repeat, retry]))
+    expect(issues).toContainEqual({ actionId: repeat.id, message: 'Repeat requires at least one nested action.' })
+    expect(issues).toContainEqual({ actionId: retry.id, message: 'Retry requires at least one nested action.' })
+  })
+
+  it('accepts a repeat with at least one nested action and recurses into it', () => {
+    const child = { ...createMaestroFlowAction('tapOn') } // missing selector — should surface as a nested issue
+    const repeat = { ...createMaestroFlowAction('repeat'), config: { times: 2 }, children: [child] }
+    const issues = validateMaestroBuilderFlow(flowWithActions('com.example.app', [repeat]))
+    expect(issues.some((i) => i.actionId === repeat.id)).toBe(false)
+    expect(issues).toContainEqual({ actionId: child.id, message: 'Tap Element requires a selector.' })
+  })
+
+  it('requires a path for runFlow and runScript', () => {
+    const runFlow = createMaestroFlowAction('runFlow')
+    const runScript = createMaestroFlowAction('runScript')
+    const issues = validateMaestroBuilderFlow(flowWithActions('com.example.app', [runFlow, runScript]))
+    expect(issues.some((i) => i.actionId === runFlow.id && /requires flow path/i.test(i.message))).toBe(true)
+    expect(issues.some((i) => i.actionId === runScript.id && /requires script path/i.test(i.message))).toBe(true)
+  })
 })
