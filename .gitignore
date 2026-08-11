@@ -18,6 +18,13 @@ Icon
 .com.apple.timemachine.donotpresent
 
 ### Node
+# Local editor settings
+.vscode/
+
+# Local branding drafts (generated app assets live under public/ and src-tauri/icons/)
+/app-icon*.png
+/iconx.png
+
 # Dependencies
 node_modules/
 

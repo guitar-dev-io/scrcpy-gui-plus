@@ -12,6 +12,7 @@ mod file_manager;
 mod ios;
 mod logcat;
 mod macro_player;
+mod maestro;
 mod screenshot;
 mod simdeck;
 mod system;
@@ -160,6 +161,10 @@ pub fn run() {
             ui_inspector::capture_screen_base64,
             macro_player::run_macro_action,
             macro_player::macro_record_screen,
+            maestro::check_maestro_available,
+            maestro::prepare_washxpress_maestro_flow,
+            maestro::save_maestro_flow,
+            maestro::run_maestro_test,
             custom_command::run_custom_command,
             file_manager::fm_list_dir,
             file_manager::fm_pull,
@@ -179,6 +184,7 @@ pub fn run() {
             embed_mirror::stop_embedded_mirror,
             embed_session::start_embedded_session,
             embed_session::stop_embedded_session,
+            embed_session::detach_embedded_session,
             embed_session::get_embedded_session_state,
             embed_session::send_embedded_touch,
             embed_session::send_embedded_key,
@@ -186,11 +192,14 @@ pub fn run() {
             embed_session::send_embedded_action,
             embed_session::capture_embedded_screenshot,
             simdeck::check_simdeck_available,
+            simdeck::connect_remote_simdeck,
+            simdeck::use_local_simdeck,
             simdeck::install_simdeck,
             simdeck::get_simdeck_status,
             simdeck::list_simulators,
             simdeck::simulator_action,
             simdeck::simulator_screenshot,
+            simdeck::simulator_webrtc_offer,
             close_splashscreen,
             get_app_version
         ])

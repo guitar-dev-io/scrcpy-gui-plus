@@ -3,6 +3,10 @@ import { invoke, Channel } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { parseFrameMessage, codecStringFromConfig } from '../utils/videoFraming'
 import { emitWorkspaceLog } from '../utils/workspaceLog'
+import {
+  publishAdbLiveFrame,
+  setAdbLiveFrameActive,
+} from '../utils/adbLiveFrame'
 
 /** Consecutive `VideoDecoder` errors tolerated before ending the session. */
 const MAX_DECODER_ERRORS = 3
@@ -65,6 +69,8 @@ export interface ScreenshotResult {
 interface StartSessionResult {
   success: boolean
   sessionId?: string
+  subscriberId?: string
+  ownsSession?: boolean
   serial?: string
   width?: number
   height?: number
@@ -128,9 +134,12 @@ export function useEmbeddedSession({
   const lastCodecStringRef = useRef<string | null>(null)
 
   const sessionIdRef = useRef<string | null>(null)
+  const subscriberIdRef = useRef<string | null>(null)
+  const ownsSessionRef = useRef(true)
   const stateRef = useRef<EmbeddedSessionState>('idle')
   const unlistenRef = useRef<UnlistenFn[]>([])
   const serialRef = useRef(serial)
+  const liveFrameSerialRef = useRef<string | null>(null)
   const customPathRef = useRef(customPath)
   const optionsRef = useRef(options)
 
@@ -155,6 +164,15 @@ export function useEmbeddedSession({
   const drewFirstRef = useRef(false)
 
   const drawFrame = useCallback((frame: VideoFrame) => {
+    const liveSerial = liveFrameSerialRef.current
+    if (liveSerial) {
+      publishAdbLiveFrame(
+        liveSerial,
+        frame,
+        frame.displayWidth,
+        frame.displayHeight,
+      )
+    }
     const canvas = canvasRef.current
     if (!canvas) {
       frame.close()
@@ -188,6 +206,9 @@ export function useEmbeddedSession({
   }, [])
 
   const teardownDecoder = useCallback(() => {
+    const liveSerial = liveFrameSerialRef.current
+    if (liveSerial) setAdbLiveFrameActive(liveSerial, false)
+    liveFrameSerialRef.current = null
     const dec = decoderRef.current
     if (dec && dec.state !== 'closed') {
       try {
@@ -439,6 +460,8 @@ export function useEmbeddedSession({
 
   const stop = useCallback(async () => {
     const id = sessionIdRef.current
+    const subscriberId = subscriberIdRef.current
+    const ownsSession = ownsSessionRef.current
     if (stateRef.current !== 'idle' && stateRef.current !== 'disconnected') {
       setSessionState('stopping')
     }
@@ -446,12 +469,21 @@ export function useEmbeddedSession({
     teardownDecoder()
     stopFpsTimer()
     if (id) {
-      await invoke('stop_embedded_session', {
-        sessionId: id,
-        customPath: customPathRef.current,
-      }).catch(() => undefined)
+      if (!ownsSession && subscriberId) {
+        await invoke('detach_embedded_session', {
+          sessionId: id,
+          subscriberId,
+        }).catch(() => undefined)
+      } else {
+        await invoke('stop_embedded_session', {
+          sessionId: id,
+          customPath: customPathRef.current,
+        }).catch(() => undefined)
+      }
     }
     sessionIdRef.current = null
+    subscriberIdRef.current = null
+    ownsSessionRef.current = true
     setSessionId(null)
     setSessionState('disconnected')
   }, [cleanupListener, teardownDecoder, stopFpsTimer, setSessionState])
@@ -480,6 +512,7 @@ export function useEmbeddedSession({
     gotFirstPacketRef.current = false
     drewFirstRef.current = false
     setSessionState('starting')
+    liveFrameSerialRef.current = targetSerial
     emitWorkspaceLog(`starting session for ${targetSerial}`)
 
     // Listen for backend-side state changes (server crash, device unplug, etc.)
@@ -551,6 +584,8 @@ export function useEmbeddedSession({
         sessionIdRef.current = result.sessionId
         setSessionId(result.sessionId)
       }
+      subscriberIdRef.current = result.subscriberId ?? null
+      ownsSessionRef.current = result.ownsSession !== false
       if (result.width && result.height) {
         setDimensions({ width: result.width, height: result.height })
       }
@@ -684,13 +719,24 @@ export function useEmbeddedSession({
       teardownDecoder()
       stopFpsTimer()
       const id = sessionIdRef.current
+      const subscriberId = subscriberIdRef.current
+      const ownsSession = ownsSessionRef.current
       if (id) {
-        void invoke('stop_embedded_session', {
-          sessionId: id,
-          customPath: customPathRef.current,
-        }).catch(() => undefined)
+        if (!ownsSession && subscriberId) {
+          void invoke('detach_embedded_session', {
+            sessionId: id,
+            subscriberId,
+          }).catch(() => undefined)
+        } else {
+          void invoke('stop_embedded_session', {
+            sessionId: id,
+            customPath: customPathRef.current,
+          }).catch(() => undefined)
+        }
       }
       sessionIdRef.current = null
+      subscriberIdRef.current = null
+      ownsSessionRef.current = true
       stateRef.current = 'idle'
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

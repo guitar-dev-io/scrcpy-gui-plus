@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import {
   X,
@@ -38,6 +38,8 @@ import {
 } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useMacroRecorder } from '../../hooks/useMacroRecorder'
+import { useAdbLiveFrame } from '../../hooks/useAdbLiveFrame'
+import { useEmbeddedSession } from '../../hooks/useEmbeddedSession'
 import type {
   ElementSelector,
   MacroStep,
@@ -49,7 +51,11 @@ import {
   selectorFromNode,
   shortClassName,
 } from '../../types/uiInspector'
-import { toAppiumPython, toMaestroYaml } from '../../utils/macroExport'
+import {
+  toAppiumPython,
+  toMaestroYaml,
+  toRobotFramework,
+} from '../../utils/macroExport'
 import type { ToolbarNotifier } from '../device-control-toolbar'
 
 interface MacroRecorderProps {
@@ -145,7 +151,18 @@ export default function MacroRecorder({
   notify,
 }: MacroRecorderProps) {
   const { t } = useI18n()
-  const macro = useMacroRecorder({ activeDevice, customPath, outputDir })
+  const adbLive = useAdbLiveFrame(activeDevice)
+  const macroAdbSession = useEmbeddedSession({
+    serial: activeDevice,
+    customPath,
+    options: { codec: 'h264', maxSize: 1280, bitRate: 4_000_000, maxFps: 30 },
+  })
+  const macro = useMacroRecorder({
+    activeDevice,
+    customPath,
+    outputDir,
+    livePreview: adbLive.active,
+  })
   const [kind, setKind] = useState<MacroStepKind>('tap')
   const [fields, setFields] = useState<Record<string, string>>({})
   const [importText, setImportText] = useState('')
@@ -153,6 +170,7 @@ export default function MacroRecorder({
 
   // Interactive record canvas state.
   const imgRef = useRef<HTMLImageElement | null>(null)
+  const liveCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const [natural, setNatural] = useState<{ w: number; h: number }>({
     w: 0,
     h: 0,
@@ -171,6 +189,37 @@ export default function MacroRecorder({
     const el = imgRef.current
     if (el) setNatural({ w: el.naturalWidth, h: el.naturalHeight })
   }, [])
+
+  const setLiveCanvas = useCallback(
+    (canvas: HTMLCanvasElement | null) => {
+      liveCanvasRef.current = canvas
+      adbLive.canvasRef(canvas)
+    },
+    [adbLive.canvasRef],
+  )
+
+  useEffect(() => {
+    if (macro.recording && !adbLive.active) void macro.refreshScreen()
+  }, [adbLive.active, macro.recording, macro.refreshScreen])
+
+  const handleToggleRecording = () => {
+    if (macro.recording) {
+      macro.stopRecording()
+      if (macroAdbSession.sessionId) void macroAdbSession.stop()
+      return
+    }
+    macro.startRecording()
+    if (!adbLive.active && activeDevice) void macroAdbSession.start()
+  }
+
+  // Prefer the scrcpy session dimensions: they describe the physical display
+  // orientation even before the visible canvas has received its first frame.
+  // Explicit width/height styles keep WebKit from falling back to canvas's
+  // intrinsic 300x150 (2:1) ratio while the live surface is mounting.
+  const previewWidth =
+    macroAdbSession.dimensions?.width || adbLive.width || natural.w || 9
+  const previewHeight =
+    macroAdbSession.dimensions?.height || adbLive.height || natural.h || 19.5
 
   if (!isOpen && !embedded) return null
 
@@ -294,14 +343,16 @@ export default function MacroRecorder({
   const toDeviceCoords = (
     e: React.PointerEvent,
   ): { x: number; y: number } | null => {
-    const el = imgRef.current
-    if (!el || natural.w === 0) return null
+    const el = adbLive.active ? liveCanvasRef.current : imgRef.current
+    const sourceWidth = adbLive.active ? adbLive.width : natural.w
+    const sourceHeight = adbLive.active ? adbLive.height : natural.h
+    if (!el || sourceWidth === 0 || sourceHeight === 0) return null
     const rect = el.getBoundingClientRect()
     const relX = (e.clientX - rect.left) / rect.width
     const relY = (e.clientY - rect.top) / rect.height
     return {
-      x: Math.round(Math.min(Math.max(relX, 0), 1) * natural.w),
-      y: Math.round(Math.min(Math.max(relY, 0), 1) * natural.h),
+      x: Math.round(Math.min(Math.max(relX, 0), 1) * sourceWidth),
+      y: Math.round(Math.min(Math.max(relY, 0), 1) * sourceHeight),
     }
   }
 
@@ -360,7 +411,7 @@ export default function MacroRecorder({
     })
   }
 
-  const handleExportFormat = async (format: 'maestro' | 'appium') => {
+  const handleExportFormat = async (format: 'maestro' | 'appium' | 'robot') => {
     try {
       if (format === 'maestro' && macro.steps.some((step) => step.kind === 'assertPackage')) {
         notify(
@@ -382,9 +433,12 @@ export default function MacroRecorder({
       if (format === 'maestro') {
         content = toMaestroYaml(macroObj)
         name = `${base}_${ts}.maestro.yaml`
-      } else {
+      } else if (format === 'appium') {
         content = toAppiumPython(macroObj)
         name = `${base}_${ts}_appium.py`
+      } else {
+        content = toRobotFramework(macroObj)
+        name = `${base}_${ts}.robot`
       }
       const path = await invoke<string>('save_report', { content, name })
       notify(
@@ -530,7 +584,7 @@ export default function MacroRecorder({
       )}
       <div className={dialogClassName}>
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800/60">
+        <div className="flex shrink-0 items-center justify-between border-b border-zinc-800/60 px-6 py-4">
           <div className="flex items-center gap-2">
             <Clapperboard size={18} className="text-primary" />
             <div>
@@ -544,9 +598,7 @@ export default function MacroRecorder({
           </div>
           <div className="flex items-center gap-1">
             <button
-              onClick={() =>
-                macro.recording ? macro.stopRecording() : macro.startRecording()
-              }
+              onClick={handleToggleRecording}
               disabled={!activeDevice}
               title={
                 macro.recording ? t('macro.stopRecording') : t('macro.record')
@@ -576,65 +628,113 @@ export default function MacroRecorder({
 
         {macro.recording ? (
           /* ---------------- Interactive record mode ---------------- */
-          <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
             {/* Live canvas */}
-            <div className="lg:w-[42%] shrink-0 border-b lg:border-b-0 lg:border-r border-zinc-800/60 p-4 flex flex-col items-center justify-center bg-black/30 min-h-0">
-              {macro.liveShot ? (
-                <div className="relative inline-block max-h-[64vh]">
-                  <img
-                    ref={imgRef}
-                    src={macro.liveShot}
-                    alt="device screen"
-                    onLoad={handleImgLoad}
-                    className="max-h-[64vh] w-auto rounded-xl border border-zinc-800 select-none"
-                    draggable={false}
-                  />
-                  <div
-                    className="absolute inset-0 cursor-crosshair touch-none"
-                    onPointerDown={onCanvasPointerDown}
-                    onPointerUp={onCanvasPointerUp}
-                  />
-                  {lastTap && natural.w > 0 && imgRef.current && (
+            <div className="flex min-h-0 shrink-0 flex-col border-b border-zinc-800/60 bg-black/30 p-4 lg:w-[38%] lg:border-b-0 lg:border-r">
+              <div className="relative min-h-64 w-full flex-1 overflow-hidden">
+                <div className="absolute inset-0 flex items-center justify-center">
+                  {adbLive.active || macro.liveShot ? (
                     <div
-                      className="absolute w-5 h-5 -ml-2.5 -mt-2.5 rounded-full border-2 border-primary bg-primary/20 pointer-events-none animate-ping"
+                      className="relative h-full max-h-full max-w-full overflow-hidden rounded-[1.65rem] border-[5px] border-zinc-800 bg-black shadow-2xl shadow-black/50"
                       style={{
-                        left: `${(lastTap.x / natural.w) * 100}%`,
-                        top: `${(lastTap.y / natural.h) * 100}%`,
+                        aspectRatio: previewWidth / previewHeight,
+                        height: '100%',
+                        width: 'auto',
                       }}
-                    />
-                  )}
-                  {macro.capturing && (
-                    <div className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/60">
-                      <Loader2
-                        size={14}
-                        className="animate-spin text-primary"
+                    >
+                      <canvas
+                        ref={setLiveCanvas}
+                        aria-label="Live ADB device screen"
+                        className={`h-full w-full select-none object-contain ${adbLive.active ? 'block' : 'hidden'}`}
                       />
+                      {!adbLive.active && macro.liveShot && (
+                        <img
+                          ref={imgRef}
+                          src={macro.liveShot}
+                          alt="ADB snapshot of the device screen"
+                          onLoad={handleImgLoad}
+                          className="h-full w-full select-none object-contain"
+                          draggable={false}
+                        />
+                      )}
+                      <div
+                        className="absolute inset-0 cursor-crosshair touch-none"
+                        onPointerDown={onCanvasPointerDown}
+                        onPointerUp={onCanvasPointerUp}
+                      />
+                      {lastTap &&
+                        (adbLive.active ? adbLive.width > 0 : natural.w > 0) && (
+                          <div
+                            className="pointer-events-none absolute -ml-2.5 -mt-2.5 h-5 w-5 animate-ping rounded-full border-2 border-primary bg-primary/20"
+                            style={{
+                              left: `${(lastTap.x / (adbLive.active ? adbLive.width : natural.w)) * 100}%`,
+                              top: `${(lastTap.y / (adbLive.active ? adbLive.height : natural.h)) * 100}%`,
+                            }}
+                          />
+                        )}
+                      <span
+                        className={`pointer-events-none absolute left-2 top-2 rounded-full border bg-black/70 px-2 py-1 text-[8px] font-black uppercase tracking-widest backdrop-blur-sm ${
+                          adbLive.active
+                            ? 'border-emerald-400/30 text-emerald-400'
+                            : 'border-amber-400/30 text-amber-300'
+                        }`}
+                      >
+                        {adbLive.active
+                          ? t('macro.liveAdb')
+                          : t('macro.adbSnapshot')}
+                      </span>
+                      {macro.capturing && (
+                        <div className="absolute right-2 top-2 rounded-lg bg-black/70 p-1.5">
+                          <Loader2
+                            size={14}
+                            className="animate-spin text-primary"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-20 text-zinc-600">
+                      <canvas
+                        ref={setLiveCanvas}
+                        className="hidden"
+                        aria-hidden="true"
+                      />
+                      {macro.capturing ? (
+                        <Loader2 size={22} className="animate-spin" />
+                      ) : (
+                        <Hand size={22} />
+                      )}
+                      <span className="mt-2 text-[10px] uppercase tracking-widest">
+                        {t('macro.capturing')}
+                      </span>
                     </div>
                   )}
                 </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center text-zinc-600 py-20">
-                  {macro.capturing ? (
-                    <Loader2 size={22} className="animate-spin" />
-                  ) : (
-                    <Hand size={22} />
-                  )}
-                  <span className="text-[10px] uppercase tracking-widest mt-2">
-                    {t('macro.capturing')}
-                  </span>
-                </div>
-              )}
+              </div>
               <button
                 onClick={() => void macro.refreshScreen()}
-                disabled={macro.capturing}
-                className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-800 text-zinc-400 hover:text-primary hover:border-primary/50 transition-all text-[9px] font-black uppercase tracking-widest disabled:opacity-30"
+                disabled={macro.capturing || adbLive.active}
+                className="mt-3 flex shrink-0 items-center gap-1.5 self-center rounded-lg border border-zinc-800 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-zinc-400 transition-all hover:border-primary/50 hover:text-primary disabled:opacity-30"
               >
                 <RefreshCw
                   size={12}
                   className={macro.capturing ? 'animate-spin' : ''}
                 />
-                {t('macro.refresh')}
+                {adbLive.active
+                  ? t('macro.liveActive')
+                  : macroAdbSession.state === 'starting'
+                    ? t('macro.liveStarting')
+                    : macroAdbSession.state === 'connected'
+                      ? t('macro.liveWaiting')
+                      : t('macro.refresh')}
               </button>
+              {!adbLive.active && macroAdbSession.error && (
+                <p className="mt-2 max-w-72 shrink-0 self-center text-center text-[8px] leading-relaxed text-amber-400">
+                  {t('macro.liveUnavailable', {
+                    error: macroAdbSession.error,
+                  })}
+                </p>
+              )}
             </div>
 
             {/* Record controls + steps */}
@@ -806,6 +906,13 @@ export default function MacroRecorder({
                 className="p-2 rounded-lg border border-zinc-800 text-zinc-400 hover:text-primary hover:border-primary/50 transition-all"
               >
                 <Terminal size={14} />
+              </button>
+              <button
+                onClick={() => void handleExportFormat('robot')}
+                title={t('macro.exportRobot')}
+                className="p-2 rounded-lg border border-zinc-800 text-zinc-400 hover:text-primary hover:border-primary/50 transition-all"
+              >
+                <BadgeCheck size={14} />
               </button>
               <button
                 onClick={() => setShowImport((s) => !s)}
@@ -984,7 +1091,7 @@ export default function MacroRecorder({
         )}
 
         {/* Footer: replay */}
-        <div className="px-6 py-4 border-t border-zinc-800/60">
+        <div className="shrink-0 border-t border-zinc-800/60 px-6 py-4">
           {macro.replaying ? (
             <button
               onClick={macro.stop}

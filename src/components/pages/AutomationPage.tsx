@@ -31,7 +31,10 @@ export default function AutomationPage({
         </div>
       </header>
 
-      <section aria-label="Macro recorder" className="mt-5 min-h-0 flex-1">
+      <section
+        aria-label="Macro recorder"
+        className="mt-5 min-h-0 flex-1 overflow-hidden"
+      >
         <MacroRecorder
           embedded
           isOpen={false}

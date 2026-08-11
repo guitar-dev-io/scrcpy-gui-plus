@@ -248,11 +248,33 @@ fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> std::io::Result
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+#[cfg(not(target_os = "windows"))]
+fn gui_command_path() -> Option<std::ffi::OsString> {
+    let mut paths = vec![
+        std::path::PathBuf::from("/opt/homebrew/bin"),
+        std::path::PathBuf::from("/usr/local/bin"),
+        std::path::PathBuf::from("/home/linuxbrew/.linuxbrew/bin"),
+    ];
+    if let Some(current) = std::env::var_os("PATH") {
+        paths.extend(std::env::split_paths(&current));
+    }
+    std::env::join_paths(paths).ok()
+}
+
 pub(crate) fn create_command<S: AsRef<std::ffi::OsStr>>(program: S) -> TokioCommand {
-    let cmd = TokioCommand::new(program);
+    let mut cmd = TokioCommand::new(program);
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Apps launched from Finder inherit a minimal PATH that normally omits
+        // Homebrew and other user-installed CLIs. Keep the inherited entries,
+        // but make the standard package-manager locations discoverable for
+        // tools such as simdeck, npm, adb, and scrcpy.
+        if let Some(path) = gui_command_path() {
+            cmd.env("PATH", path);
+        }
+    }
     #[cfg(target_os = "windows")]
     {
-        let mut cmd = cmd;
         cmd.creation_flags(CREATE_NO_WINDOW);
         cmd
     }
@@ -1971,6 +1993,33 @@ pub async fn poll_qr_pairing(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn gui_command_path_includes_package_manager_bins() {
+        let path = gui_command_path().expect("command PATH");
+        let entries: Vec<_> = std::env::split_paths(&path).collect();
+        assert!(entries
+            .iter()
+            .any(|entry| entry == Path::new("/opt/homebrew/bin")));
+        assert!(entries
+            .iter()
+            .any(|entry| entry == Path::new("/usr/local/bin")));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn gui_command_can_run_homebrew_simdeck_when_installed() {
+        if !Path::new("/opt/homebrew/bin/simdeck").is_file() {
+            return;
+        }
+        let output = create_command("simdeck")
+            .arg("--version")
+            .output()
+            .await
+            .expect("run Homebrew SimDeck");
+        assert!(output.status.success());
+    }
 
     fn base_config(session_mode: &str) -> ScrcpyConfig {
         ScrcpyConfig {

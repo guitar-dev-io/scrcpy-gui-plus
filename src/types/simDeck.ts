@@ -11,14 +11,26 @@ export interface SimulatorDevice {
   isBooted: boolean
   deviceTypeName: string
   runtimeName: string
+  displayWidth?: number
+  displayHeight?: number
+  displayStatus?: string
+  rotationQuarterTurns?: number
 }
 
 export interface SimDeckStatus {
   running: boolean
   url?: string
   pairingCode?: string | null
+  iceServers?: RTCIceServer[]
+  isRemote?: boolean
   errorCode?: string
   error?: string
+}
+
+export interface WebrtcAnswer {
+  sdp: string
+  type: string
+  video?: { width: number; height: number }
 }
 
 export interface SimDeckAvailability {

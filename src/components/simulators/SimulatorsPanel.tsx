@@ -1,20 +1,18 @@
 import { useEffect, useState } from 'react'
 import {
-  Apple,
-  Camera,
   Download,
+  Link2,
   Loader2,
   MonitorSmartphone,
-  Play,
-  Power,
-  PowerOff,
   RefreshCw,
-  Smartphone,
+  Unplug,
   X,
 } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useSimDeck } from '../../hooks/useSimDeck'
-import { groupByPlatform, canBoot, canShutdown, formatStateLabel } from './simulatorsModel'
+import SimulatorDevicePicker from './SimulatorDevicePicker'
+import SimulatorStage from './SimulatorStage'
+import SimulatorActionSidebar from './SimulatorActionSidebar'
 import type { SimulatorDevice } from '../../types/simDeck'
 import type { ToolbarNotifier } from '../device-control-toolbar'
 
@@ -38,6 +36,7 @@ export default function SimulatorsPanel({
     availability,
     status,
     devices,
+    hasCheckedAvailability,
     isRefreshing,
     isInstalling,
     pending,
@@ -46,9 +45,12 @@ export default function SimulatorsPanel({
     installTool,
     runAction,
     takeScreenshot,
+    connectRemote,
+    selectLocal,
   } = useSimDeck(customPath)
 
   const [initialized, setInitialized] = useState(false)
+  const [activeUdid, setActiveUdid] = useState<string | null>(null)
 
   useEffect(() => {
     if (!isOpen && !embedded) return
@@ -61,32 +63,75 @@ export default function SimulatorsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, embedded, initialized])
 
+  useEffect(() => {
+    if (!availability.available || (!isOpen && !embedded)) return
+    const interval = window.setInterval(() => void refreshDevices(), 5_000)
+    return () => window.clearInterval(interval)
+  }, [availability.available, embedded, isOpen, refreshDevices])
+
+  useEffect(() => {
+    if (devices.length === 0) {
+      setActiveUdid(null)
+      return
+    }
+    setActiveUdid((current) => {
+      if (current && devices.some((d) => d.udid === current)) return current
+      const booted = devices.find((d) => d.isBooted)
+      return (booted ?? devices[0]).udid
+    })
+  }, [devices])
+
   if (!isOpen && !embedded) return null
+
+  const activeDevice = devices.find((d) => d.udid === activeUdid) ?? null
 
   const handleInstallTool = async () => {
     const res = await installTool()
     if (res.success) {
-      notify(t('simulators.installedTitle'), t('simulators.installedMessage'), 'success')
+      notify(
+        t('simulators.installedTitle'),
+        t('simulators.installedMessage'),
+        'success',
+      )
     } else {
-      notify(t('simulators.installFailedTitle'), res.message || t('simulators.installFailedMessage'), 'error')
+      notify(
+        t('simulators.installFailedTitle'),
+        res.message || t('simulators.installFailedMessage'),
+        'error',
+      )
     }
   }
 
-  const handleAction = async (device: SimulatorDevice, action: 'boot' | 'shutdown') => {
+  const handleAction = async (
+    device: SimulatorDevice,
+    action: 'boot' | 'shutdown',
+  ) => {
     const res = await runAction(device.udid, action)
     if (res.success) {
-      notify(t('simulators.actionDoneTitle'), t(`simulators.done_${action}`, { name: device.name }), 'success')
+      notify(
+        t('simulators.actionDoneTitle'),
+        t(`simulators.done_${action}`, { name: device.name }),
+        'success',
+      )
     } else {
-      notify(t('simulators.actionFailedTitle'), res.error || t('simulators.actionFailedMessage'), 'error')
+      notify(
+        t('simulators.actionFailedTitle'),
+        res.error || t('simulators.actionFailedMessage'),
+        'error',
+      )
     }
   }
 
-  const handleScreenshot = async (device: SimulatorDevice) => {
-    const res = await takeScreenshot(device.udid)
+  const handleScreenshot = async (device: SimulatorDevice, bezel: boolean) => {
+    const res = await takeScreenshot(device.udid, bezel)
     if (res.success) {
       notify(t('simulators.screenshotDoneTitle'), res.filename || '', 'success')
     } else {
-      notify(t('simulators.actionFailedTitle'), res.error || t('simulators.actionFailedMessage'), 'error')
+      notify(
+        t('simulators.actionFailedTitle'),
+        res.error || t('simulators.actionFailedMessage'),
+        'error',
+      )
     }
   }
 
@@ -95,9 +140,17 @@ export default function SimulatorsPanel({
     if (!appPath) return
     const res = await runAction(device.udid, 'install', { appPath })
     if (res.success) {
-      notify(t('simulators.actionDoneTitle'), t('simulators.done_install', { name: device.name }), 'success')
+      notify(
+        t('simulators.actionDoneTitle'),
+        t('simulators.done_install', { name: device.name }),
+        'success',
+      )
     } else {
-      notify(t('simulators.actionFailedTitle'), res.error || t('simulators.actionFailedMessage'), 'error')
+      notify(
+        t('simulators.actionFailedTitle'),
+        res.error || t('simulators.actionFailedMessage'),
+        'error',
+      )
     }
   }
 
@@ -106,20 +159,121 @@ export default function SimulatorsPanel({
     if (!bundleId) return
     const res = await runAction(device.udid, 'launch', { bundleId })
     if (res.success) {
-      notify(t('simulators.actionDoneTitle'), t('simulators.done_launch', { name: device.name }), 'success')
+      notify(
+        t('simulators.actionDoneTitle'),
+        t('simulators.done_launch', { name: device.name }),
+        'success',
+      )
     } else {
-      notify(t('simulators.actionFailedTitle'), res.error || t('simulators.actionFailedMessage'), 'error')
+      notify(
+        t('simulators.actionFailedTitle'),
+        res.error || t('simulators.actionFailedMessage'),
+        'error',
+      )
     }
   }
 
-  const groups = groupByPlatform(devices)
+  const handleOpenUrl = async (device: SimulatorDevice) => {
+    const url = window.prompt(t('simulators.openUrlPrompt'))
+    if (!url) return
+    const res = await runAction(device.udid, 'openUrl', { url })
+    if (res.success) {
+      notify(
+        t('simulators.actionDoneTitle'),
+        t('simulators.done_openUrl', { name: device.name }),
+        'success',
+      )
+    } else {
+      notify(
+        t('simulators.actionFailedTitle'),
+        res.error || t('simulators.actionFailedMessage'),
+        'error',
+      )
+    }
+  }
+
+  const handleDismissKeyboard = async (device: SimulatorDevice) => {
+    const res = await runAction(device.udid, 'dismissKeyboard')
+    if (res.success) {
+      notify(
+        t('simulators.actionDoneTitle'),
+        t('simulators.done_dismissKeyboard', { name: device.name }),
+        'success',
+      )
+    } else {
+      notify(
+        t('simulators.actionFailedTitle'),
+        res.error || t('simulators.actionFailedMessage'),
+        'error',
+      )
+    }
+  }
+
+  const handleControl = async (
+    device: SimulatorDevice,
+    action:
+      | 'home'
+      | 'back'
+      | 'appSwitcher'
+      | 'rotateLeft'
+      | 'rotateRight'
+      | 'toggleAppearance',
+  ) => {
+    const res = await runAction(device.udid, action)
+    if (!res.success) {
+      notify(
+        t('simulators.actionFailedTitle'),
+        res.error || t('simulators.actionFailedMessage'),
+        'error',
+      )
+    }
+  }
+
+  const handleRemoteConnection = async () => {
+    if (status.isRemote) {
+      await selectLocal()
+      notify(
+        'SimDeck',
+        'Switched back to the local SimDeck service.',
+        'success',
+      )
+      return
+    }
+    const previousUrl =
+      localStorage.getItem('simdeck_remote_url') || 'http://192.168.1.2:4310'
+    const url = window.prompt('Remote SimDeck URL', previousUrl)?.trim()
+    if (!url) return
+    const pairingCode = window
+      .prompt('6-digit pairing code shown by SimDeck')
+      ?.trim()
+    if (!pairingCode) return
+    const result = await connectRemote(url, pairingCode)
+    if (result.success) {
+      localStorage.setItem('simdeck_remote_url', result.url || url)
+      notify('Remote SimDeck connected', result.url || url, 'success')
+    } else {
+      notify('Remote SimDeck failed', result.error || 'Pairing failed', 'error')
+    }
+  }
+
   const dialogClassName = embedded
     ? 'relative flex h-full min-h-0 w-full flex-col overflow-hidden rounded-[1.5rem] border border-zinc-800 bg-zinc-950/95 shadow-2xl'
     : 'relative flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-[1.5rem] border border-zinc-800 bg-zinc-950/95 shadow-2xl backdrop-blur-2xl animate-in zoom-in-95 fade-in duration-200'
 
   return (
-    <div className={embedded ? 'flex h-full min-h-0 w-full' : 'fixed inset-0 z-[300] flex items-center justify-center p-3 sm:p-6'}>
-      {!embedded && <div className="absolute inset-0 bg-black/70 backdrop-blur-md" onClick={onClose} />}
+    <div
+      className={
+        embedded
+          ? 'flex h-full min-h-0 w-full'
+          : 'fixed inset-0 z-[300] flex items-center justify-center p-3 sm:p-6'
+      }
+    >
+      {!embedded && (
+        <div
+          className="absolute inset-0 bg-black/70 backdrop-blur-md"
+          onClick={onClose}
+        />
+      )}
       <div
         role={embedded ? undefined : 'dialog'}
         aria-modal={embedded ? undefined : true}
@@ -135,13 +289,42 @@ export default function SimulatorsPanel({
               <p className="mb-1 text-[9px] font-black uppercase tracking-[0.22em] text-primary">
                 {t('simulators.toolLabel')}
               </p>
-              <h3 id="simulators-title" className="truncate text-base font-black tracking-tight text-white sm:text-lg">
+              <h3
+                id="simulators-title"
+                className="truncate text-base font-black tracking-tight text-white sm:text-lg"
+              >
                 {t('simulators.title')}
               </h3>
-              <p className="mt-1 truncate text-[10px] text-zinc-500">{t('simulators.subtitle')}</p>
+              <p className="mt-1 truncate text-[10px] text-zinc-500">
+                {t('simulators.subtitle')}
+              </p>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void handleRemoteConnection()}
+              title={
+                status.isRemote
+                  ? 'Disconnect remote SimDeck and use local'
+                  : 'Pair with remote SimDeck'
+              }
+              className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[9px] font-bold transition-colors ${
+                status.isRemote
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
+                  : 'border-zinc-800 bg-zinc-900/60 text-zinc-500 hover:border-primary/30 hover:text-primary'
+              }`}
+            >
+              {status.isRemote ? <Unplug size={13} /> : <Link2 size={13} />}
+              {status.isRemote ? 'Remote' : 'Pair remote'}
+            </button>
+            {availability.available && status.running && devices.length > 0 && (
+              <SimulatorDevicePicker
+                devices={devices}
+                activeUdid={activeUdid}
+                onSelect={setActiveUdid}
+              />
+            )}
             <button
               onClick={() => void refreshDevices()}
               disabled={isRefreshing || !availability.available}
@@ -149,7 +332,10 @@ export default function SimulatorsPanel({
               aria-label={t('common.refresh')}
               className="rounded-xl p-2 text-zinc-500 transition-all hover:bg-white/5 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 disabled:opacity-30"
             >
-              <RefreshCw size={16} className={isRefreshing ? 'animate-spin' : ''} />
+              <RefreshCw
+                size={16}
+                className={isRefreshing ? 'animate-spin' : ''}
+              />
             </button>
             {!embedded && (
               <button
@@ -163,8 +349,15 @@ export default function SimulatorsPanel({
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar p-4 sm:p-7">
-          {!availability.available ? (
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto custom-scrollbar p-4 sm:p-7">
+          {!hasCheckedAvailability ? (
+            <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-zinc-800 py-20 text-zinc-600">
+              <Loader2 size={22} className="animate-spin text-primary" />
+              <span className="mt-4 text-[10px] font-black uppercase tracking-[0.16em] text-zinc-500">
+                {t('simulators.daemonStarting')}
+              </span>
+            </div>
+          ) : !availability.available ? (
             <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-zinc-800 py-20 text-zinc-600">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-900/60">
                 <Download size={22} />
@@ -180,7 +373,11 @@ export default function SimulatorsPanel({
                 disabled={isInstalling}
                 className="mt-4 flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2 text-[9px] font-black uppercase tracking-widest text-primary transition-all hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 disabled:opacity-30"
               >
-                {isInstalling ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                {isInstalling ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <Download size={13} />
+                )}
                 {t('simulators.installButton')}
               </button>
             </div>
@@ -199,173 +396,32 @@ export default function SimulatorsPanel({
               </span>
             </div>
           ) : (
-            <div className="space-y-6">
-              {groups.ios.length > 0 && (
-                <DeviceGroup
-                  icon={Apple}
-                  label={t('simulators.groupIos')}
-                  devices={groups.ios}
-                  pending={pending}
-                  onBoot={(d) => void handleAction(d, 'boot')}
-                  onShutdown={(d) => void handleAction(d, 'shutdown')}
-                  onScreenshot={(d) => void handleScreenshot(d)}
-                  onInstall={(d) => void handleInstallApp(d)}
-                  onLaunch={(d) => void handleLaunchApp(d)}
-                  t={t}
-                />
-              )}
-              {groups.android.length > 0 && (
-                <DeviceGroup
-                  icon={Smartphone}
-                  label={t('simulators.groupAndroid')}
-                  devices={groups.android}
-                  pending={pending}
-                  onBoot={(d) => void handleAction(d, 'boot')}
-                  onShutdown={(d) => void handleAction(d, 'shutdown')}
-                  onScreenshot={(d) => void handleScreenshot(d)}
-                  onInstall={(d) => void handleInstallApp(d)}
-                  onLaunch={(d) => void handleLaunchApp(d)}
-                  t={t}
-                />
-              )}
+            <div className="flex min-h-[480px] flex-1 flex-col gap-3 xl:flex-row">
+              <SimulatorStage
+                device={activeDevice}
+                customPath={customPath}
+                isBooting={
+                  activeDevice ? !!pending[`${activeDevice.udid}::boot`] : false
+                }
+                onBoot={(d) => void handleAction(d, 'boot')}
+                onAction={runAction}
+              />
+              <SimulatorActionSidebar
+                device={activeDevice}
+                pending={pending}
+                onBoot={(d) => void handleAction(d, 'boot')}
+                onShutdown={(d) => void handleAction(d, 'shutdown')}
+                onScreenshot={(d, bezel) => void handleScreenshot(d, bezel)}
+                onInstall={(d) => void handleInstallApp(d)}
+                onLaunch={(d) => void handleLaunchApp(d)}
+                onOpenUrl={(d) => void handleOpenUrl(d)}
+                onDismissKeyboard={(d) => void handleDismissKeyboard(d)}
+                onControl={(d, action) => void handleControl(d, action)}
+              />
             </div>
           )}
         </div>
       </div>
     </div>
-  )
-}
-
-function DeviceGroup({
-  icon: Icon,
-  label,
-  devices,
-  pending,
-  onBoot,
-  onShutdown,
-  onScreenshot,
-  onInstall,
-  onLaunch,
-  t,
-}: {
-  icon: typeof Apple
-  label: string
-  devices: SimulatorDevice[]
-  pending: Record<string, boolean>
-  onBoot: (device: SimulatorDevice) => void
-  onShutdown: (device: SimulatorDevice) => void
-  onScreenshot: (device: SimulatorDevice) => void
-  onInstall: (device: SimulatorDevice) => void
-  onLaunch: (device: SimulatorDevice) => void
-  t: ReturnType<typeof useI18n>['t']
-}) {
-  return (
-    <section>
-      <div className="mb-2 flex items-center gap-2 px-1">
-        <Icon size={13} className="text-zinc-500" />
-        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-zinc-500">{label}</p>
-        <span className="rounded-full border border-zinc-800 bg-zinc-900 px-2 py-0.5 text-[8px] font-bold uppercase tracking-wider text-zinc-500">
-          {devices.length}
-        </span>
-      </div>
-      <div className="space-y-2">
-        {devices.map((device) => {
-          const busy = (action: string) => !!pending[`${device.udid}::${action}`]
-          return (
-            <article
-              key={device.udid}
-              className="rounded-2xl border border-zinc-800/80 bg-zinc-900/45 p-3 transition-all hover:border-primary/30 hover:bg-zinc-900/75 sm:p-4"
-            >
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="min-w-0 truncate text-[11px] font-bold text-zinc-200">{device.name}</p>
-                    <span
-                      className={`rounded-md border px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider ${
-                        device.isBooted
-                          ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-400'
-                          : 'border-zinc-800 bg-zinc-900 text-zinc-500'
-                      }`}
-                    >
-                      {formatStateLabel(device.state)}
-                    </span>
-                  </div>
-                  <p className="mt-1 truncate text-[9px] text-zinc-500">
-                    {device.deviceTypeName} &middot; {device.runtimeName}
-                  </p>
-                </div>
-                <div className="flex w-full items-center justify-end gap-1 border-t border-zinc-800/60 pt-2 sm:w-auto sm:border-0 sm:pt-0">
-                  {canBoot(device) && (
-                    <ActionButton
-                      title={t('simulators.actionBoot')}
-                      busy={busy('boot')}
-                      onClick={() => onBoot(device)}
-                      icon={Play}
-                    />
-                  )}
-                  {canShutdown(device) && (
-                    <>
-                      <ActionButton
-                        title={t('simulators.actionShutdown')}
-                        busy={busy('shutdown')}
-                        onClick={() => onShutdown(device)}
-                        icon={PowerOff}
-                        danger
-                      />
-                      <ActionButton
-                        title={t('simulators.actionScreenshot')}
-                        busy={busy('screenshot')}
-                        onClick={() => onScreenshot(device)}
-                        icon={Camera}
-                      />
-                      <ActionButton
-                        title={t('simulators.actionInstall')}
-                        busy={busy('install')}
-                        onClick={() => onInstall(device)}
-                        icon={Download}
-                      />
-                      <ActionButton
-                        title={t('simulators.actionLaunch')}
-                        busy={busy('launch')}
-                        onClick={() => onLaunch(device)}
-                        icon={Power}
-                      />
-                    </>
-                  )}
-                </div>
-              </div>
-            </article>
-          )
-        })}
-      </div>
-    </section>
-  )
-}
-
-function ActionButton({
-  title,
-  busy,
-  onClick,
-  icon: Icon,
-  danger = false,
-}: {
-  title: string
-  busy: boolean
-  onClick: () => void
-  icon: typeof Play
-  danger?: boolean
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={busy}
-      title={title}
-      aria-label={title}
-      className={`rounded-lg p-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 disabled:opacity-40 ${
-        danger ? 'text-zinc-500 hover:bg-red-500/10 hover:text-red-400' : 'text-zinc-500 hover:bg-primary/10 hover:text-primary'
-      }`}
-    >
-      {busy ? <Loader2 size={14} className="animate-spin" /> : <Icon size={14} />}
-    </button>
   )
 }

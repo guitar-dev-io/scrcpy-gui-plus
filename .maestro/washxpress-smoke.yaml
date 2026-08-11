@@ -1,0 +1,35 @@
+appId: com.laundryyou.washxpress
+name: WashXpress Android smoke test
+tags:
+  - smoke
+  - washxpress
+---
+# Keep the user's account and wallet untouched. This flow intentionally does
+# not use clearState, sign in, top up, scan a machine, or start a paid cycle.
+- launchApp:
+    stopApp: true
+
+- waitForAnimationToEnd
+
+# A healthy launch should expose at least one recognizable WashXpress surface:
+# splash/brand, authentication, branch discovery, or the laundry home screen.
+- extendedWaitUntil:
+    visible:
+      text: ".*(WashXpress|เข้าสู่ระบบ|Login|ค้นหาสาขา|สาขาใกล้คุณ|ซัก|อบ).*"
+    timeout: 20000
+
+- assertVisible:
+    text: ".*(WashXpress|เข้าสู่ระบบ|Login|ค้นหาสาขา|สาขาใกล้คุณ|ซัก|อบ).*"
+
+- takeScreenshot: washxpress-cold-launch
+
+# Verify that Android can background and resume the existing app session.
+- pressKey: Home
+- launchApp:
+    stopApp: false
+- waitForAnimationToEnd
+
+- assertVisible:
+    text: ".*(WashXpress|เข้าสู่ระบบ|Login|ค้นหาสาขา|สาขาใกล้คุณ|ซัก|อบ).*"
+
+- takeScreenshot: washxpress-resumed

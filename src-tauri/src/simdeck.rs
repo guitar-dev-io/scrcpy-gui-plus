@@ -50,10 +50,9 @@
 // we send both headers anyway since it costs nothing and is forward
 // compatible if that trust boundary tightens.
 //
-// Live video/control streaming (M2) is a separate, larger investigation --
-// `/api/health` advertises a `webRtc` block (ICE servers), so the stream is
-// WebRTC-based rather than a simple custom binary WS protocol like the
-// `embed_session.rs` scrcpy path. Not implemented here.
+// Live video uses WebRTC rather than a custom binary WS protocol like the
+// `embed_session.rs` scrcpy path. Rust proxies the SDP offer/answer request;
+// the frontend receives the media stream directly from SimDeck.
 
 use crate::commands::{create_command, get_binary_path};
 use serde::Serialize;
@@ -101,9 +100,7 @@ impl SimDeckError {
     /// Human readable message.
     pub fn message(&self) -> String {
         match self {
-            SimDeckError::NotFound => {
-                "simdeck executable not found. Install it first.".to_string()
-            }
+            SimDeckError::NotFound => "simdeck executable not found. Install it first.".to_string(),
             SimDeckError::Timeout => "simdeck command timed out".to_string(),
             SimDeckError::InvalidUdid => "Invalid simulator UDID".to_string(),
             SimDeckError::InvalidResponse(m) => format!("Unexpected response from simdeck: {m}"),
@@ -151,6 +148,7 @@ struct SimDeckDaemon {
     url: String,
     pairing_code: Option<String>,
     token: Option<String>,
+    remote: bool,
 }
 
 #[derive(Default)]
@@ -158,7 +156,109 @@ pub struct SimDeckState {
     daemon: Mutex<Option<SimDeckDaemon>>,
 }
 
-async fn run_simdeck_json(args: &[&str], custom_path: Option<String>) -> Result<Value, SimDeckError> {
+fn validate_remote_url(input: &str) -> Result<String, SimDeckError> {
+    let mut url = reqwest::Url::parse(input.trim())
+        .map_err(|_| SimDeckError::Failed("Invalid SimDeck URL".to_string()))?;
+    if !matches!(url.scheme(), "http" | "https")
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.host_str().is_none()
+    {
+        return Err(SimDeckError::Failed(
+            "SimDeck URL must be an http(s) origin without credentials".to_string(),
+        ));
+    }
+    if url.path() != "/" && !url.path().is_empty() {
+        return Err(SimDeckError::Failed(
+            "SimDeck URL must not include a path".to_string(),
+        ));
+    }
+    if url.scheme() == "http" {
+        let host = url.host_str().unwrap_or_default();
+        let trusted_lan = host.eq_ignore_ascii_case("localhost")
+            || host
+                .parse::<std::net::IpAddr>()
+                .map(|ip| match ip {
+                    std::net::IpAddr::V4(v4) => {
+                        let octets = v4.octets();
+                        let is_tailscale = octets[0] == 100 && (64..=127).contains(&octets[1]);
+                        v4.is_private() || v4.is_loopback() || is_tailscale
+                    }
+                    std::net::IpAddr::V6(v6) => v6.is_loopback() || v6.is_unique_local(),
+                })
+                .unwrap_or(false);
+        if !trusted_lan {
+            return Err(SimDeckError::Failed(
+                "Plain HTTP is only allowed for localhost, private LAN, or Tailscale addresses"
+                    .to_string(),
+            ));
+        }
+    }
+    url.set_query(None);
+    url.set_fragment(None);
+    Ok(url.as_str().trim_end_matches('/').to_string())
+}
+
+/// Pair with a SimDeck service running on another machine. The returned token
+/// is kept only in process memory and is never exposed to or persisted by the frontend.
+#[tauri::command]
+pub async fn connect_remote_simdeck(
+    state: State<'_, SimDeckState>,
+    url: String,
+    pairing_code: String,
+) -> Result<Value, String> {
+    let base_url = validate_remote_url(&url).map_err(|e| e.message())?;
+    let code = pairing_code.trim();
+    if code.len() != 6 || !code.chars().all(|c| c.is_ascii_digit()) {
+        return Ok(json!({ "success": false, "error": "Pairing code must contain 6 digits" }));
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(HTTP_TIMEOUT_SECS))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| e.to_string())?;
+    let response = client
+        .post(format!("{base_url}/api/pair"))
+        .header("Origin", base_url.clone())
+        .json(&json!({ "code": code }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    let status = response.status();
+    let body: Value = response.json().await.unwrap_or(Value::Null);
+    if !status.is_success() {
+        return Ok(json!({
+            "success": false,
+            "error": if status.as_u16() == 401 { "Pairing code did not match" } else { "Remote SimDeck pairing failed" }
+        }));
+    }
+    let token = body
+        .get("accessToken")
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.is_empty() && value.len() <= 256)
+        .ok_or_else(|| "Remote SimDeck did not return an access token".to_string())?
+        .to_string();
+
+    *state.daemon.lock().unwrap() = Some(SimDeckDaemon {
+        url: base_url.clone(),
+        pairing_code: None,
+        token: Some(token),
+        remote: true,
+    });
+    Ok(json!({ "success": true, "url": base_url }))
+}
+
+#[tauri::command]
+pub fn use_local_simdeck(state: State<'_, SimDeckState>) -> Value {
+    *state.daemon.lock().unwrap() = None;
+    json!({ "success": true })
+}
+
+async fn run_simdeck_json(
+    args: &[&str],
+    custom_path: Option<String>,
+) -> Result<Value, SimDeckError> {
     let bin = get_binary_path("simdeck", custom_path);
     let child = create_command(&bin)
         .args(args)
@@ -176,7 +276,11 @@ async fn run_simdeck_json(args: &[&str], custom_path: Option<String>) -> Result<
         }
     };
 
-    let output = match timeout(Duration::from_secs(CLI_TIMEOUT_SECS), child.wait_with_output()).await
+    let output = match timeout(
+        Duration::from_secs(CLI_TIMEOUT_SECS),
+        child.wait_with_output(),
+    )
+    .await
     {
         Ok(Ok(o)) => o,
         Ok(Err(e)) => return Err(SimDeckError::Failed(e.to_string())),
@@ -186,14 +290,17 @@ async fn run_simdeck_json(args: &[&str], custom_path: Option<String>) -> Result<
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(SimDeckError::Failed(if stderr.is_empty() {
-            format!("simdeck {} exited with {:?}", args.join(" "), output.status.code())
+            format!(
+                "simdeck {} exited with {:?}",
+                args.join(" "),
+                output.status.code()
+            )
         } else {
             stderr
         }));
     }
 
-    serde_json::from_slice(&output.stdout)
-        .map_err(|e| SimDeckError::InvalidResponse(e.to_string()))
+    serde_json::from_slice(&output.stdout).map_err(|e| SimDeckError::InvalidResponse(e.to_string()))
 }
 
 /// Probe whether the `simdeck` CLI is reachable, without starting the service.
@@ -271,7 +378,10 @@ pub async fn install_simdeck(window: Window) -> Result<Value, String> {
     };
 
     if status.success() {
-        let _ = window.emit("scrcpy-log", "[SimDeck] Installed successfully.".to_string());
+        let _ = window.emit(
+            "scrcpy-log",
+            "[SimDeck] Installed successfully.".to_string(),
+        );
         Ok(json!({ "success": true }))
     } else {
         let msg = format!("npm install exited with {:?}", status.code());
@@ -318,6 +428,7 @@ async fn ensure_daemon(
         url,
         pairing_code,
         token,
+        remote: false,
     };
     *state.daemon.lock().unwrap() = Some(daemon.clone());
     Ok(daemon)
@@ -351,7 +462,9 @@ async fn simdeck_request_raw(
 ) -> Result<Vec<u8>, SimDeckError> {
     let client = build_client();
     let url = format!("{}{}", daemon.url.trim_end_matches('/'), path);
-    let mut req = client.request(method, &url).header("Origin", daemon.url.clone());
+    let mut req = client
+        .request(method, &url)
+        .header("Origin", daemon.url.clone());
     if let Some(token) = &daemon.token {
         req = req.header("X-SimDeck-Token", token.clone());
     }
@@ -379,18 +492,30 @@ async fn simdeck_request_raw(
     Ok(bytes.to_vec())
 }
 
-/// Report whether the shared SimDeck service is reachable.
+/// Report whether the shared SimDeck service is reachable. Also surfaces the
+/// WebRTC ICE server list from `/api/health` (best effort) so the frontend's
+/// `RTCPeerConnection` can be configured without a second round trip.
 #[tauri::command]
 pub async fn get_simdeck_status(
     state: State<'_, SimDeckState>,
     custom_path: Option<String>,
 ) -> Result<Value, String> {
     match ensure_daemon(&state, custom_path).await {
-        Ok(d) => Ok(json!({
-            "running": true,
-            "url": d.url,
-            "pairingCode": d.pairing_code,
-        })),
+        Ok(d) => {
+            let ice_servers = simdeck_request(&d, reqwest::Method::GET, "/api/health", None)
+                .await
+                .ok()
+                .and_then(|health| health.get("webRtc").cloned())
+                .and_then(|web_rtc| web_rtc.get("iceServers").cloned())
+                .unwrap_or_else(|| Value::Array(Vec::new()));
+            Ok(json!({
+                "running": true,
+                "url": d.url,
+                "pairingCode": d.pairing_code,
+                "iceServers": ice_servers,
+                "isRemote": d.remote,
+            }))
+        }
         Err(e) => Ok(json!({
             "running": false,
             "errorCode": e.code(),
@@ -411,6 +536,14 @@ pub struct SimulatorDevice {
     pub is_booted: bool,
     pub device_type_name: String,
     pub runtime_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_width: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_height: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rotation_quarter_turns: Option<i64>,
 }
 
 fn parse_simulator(raw: &Value) -> Option<SimulatorDevice> {
@@ -422,7 +555,13 @@ fn parse_simulator(raw: &Value) -> Option<SimulatorDevice> {
     let platform = raw
         .get("platform")
         .and_then(|v| v.as_str())
-        .map(|s| if s.contains("android") { "android" } else { "ios" })
+        .map(|s| {
+            if s.contains("android") {
+                "android"
+            } else {
+                "ios"
+            }
+        })
         .unwrap_or("ios")
         .to_string();
 
@@ -457,6 +596,23 @@ fn parse_simulator(raw: &Value) -> Option<SimulatorDevice> {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string(),
+        display_width: raw
+            .get("privateDisplay")
+            .and_then(|v| v.get("displayWidth"))
+            .and_then(|v| v.as_u64()),
+        display_height: raw
+            .get("privateDisplay")
+            .and_then(|v| v.get("displayHeight"))
+            .and_then(|v| v.as_u64()),
+        display_status: raw
+            .get("privateDisplay")
+            .and_then(|v| v.get("displayStatus"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        rotation_quarter_turns: raw
+            .get("privateDisplay")
+            .and_then(|v| v.get("rotationQuarterTurns"))
+            .and_then(|v| v.as_i64()),
     })
 }
 
@@ -587,7 +743,11 @@ pub async fn simulator_action(
             )
             .await
         }
-        "install" => match params.as_ref().and_then(|p| p.get("appPath")).and_then(|v| v.as_str()) {
+        "install" => match params
+            .as_ref()
+            .and_then(|p| p.get("appPath"))
+            .and_then(|v| v.as_str())
+        {
             Some(app_path) => {
                 simdeck_request(
                     &daemon,
@@ -624,7 +784,13 @@ pub async fn simulator_action(
             if let Value::Object(ref mut map) = body {
                 map.insert("action".to_string(), Value::String(action.clone()));
             }
-            simdeck_request(&daemon, reqwest::Method::POST, &format!("{path}/action"), Some(body)).await
+            simdeck_request(
+                &daemon,
+                reqwest::Method::POST,
+                &format!("{path}/action"),
+                Some(body),
+            )
+            .await
         }
         _ => Err(SimDeckError::Failed(format!(
             "Unsupported simulator action: {action}"
@@ -647,6 +813,7 @@ pub async fn simulator_screenshot(
     app_handle: AppHandle,
     state: State<'_, SimDeckState>,
     udid: String,
+    bezel: Option<bool>,
     custom_path: Option<String>,
 ) -> Result<Value, String> {
     if let Err(e) = validate_udid(&udid) {
@@ -655,19 +822,21 @@ pub async fn simulator_screenshot(
 
     let daemon = match ensure_daemon(&state, custom_path).await {
         Ok(d) => d,
-        Err(e) => return Ok(json!({ "success": false, "error": e.message(), "errorCode": e.code() })),
+        Err(e) => {
+            return Ok(json!({ "success": false, "error": e.message(), "errorCode": e.code() }))
+        }
     };
 
-    let bytes = match simdeck_request_raw(
-        &daemon,
-        reqwest::Method::GET,
-        &format!("/api/simulators/{udid}/screenshot.png"),
-        None,
-    )
-    .await
-    {
+    let path = if bezel.unwrap_or(false) {
+        format!("/api/simulators/{udid}/screenshot.png?bezel=true")
+    } else {
+        format!("/api/simulators/{udid}/screenshot.png")
+    };
+    let bytes = match simdeck_request_raw(&daemon, reqwest::Method::GET, &path, None).await {
         Ok(b) => b,
-        Err(e) => return Ok(json!({ "success": false, "error": e.message(), "errorCode": e.code() })),
+        Err(e) => {
+            return Ok(json!({ "success": false, "error": e.message(), "errorCode": e.code() }))
+        }
     };
 
     let base = app_handle
@@ -688,6 +857,42 @@ pub async fn simulator_screenshot(
     }))
 }
 
+/// Proxy the WebRTC SDP offer/answer handshake for a live simulator view.
+///
+/// The actual media (video) never touches Rust: the frontend's own
+/// `RTCPeerConnection` negotiates and receives it directly from SimDeck (the
+/// webview is a real browser engine, same as SimDeck's own web client). This
+/// command only forwards the one HTTP round trip in that handshake --
+/// `POST /api/simulators/{udid}/webrtc/offer` -- so the app's existing
+/// invariant (Rust mediates all outbound network calls) still holds. See the
+/// module doc comment for how this endpoint's shape was confirmed.
+#[tauri::command]
+pub async fn simulator_webrtc_offer(
+    state: State<'_, SimDeckState>,
+    udid: String,
+    sdp: String,
+    client_id: String,
+    custom_path: Option<String>,
+) -> Result<Value, String> {
+    validate_udid(&udid).map_err(|e| e.message())?;
+    let daemon = ensure_daemon(&state, custom_path)
+        .await
+        .map_err(|e| e.message())?;
+
+    simdeck_request(
+        &daemon,
+        reqwest::Method::POST,
+        &format!("/api/simulators/{udid}/webrtc/offer"),
+        Some(json!({
+            "clientId": client_id,
+            "sdp": sdp,
+            "type": "offer",
+        })),
+    )
+    .await
+    .map_err(|e| e.message())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -706,6 +911,30 @@ mod tests {
             Err(SimDeckError::InvalidUdid)
         );
         assert_eq!(validate_udid("$(whoami)"), Err(SimDeckError::InvalidUdid));
+    }
+
+    #[test]
+    fn validate_remote_url_accepts_secure_and_private_origins() {
+        assert_eq!(
+            validate_remote_url("https://simdeck.example.com/?ignored=yes#fragment").unwrap(),
+            "https://simdeck.example.com"
+        );
+        assert_eq!(
+            validate_remote_url("http://127.0.0.1:4310/").unwrap(),
+            "http://127.0.0.1:4310"
+        );
+        assert_eq!(
+            validate_remote_url("http://192.168.1.20:4310").unwrap(),
+            "http://192.168.1.20:4310"
+        );
+    }
+
+    #[test]
+    fn validate_remote_url_rejects_unsafe_origins() {
+        assert!(validate_remote_url("http://example.com:4310").is_err());
+        assert!(validate_remote_url("https://user:secret@example.com").is_err());
+        assert!(validate_remote_url("https://example.com/api").is_err());
+        assert!(validate_remote_url("file:///tmp/simdeck").is_err());
     }
 
     #[test]

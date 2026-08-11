@@ -3,6 +3,7 @@ import {
   canBoot,
   canInteract,
   canShutdown,
+  filterDevices,
   formatStateLabel,
   groupByPlatform,
   sortDevices,
@@ -63,5 +64,27 @@ describe('formatStateLabel', () => {
     expect(formatStateLabel('BootRequired')).toBe('Boot Required')
     expect(formatStateLabel('Booted')).toBe('Booted')
     expect(formatStateLabel('')).toBe('Unknown')
+  })
+})
+
+describe('filterDevices', () => {
+  const devices = [
+    device({ udid: '1', name: 'iPhone 17 Pro', deviceTypeName: 'iPhone 17 Pro', runtimeName: 'iOS 26.5' }),
+    device({ udid: '2', name: 'Pixel_8_API_35', deviceTypeName: 'Android Emulator', runtimeName: 'Android' }),
+  ]
+
+  it('returns all devices for an empty query', () => {
+    expect(filterDevices(devices, '')).toEqual(devices)
+    expect(filterDevices(devices, '   ')).toEqual(devices)
+  })
+
+  it('matches case-insensitively against name, device type, and runtime', () => {
+    expect(filterDevices(devices, 'iphone').map((d) => d.udid)).toEqual(['1'])
+    expect(filterDevices(devices, 'ANDROID').map((d) => d.udid)).toEqual(['2'])
+    expect(filterDevices(devices, '26.5').map((d) => d.udid)).toEqual(['1'])
+  })
+
+  it('returns an empty list when nothing matches', () => {
+    expect(filterDevices(devices, 'nope')).toEqual([])
   })
 })

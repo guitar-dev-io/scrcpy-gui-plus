@@ -244,6 +244,13 @@ export const th: DeepPartialTranslations = {
     recordEmpty: 'โต้ตอบกับหน้าจอเพื่อบันทึกขั้นตอน',
     refresh: 'รีเฟรชหน้าจอ',
     capturing: 'กำลังจับภาพหน้าจอ...',
+    liveAdb: 'ภาพสดผ่าน ADB',
+    adbSnapshot: 'ภาพนิ่งจาก ADB',
+    liveActive: 'กำลังแสดงภาพสด',
+    liveStarting: 'กำลังเริ่มภาพสดผ่าน ADB…',
+    liveWaiting: 'กำลังรอวิดีโอ…',
+    liveUnavailable:
+      'ไม่สามารถเปิดภาพสดผ่าน ADB ได้: {error} ขณะนี้ยังใช้ภาพนิ่งได้ตามปกติ',
     sendText: 'ส่ง',
     addWait: 'รอ',
     addCheckpoint: 'จุดตรวจ',
@@ -260,6 +267,7 @@ export const th: DeepPartialTranslations = {
     waitForElementNone: 'แตะ element ก่อนเพื่อเปิดใช้งาน',
     exportMaestro: 'ส่งออก Maestro YAML',
     exportAppium: 'ส่งออก Appium (Python)',
+    exportRobot: 'ส่งออก Robot Framework',
     recordFailedTitle: 'ดำเนินการไม่สำเร็จ',
     errors: {
       failed: 'การกระทำล้มเหลวบนอุปกรณ์',

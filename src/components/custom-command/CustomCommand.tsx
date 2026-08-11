@@ -169,14 +169,15 @@ export default function CustomCommand({
                     {/* Command list */}
                     {cmds.presets.map((p) => {
                         const running = cmds.runningId === p.id;
+                        const missingPackage = p.needsPackage && !packageName?.trim();
                         const result = cmds.lastResult?.id === p.id ? cmds.lastResult.result : null;
                         return (
                             <div key={p.id} className="rounded-xl border border-zinc-800/60 bg-zinc-950/30 overflow-hidden">
                                 <div className="flex items-center gap-2 p-2.5">
                                     <button
                                         onClick={() => void handleRun(p)}
-                                        disabled={!activeDevice || running}
-                                        title={t('customCmd.run')}
+                                        disabled={!activeDevice || running || missingPackage}
+                                        title={missingPackage ? 'Enter an app package first' : t('customCmd.run')}
                                         className="p-1.5 rounded-md bg-primary text-on-primary hover:brightness-110 transition-all disabled:opacity-30"
                                     >
                                         {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}

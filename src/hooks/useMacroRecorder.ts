@@ -33,6 +33,7 @@ interface UseMacroRecorderOptions {
   activeDevice: string
   customPath?: string
   outputDir: string
+  livePreview?: boolean
 }
 
 export interface MacroReplayResult {
@@ -107,6 +108,7 @@ export function useMacroRecorder({
   activeDevice,
   customPath,
   outputDir,
+  livePreview = false,
 }: UseMacroRecorderOptions) {
   const [steps, setSteps] = useState<MacroStep[]>([])
   const [name, setName] = useState('Macro')
@@ -431,8 +433,8 @@ export function useMacroRecorder({
 
   const startRecording = useCallback(() => {
     setRecording(true)
-    void refreshScreen()
-  }, [refreshScreen])
+    if (!livePreview) void refreshScreen()
+  }, [livePreview, refreshScreen])
 
   const stopRecording = useCallback(() => {
     setRecording(false)
@@ -474,11 +476,11 @@ export function useMacroRecorder({
         addStep(step)
         // Let the UI settle before snapshotting the new state.
         await new Promise((r) => setTimeout(r, 250))
-        await refreshScreen()
+        if (!livePreview) await refreshScreen()
       }
       return { success: res.success, errorCode: res.errorCode }
     },
-    [serial, customPath, addStep, refreshScreen],
+    [serial, customPath, addStep, livePreview, refreshScreen],
   )
 
   return {

@@ -43,3 +43,12 @@ export function formatStateLabel(state: string): string {
   if (!state) return 'Unknown'
   return state.replace(/([a-z0-9])([A-Z])/g, '$1 $2')
 }
+
+/** Case-insensitive match against name / device type / runtime, for the device picker's search box. */
+export function filterDevices(devices: SimulatorDevice[], query: string): SimulatorDevice[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return devices
+  return devices.filter((d) =>
+    [d.name, d.deviceTypeName, d.runtimeName].some((field) => field.toLowerCase().includes(q)),
+  )
+}

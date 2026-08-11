@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="icon.png" width="128" height="128" alt="ScrcpyGUI Icon">
+  <img src="public/icon.png" width="128" height="128" alt="ScrcpyGUI Icon">
   <br>
   <h1>ScrcpyGUI v4</h1>
   <strong>A premium, high-performance Android control experience.</strong>
@@ -63,6 +63,31 @@ To learn how to enable **USB Debugging**, set up **Wireless Pairing**, or instal
 2. `npm run tauri dev` (Development)
 3. `npm run tauri build` (Production)
 
+### Robot Framework mobile tests
+
+Flows recorded in **Automation** can be exported as keyword-driven `.robot`
+suites. The generated suite uses AppiumLibrary and includes reusable keywords
+for taps, ADB commands, foreground-package assertions, screenshots, and video.
+
+Run an exported suite after starting Appium:
+
+```bash
+pip install robotframework robotframework-appiumlibrary
+robot --variable DEVICE_NAME:YOUR_ADB_SERIAL path/to/exported.robot
+```
+
+### Run Maestro tests inside the app
+
+Open **Script Manager → Maestro Test**, select an Android device, and run a
+`.yaml` flow. The panel can materialize the bundled, non-transactional
+WashXpress smoke test or open another local Maestro flow. Pass/fail output is
+shown in the app and saved to Test Runs. Maestro CLI must be installed on the
+desktop running ScrcpyGUI. The visual Action Builder supports launch/resume,
+tap by text or resource ID, text input, visible assertions, element waits,
+animation waits, Android keys, screenshots, reordering, and deletion.
+Its categorized catalog mirrors all commands in Maestro's official command
+reference; advanced commands are inserted as editable YAML templates.
+
 ## ❄️ NixOS Installation (flakes)
 
 To install it permanently with a desktop launcher, add the flake to your system's `flake.nix`:
@@ -108,4 +133,3 @@ ScrcpyGUI is made possible by the following amazing open-source projects:
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 *ScrcpyGUI is an independent project and is not affiliated with Genymobile or scrcpy authors.*
-

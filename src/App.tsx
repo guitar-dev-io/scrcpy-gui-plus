@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open } from '@tauri-apps/plugin-dialog'
@@ -70,16 +70,26 @@ const SessionsPage = lazy(() => import('./components/pages/SessionsPage'))
 const ScreenshotsPage = lazy(() => import('./components/pages/ScreenshotsPage'))
 const RecordingsPage = lazy(() => import('./components/pages/RecordingsPage'))
 const SettingsPage = lazy(() => import('./components/pages/SettingsPage'))
-const FileExplorerPage = lazy(() => import('./components/pages/FileExplorerPage'))
+const FileExplorerPage = lazy(
+  () => import('./components/pages/FileExplorerPage'),
+)
 const WirelessAdbPage = lazy(() => import('./components/pages/WirelessAdbPage'))
 const AppManagerPage = lazy(() => import('./components/pages/AppManagerPage'))
 const SimulatorsPage = lazy(() => import('./components/pages/SimulatorsPage'))
-const LogcatViewerPage = lazy(() => import('./components/pages/LogcatViewerPage'))
+const LogcatViewerPage = lazy(
+  () => import('./components/pages/LogcatViewerPage'),
+)
 const PerformancePage = lazy(() => import('./components/pages/PerformancePage'))
-const InputControlPage = lazy(() => import('./components/pages/InputControlPage'))
+const InputControlPage = lazy(
+  () => import('./components/pages/InputControlPage'),
+)
 const AutomationPage = lazy(() => import('./components/pages/AutomationPage'))
-const ScriptManagerPage = lazy(() => import('./components/pages/ScriptManagerPage'))
-const TaskSchedulerPage = lazy(() => import('./components/pages/TaskSchedulerPage'))
+const ScriptManagerPage = lazy(
+  () => import('./components/pages/ScriptManagerPage'),
+)
+const TaskSchedulerPage = lazy(
+  () => import('./components/pages/TaskSchedulerPage'),
+)
 
 function AppContent() {
   const { t } = useI18n()
@@ -133,6 +143,10 @@ function AppContent() {
     setIsOnboardingOpen,
     completeOnboarding,
   } = useScrcpy()
+  const physicalAndroidDevices = useMemo(
+    () => devices.filter((serial) => !/^emulator-\d+$/.test(serial)),
+    [devices],
+  )
   const { status: workspaceDeviceStatus } = useDeviceStatus({
     activeDevice,
     customPath: config.scrcpyPath,
@@ -146,14 +160,18 @@ function AppContent() {
   const adaptiveRestartTimerRef = useRef<number | null>(null)
   latestActiveDeviceRef.current = activeDevice
 
-  useEffect(() => () => {
-    if (adaptiveRestartTimerRef.current !== null) {
-      window.clearTimeout(adaptiveRestartTimerRef.current)
-    }
-  }, [])
+  useEffect(
+    () => () => {
+      if (adaptiveRestartTimerRef.current !== null) {
+        window.clearTimeout(adaptiveRestartTimerRef.current)
+      }
+    },
+    [],
+  )
 
   useEffect(() => {
-    if (!activeDevice || appliedDeviceProfileRef.current === activeDevice) return
+    if (!activeDevice || appliedDeviceProfileRef.current === activeDevice)
+      return
     appliedDeviceProfileRef.current = activeDevice
     try {
       const profiles = JSON.parse(
@@ -162,7 +180,9 @@ function AppContent() {
       const configProfiles = JSON.parse(
         localStorage.getItem(DEVICE_CONFIG_PROFILES_KEY) || '{}',
       ) as DeviceConfigProfileMap
-      const preset = profiles[activeDevice] ? getPreset(profiles[activeDevice]) : undefined
+      const preset = profiles[activeDevice]
+        ? getPreset(profiles[activeDevice])
+        : undefined
       setConfig((previous) => ({
         ...DEFAULT_SCRCPY_CONFIG,
         scrcpyPath: previous.scrcpyPath,
@@ -239,10 +259,19 @@ function AppContent() {
     if (!activeDevice || quickDiagnosticBusy) return
     const outputDir = screenshot.screenshotDir || config.recordPath || ''
     if (!outputDir) {
-      notify('Diagnostic bundle', 'Choose an output directory first.', 'warning')
+      notify(
+        'Diagnostic bundle',
+        'Choose an output directory first.',
+        'warning',
+      )
       return
     }
-    if (!window.confirm('Create a diagnostic ZIP containing device information, screenshot, and unfiltered system logcat? Sensitive data may be included.')) return
+    if (
+      !window.confirm(
+        'Create a diagnostic ZIP containing device information, screenshot, and unfiltered system logcat? Sensitive data may be included.',
+      )
+    )
+      return
     setQuickDiagnosticBusy(true)
     try {
       const result = await createBugReport({
@@ -259,7 +288,9 @@ function AppContent() {
         includeDeviceInfo: true,
         includeAppInfo: false,
         includeRecording: Boolean(
-          recordingLibrary.history.find((entry) => entry.deviceSerial === activeDevice)?.path,
+          recordingLibrary.history.find(
+            (entry) => entry.deviceSerial === activeDevice,
+          )?.path,
         ),
         recordingPath: recordingLibrary.history.find(
           (entry) => entry.deviceSerial === activeDevice,
@@ -269,7 +300,11 @@ function AppContent() {
       notify(
         result.success ? 'Diagnostic bundle ready' : 'Diagnostic bundle failed',
         result.success ? result.zipPath : result.error || 'Unknown error',
-        result.success ? (result.warnings.length ? 'warning' : 'success') : 'error',
+        result.success
+          ? result.warnings.length
+            ? 'warning'
+            : 'success'
+          : 'error',
       )
     } catch (error) {
       notify('Diagnostic bundle failed', String(error), 'error')
@@ -280,17 +315,25 @@ function AppContent() {
 
   const embeddedMirror = useEmbeddedMirror()
   const [isMirrorStageOpen, setIsMirrorStageOpen] = useState(false)
-  const [embeddedConnections, setEmbeddedConnections] = useState<Record<string, boolean>>({})
+  const [embeddedConnections, setEmbeddedConnections] = useState<
+    Record<string, boolean>
+  >({})
   const [openDeviceWorkspaces, setOpenDeviceWorkspaces] = useState<string[]>([])
-  const [deviceWorkspaceLabels, setDeviceWorkspaceLabels] = useState<Record<string, string>>({})
+  const [deviceWorkspaceLabels, setDeviceWorkspaceLabels] = useState<
+    Record<string, string>
+  >({})
   const [multiDeviceView, setMultiDeviceView] = useState(true)
-  const [embeddedSessionCommands, setEmbeddedSessionCommands] = useState<Record<
-    string,
-    { id: number; action: 'start' | 'stop' }
-  >>({})
-  const embeddedDashboardConnected = Boolean(activeDevice && embeddedConnections[activeDevice])
+  const [embeddedSessionCommands, setEmbeddedSessionCommands] = useState<
+    Record<string, { id: number; action: 'start' | 'stop' }>
+  >({})
+  const embeddedDashboardConnected = Boolean(
+    activeDevice && embeddedConnections[activeDevice],
+  )
 
-  const requestEmbeddedSession = (action: 'start' | 'stop', serial = activeDevice) => {
+  const requestEmbeddedSession = (
+    action: 'start' | 'stop',
+    serial = activeDevice,
+  ) => {
     if (!serial) return
     setEmbeddedSessionCommands((current) => ({
       ...current,
@@ -299,9 +342,9 @@ function AppContent() {
   }
 
   const openDeviceWorkspace = (serial: string) => {
-    setOpenDeviceWorkspaces((current) => (
-      current.includes(serial) ? current : [...current, serial]
-    ))
+    setOpenDeviceWorkspaces((current) =>
+      current.includes(serial) ? current : [...current, serial],
+    )
     setActiveDevice(serial)
     setActiveIosUdid(null)
     activateDeviceWorkspace()
@@ -312,12 +355,14 @@ function AppContent() {
     if (embeddedConnections[serial]) requestEmbeddedSession('stop', serial)
     if (runningDevices.includes(serial)) void stopScrcpy(serial)
     setEmbeddedConnections((current) => ({ ...current, [serial]: false }))
-    const remaining = Array.from(new Set([
-      ...openDeviceWorkspaces,
-      ...runningDevices,
-    ])).filter((item) => item !== serial)
-    setOpenDeviceWorkspaces((current) => current.filter((item) => item !== serial))
-    if (serial === activeDevice) setActiveDevice(remaining[remaining.length - 1] ?? '')
+    const remaining = Array.from(
+      new Set([...openDeviceWorkspaces, ...runningDevices]),
+    ).filter((item) => item !== serial)
+    setOpenDeviceWorkspaces((current) =>
+      current.filter((item) => item !== serial),
+    )
+    if (serial === activeDevice)
+      setActiveDevice(remaining[remaining.length - 1] ?? '')
   }
 
   useEffect(() => {
@@ -325,34 +370,43 @@ function AppContent() {
       .filter(([, value]) => value)
       .map(([serial]) => serial)
     if (connected.length === 0) return
-    setOpenDeviceWorkspaces((current) => Array.from(new Set([...current, ...connected])))
+    setOpenDeviceWorkspaces((current) =>
+      Array.from(new Set([...current, ...connected])),
+    )
   }, [embeddedConnections])
 
   useEffect(() => {
     if (
-      !activeDevice
-      || workspaceDeviceStatus?.serial !== activeDevice
-      || !workspaceDeviceStatus.model
-    ) return
+      !activeDevice ||
+      workspaceDeviceStatus?.serial !== activeDevice ||
+      !workspaceDeviceStatus.model
+    )
+      return
     const model = workspaceDeviceStatus.model
-    setDeviceWorkspaceLabels((current) => (
+    setDeviceWorkspaceLabels((current) =>
       current[activeDevice] === model
         ? current
-        : { ...current, [activeDevice]: model }
-    ))
-  }, [activeDevice, workspaceDeviceStatus?.model, workspaceDeviceStatus?.serial])
+        : { ...current, [activeDevice]: model },
+    )
+  }, [
+    activeDevice,
+    workspaceDeviceStatus?.model,
+    workspaceDeviceStatus?.serial,
+  ])
 
   const ios = useIosMirror(config.scrcpyPath)
   const [openIosWorkspaces, setOpenIosWorkspaces] = useState<string[]>([])
-  const [iosWorkspaceDevices, setIosWorkspaceDevices] = useState<Record<string, IosDeviceInfo>>({})
+  const [iosWorkspaceDevices, setIosWorkspaceDevices] = useState<
+    Record<string, IosDeviceInfo>
+  >({})
   const [activeIosUdid, setActiveIosUdid] = useState<string | null>(null)
   const [iosStreaming, setIosStreaming] = useState<Record<string, boolean>>({})
   const activeAndroidWorkspaceDevice = activeIosUdid ? '' : activeDevice
 
   const openIosWorkspace = (device: IosDeviceInfo) => {
-    setOpenIosWorkspaces((current) => (
-      current.includes(device.udid) ? current : [...current, device.udid]
-    ))
+    setOpenIosWorkspaces((current) =>
+      current.includes(device.udid) ? current : [...current, device.udid],
+    )
     setIosWorkspaceDevices((current) => ({ ...current, [device.udid]: device }))
     setActiveIosUdid(device.udid)
     activateDeviceWorkspace()
@@ -796,7 +850,9 @@ function AppContent() {
       onToggleAuto={toggleAutoConnect}
       isRefreshing={isRefreshing}
       onFilePush={handleFileBrowse}
-      onOpenWorkspace={() => setWorkspaceModal((current) => openWorkspaceModal(current, 'batch'))}
+      onOpenWorkspace={() =>
+        setWorkspaceModal((current) => openWorkspaceModal(current, 'batch'))
+      }
       onOpenPairing={() => setIsPairingOpen(true)}
       historyDevices={historyDevices}
       clearHistory={clearHistory}
@@ -811,9 +867,7 @@ function AppContent() {
         const res = await ios.installTool()
         notify(
           'iOS Tools',
-          res.success
-            ? 'pymobiledevice3 installed successfully.'
-            : res.message,
+          res.success ? 'pymobiledevice3 installed successfully.' : res.message,
           res.success ? 'success' : 'error',
         )
       }}
@@ -853,7 +907,9 @@ function AppContent() {
       onOpenFileManager={() => setIsFileManagerOpen(true)}
       onOpenWidgetLayout={() => setIsWidgetLayoutOpen(true)}
       onOpenKeymap={() => setIsKeymapOpen(true)}
-      onOpenEmbeddedWorkspace={() => setWorkspaceModal((current) => openWorkspaceModal(current, 'embedded'))}
+      onOpenEmbeddedWorkspace={() =>
+        setWorkspaceModal((current) => openWorkspaceModal(current, 'embedded'))
+      }
       notify={notify}
     />
   )
@@ -873,7 +929,9 @@ function AppContent() {
     />
   )
 
-  const sessionBehavior = <SessionBehavior config={config} setConfig={setConfig} />
+  const sessionBehavior = (
+    <SessionBehavior config={config} setConfig={setConfig} />
+  )
 
   const renderScreenshotManager = (dashboard = false) => (
     <ScreenshotManager
@@ -889,9 +947,7 @@ function AppContent() {
       }
       onCapture={() => handleScreenshotCapture()}
       onChangeDirectory={handleChangeScreenshotDir}
-      onOpenImage={(path) =>
-        handleScreenshotAction(screenshot.openImage, path)
-      }
+      onOpenImage={(path) => handleScreenshotAction(screenshot.openImage, path)}
       onOpenFolder={(path) =>
         handleScreenshotAction(screenshot.openFolder, path)
       }
@@ -907,7 +963,9 @@ function AppContent() {
           notify(t('screenshot.actionFailedTitle'), String(error), 'error')
         }
       }}
-      onDeleteEntry={(id, deleteFile) => void screenshot.deleteEntry(id, deleteFile)}
+      onDeleteEntry={(id, deleteFile) =>
+        void screenshot.deleteEntry(id, deleteFile)
+      }
       onClearHistory={screenshot.clearHistory}
     />
   )
@@ -923,50 +981,70 @@ function AppContent() {
     />
   )
 
-  const renderDashboardLogPanel = (serial: string, enabled: boolean) => (
+  const renderDashboardLogPanel = (serial: string, enabled: boolean) =>
     dashboardBottomTab === 'logcat' ? (
       <CompactLogcatPanel
         activeDevice={serial}
         customPath={config.scrcpyPath}
         enabled={enabled && activeRoute === 'dashboard' && !activeWorkspaceTool}
       />
-    ) : <LogPanel
-      dashboard
-      mode={dashboardBottomTab === 'test-runner' ? 'logcat' : dashboardBottomTab}
-      logs={dashboardBottomTab === 'shell' ? workspaceShell.logs : logs}
-      stableEntries={dashboardBottomTab === 'shell' ? workspaceShell.entries : undefined}
-      onClear={dashboardBottomTab === 'shell' ? workspaceShell.clear : clearLogs}
-      onAddLog={dashboardBottomTab === 'shell'
-        ? workspaceShell.addLog
-        : (message) => setLogs((prev: string[]) => [...prev.slice(-100), message])}
-      onRunCommand={dashboardBottomTab === 'shell'
-        ? workspaceShell.runCommand
-        : runTerminalCommand}
-    />
-  )
+    ) : (
+      <LogPanel
+        dashboard
+        mode={
+          dashboardBottomTab === 'test-runner' ? 'logcat' : dashboardBottomTab
+        }
+        logs={dashboardBottomTab === 'shell' ? workspaceShell.logs : logs}
+        stableEntries={
+          dashboardBottomTab === 'shell' ? workspaceShell.entries : undefined
+        }
+        onClear={
+          dashboardBottomTab === 'shell' ? workspaceShell.clear : clearLogs
+        }
+        onAddLog={
+          dashboardBottomTab === 'shell'
+            ? workspaceShell.addLog
+            : (message) =>
+                setLogs((prev: string[]) => [...prev.slice(-100), message])
+        }
+        onRunCommand={
+          dashboardBottomTab === 'shell'
+            ? workspaceShell.runCommand
+            : runTerminalCommand
+        }
+      />
+    )
 
   const embeddedRunningDevices = Object.entries(embeddedConnections)
     .filter(([, connected]) => connected)
     .map(([serial]) => serial)
-  const dashboardWorkspaceSerials = Array.from(new Set([
-    ...openDeviceWorkspaces,
-    ...(activeDevice ? [activeDevice] : []),
-  ]))
-  const iosDevicesByUdid = new Map([
-    ...Object.values(iosWorkspaceDevices),
-    ...ios.devices,
-  ].map((device) => [device.udid, device]))
-  const dashboardWorkspaceIds = Array.from(new Set([
-    ...dashboardWorkspaceSerials,
-    ...openIosWorkspaces.filter((udid) => iosDevicesByUdid.has(udid)),
-  ]))
+  const dashboardWorkspaceSerials = Array.from(
+    new Set([...openDeviceWorkspaces, ...(activeDevice ? [activeDevice] : [])]),
+  )
+  const iosDevicesByUdid = new Map(
+    [...Object.values(iosWorkspaceDevices), ...ios.devices].map((device) => [
+      device.udid,
+      device,
+    ]),
+  )
+  const dashboardWorkspaceIds = Array.from(
+    new Set([
+      ...dashboardWorkspaceSerials,
+      ...openIosWorkspaces.filter((udid) => iosDevicesByUdid.has(udid)),
+    ]),
+  )
   const activeWorkspaceDevice = activeIosUdid ?? activeDevice
   const iosRunningDevices = Object.entries(iosStreaming)
     .filter(([, streaming]) => streaming)
     .map(([udid]) => udid)
   const workspaceDeviceLabels = {
     ...deviceWorkspaceLabels,
-    ...Object.fromEntries(Array.from(iosDevicesByUdid.values()).map((device) => [device.udid, device.name || device.productType])),
+    ...Object.fromEntries(
+      Array.from(iosDevicesByUdid.values()).map((device) => [
+        device.udid,
+        device.name || device.productType,
+      ]),
+    ),
   }
   const workspaceDeviceKinds = Object.fromEntries([
     ...dashboardWorkspaceSerials.map((serial) => [serial, 'android'] as const),
@@ -988,9 +1066,12 @@ function AppContent() {
   const iosToolUnavailable = (
     <div className="flex h-full min-h-64 flex-col items-center justify-center gap-2 px-6 text-center">
       <Smartphone size={24} className="text-[var(--text-subtle)]" />
-      <p className="text-[11px] font-semibold text-[var(--text-muted)]">Unavailable for iOS view-only sessions</p>
+      <p className="text-[11px] font-semibold text-[var(--text-muted)]">
+        Unavailable for iOS view-only sessions
+      </p>
       <p className="max-w-md text-[9px] leading-relaxed text-[var(--text-subtle)]">
-        Logcat, shell, files and Android automation require ADB. Select an Android workspace to use this tool.
+        Logcat, shell, files and Android automation require ADB. Select an
+        Android workspace to use this tool.
       </p>
     </div>
   )
@@ -1037,27 +1118,27 @@ function AppContent() {
           }}
         />
       }
-      footer={
-        <Footer
-          version={appVersion}
-        />
-      }
+      footer={<Footer version={appVersion} />}
       content={
         <>
           <WorkspaceTabBar
-            deviceWorkspaces={Array.from(new Set([
-              ...openDeviceWorkspaces,
-              ...runningDevices,
-              ...embeddedRunningDevices,
-              ...openIosWorkspaces,
-            ]))}
+            deviceWorkspaces={Array.from(
+              new Set([
+                ...openDeviceWorkspaces,
+                ...runningDevices,
+                ...embeddedRunningDevices,
+                ...openIosWorkspaces,
+              ]),
+            )}
             deviceLabels={workspaceDeviceLabels}
             deviceKinds={workspaceDeviceKinds}
-            runningDevices={Array.from(new Set([
-              ...runningDevices,
-              ...embeddedRunningDevices,
-              ...iosRunningDevices,
-            ]))}
+            runningDevices={Array.from(
+              new Set([
+                ...runningDevices,
+                ...embeddedRunningDevices,
+                ...iosRunningDevices,
+              ]),
+            )}
             activeDevice={activeWorkspaceDevice}
             onSelectDevice={(workspaceId) => {
               const iosDevice = iosDevicesByUdid.get(workspaceId)
@@ -1065,104 +1146,133 @@ function AppContent() {
               else openDeviceWorkspace(workspaceId)
             }}
             onCloseDevice={(workspaceId) => {
-              if (iosDevicesByUdid.has(workspaceId)) closeIosWorkspace(workspaceId)
+              if (iosDevicesByUdid.has(workspaceId))
+                closeIosWorkspace(workspaceId)
               else closeDeviceWorkspace(workspaceId)
             }}
             onAddDevice={() => setIsPairingOpen(true)}
             multiDeviceView={multiDeviceView}
-            onToggleMultiDeviceView={() => setMultiDeviceView((current) => !current)}
+            onToggleMultiDeviceView={() =>
+              setMultiDeviceView((current) => !current)
+            }
             toolbar={appHeader(true)}
           />
           <div
             aria-hidden={activeRoute !== 'dashboard' ? true : undefined}
             className={
-              activeRoute !== 'dashboard' || (activeWorkspaceTool && activeWorkspaceTool !== 'file-explorer')
+              activeRoute !== 'dashboard' ||
+              (activeWorkspaceTool && activeWorkspaceTool !== 'file-explorer')
                 ? 'hidden'
                 : multiDeviceView && dashboardWorkspaceIds.length > 1
                   ? 'grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto p-3 xl:grid-cols-2'
                   : 'contents'
             }
           >
-            {(dashboardWorkspaceIds.length > 0 ? dashboardWorkspaceIds : ['']).map((workspaceId) => {
-            const iosDevice = iosDevicesByUdid.get(workspaceId)
-            const serial = workspaceId
-            return (
-            <div
-              key={workspaceId || 'empty-device-workspace'}
-              className={
-                (!multiDeviceView || dashboardWorkspaceIds.length <= 1) && workspaceId !== activeWorkspaceDevice
-                  ? 'hidden'
-                  : multiDeviceView && dashboardWorkspaceIds.length > 1
-                    ? 'min-h-[430px] min-w-0'
-                    : 'contents'
-              }
-              aria-hidden={
-                (!multiDeviceView || dashboardWorkspaceIds.length <= 1) && workspaceId !== activeWorkspaceDevice
-                  ? true
-                  : undefined
-              }
-            >
-              {iosDevice ? (
-                <IosWorkspaceStage
-                  device={iosDevice}
-                  customPath={config.scrcpyPath}
-                  compact={multiDeviceView && dashboardWorkspaceIds.length > 1}
-                  onStreamingChange={(streaming) => {
-                    setIosStreaming((current) => (
-                      current[iosDevice.udid] === streaming
-                        ? current
-                        : { ...current, [iosDevice.udid]: streaming }
-                    ))
-                  }}
-                />
-              ) : (
-              <DashboardLayout
-              devices={devices}
-              activeDevice={serial}
-              runningDevices={runningDevices}
-              customPath={config.scrcpyPath}
-              outputDir={screenshot.screenshotDir}
-              config={{ ...config, device: serial }}
-              setConfig={setConfig}
-              onSelectDevice={openDeviceWorkspace}
-              onAddDevice={() => setIsPairingOpen(true)}
-              onInstallApk={handleInstallApkBrowse}
-              onOpenSettings={() => handleNavigate('settings')}
-              onOpenFileExplorer={() => handleNavigate('file-explorer')}
-              onOpenWirelessAdb={() => handleNavigate('wireless-adb')}
-              onStart={() => void runScrcpy({ ...config, device: serial })}
-              onStop={() => void stopScrcpy(serial)}
-              isRunning={runningDevices.includes(serial)}
-              onScreenshot={() => handleScreenshotCapture(serial)}
-              onScreenshotSecondary={(serial) => handleScreenshotCapture(serial)}
-              screenshotBusy={screenshot.isCapturing}
-              sessionBehavior={sessionBehavior}
-              screenshotPanel={renderScreenshotManager(true)}
-              logPanel={renderDashboardLogPanel(serial, serial === activeDevice)}
-              controlPanel={controlPanel}
-              advancedTools={
-                <>
-                  {deviceToolbar}
-                  <div className="mt-4"><ShortcutsPanel /></div>
-                </>
-              }
-              notify={notify}
-              onEmbeddedSessionChange={(connected) => {
-                setEmbeddedConnections((current) => (
-                  current[serial] === connected ? current : { ...current, [serial]: connected }
-                ))
-              }}
-              embeddedSessionCommand={embeddedSessionCommands[serial]}
-              onRequestEmbeddedSession={(action) => requestEmbeddedSession(action, serial)}
-              compactWorkspace={multiDeviceView && dashboardWorkspaceIds.length > 1}
-              />
-              )}
-            </div>
-            )})}
+            {(dashboardWorkspaceIds.length > 0
+              ? dashboardWorkspaceIds
+              : ['']
+            ).map((workspaceId) => {
+              const iosDevice = iosDevicesByUdid.get(workspaceId)
+              const serial = workspaceId
+              return (
+                <div
+                  key={workspaceId || 'empty-device-workspace'}
+                  className={
+                    (!multiDeviceView || dashboardWorkspaceIds.length <= 1) &&
+                    workspaceId !== activeWorkspaceDevice
+                      ? 'hidden'
+                      : multiDeviceView && dashboardWorkspaceIds.length > 1
+                        ? 'min-h-[430px] min-w-0'
+                        : 'contents'
+                  }
+                  aria-hidden={
+                    (!multiDeviceView || dashboardWorkspaceIds.length <= 1) &&
+                    workspaceId !== activeWorkspaceDevice
+                      ? true
+                      : undefined
+                  }
+                >
+                  {iosDevice ? (
+                    <IosWorkspaceStage
+                      device={iosDevice}
+                      customPath={config.scrcpyPath}
+                      compact={
+                        multiDeviceView && dashboardWorkspaceIds.length > 1
+                      }
+                      onStreamingChange={(streaming) => {
+                        setIosStreaming((current) =>
+                          current[iosDevice.udid] === streaming
+                            ? current
+                            : { ...current, [iosDevice.udid]: streaming },
+                        )
+                      }}
+                    />
+                  ) : (
+                    <DashboardLayout
+                      devices={devices}
+                      activeDevice={serial}
+                      runningDevices={runningDevices}
+                      customPath={config.scrcpyPath}
+                      outputDir={screenshot.screenshotDir}
+                      config={{ ...config, device: serial }}
+                      setConfig={setConfig}
+                      onSelectDevice={openDeviceWorkspace}
+                      onAddDevice={() => setIsPairingOpen(true)}
+                      onInstallApk={handleInstallApkBrowse}
+                      onOpenSettings={() => handleNavigate('settings')}
+                      onOpenFileExplorer={() => handleNavigate('file-explorer')}
+                      onOpenWirelessAdb={() => handleNavigate('wireless-adb')}
+                      onStart={() =>
+                        void runScrcpy({ ...config, device: serial })
+                      }
+                      onStop={() => void stopScrcpy(serial)}
+                      isRunning={runningDevices.includes(serial)}
+                      onScreenshot={() => handleScreenshotCapture(serial)}
+                      onScreenshotSecondary={(serial) =>
+                        handleScreenshotCapture(serial)
+                      }
+                      screenshotBusy={screenshot.isCapturing}
+                      sessionBehavior={sessionBehavior}
+                      screenshotPanel={renderScreenshotManager(true)}
+                      logPanel={renderDashboardLogPanel(
+                        serial,
+                        serial === activeDevice,
+                      )}
+                      controlPanel={controlPanel}
+                      advancedTools={
+                        <>
+                          {deviceToolbar}
+                          <div className="mt-4">
+                            <ShortcutsPanel />
+                          </div>
+                        </>
+                      }
+                      notify={notify}
+                      onEmbeddedSessionChange={(connected) => {
+                        setEmbeddedConnections((current) =>
+                          current[serial] === connected
+                            ? current
+                            : { ...current, [serial]: connected },
+                        )
+                      }}
+                      embeddedSessionCommand={embeddedSessionCommands[serial]}
+                      onRequestEmbeddedSession={(action) =>
+                        requestEmbeddedSession(action, serial)
+                      }
+                      compactWorkspace={
+                        multiDeviceView && dashboardWorkspaceIds.length > 1
+                      }
+                    />
+                  )}
+                </div>
+              )
+            })}
           </div>
           {activeWorkspaceTool && activeWorkspaceTool !== 'file-explorer' ? (
             <WorkspaceToolSurface tool={activeWorkspaceTool}>
-              {activeIosUdid ? iosToolUnavailable : activeWorkspaceTool === 'test-runner' ? (
+              {activeIosUdid ? (
+                iosToolUnavailable
+              ) : activeWorkspaceTool === 'test-runner' ? (
                 <TestRunnerPanel
                   activeDevice={activeDevice}
                   customPath={config.scrcpyPath}
@@ -1183,439 +1293,492 @@ function AppContent() {
             </WorkspaceToolSurface>
           ) : activeRoute !== 'dashboard' ? (
             <Suspense
-            fallback={
-              <div
-                role="status"
-                className="flex min-h-72 flex-1 items-center justify-center text-[var(--font-size-body-sm)] text-[var(--text-subtle)]"
-              >
-                Loading page…
-              </div>
-            }
-          >
-            <OtherPages
-            route={activeRoute}
-            devices={
-              <DevicesPage
-                devices={devices}
-                activeDevice={activeDevice}
-                runningDevices={runningDevices}
-                customPath={config.scrcpyPath}
-                isRefreshing={isRefreshing}
-                onRefresh={handleRefresh}
-                onAddDevice={() => setIsPairingOpen(true)}
-                onSelectDevice={setActiveDevice}
-                onView={(serial) => {
-                  openDeviceWorkspace(serial)
-                }}
-                onControl={(serial) => {
-                  setActiveDevice(serial)
-                  void runScrcpy({ ...config, device: serial })
-                }}
-                onFile={(serial) => {
-                  setActiveDevice(serial)
-                  setIsFileManagerOpen(true)
-                }}
-                onShell={(serial) => {
-                  setActiveDevice(serial)
-                  selectWorkspaceTool('shell')
-                }}
-                onMore={(serial) => {
-                  setActiveDevice(serial)
-                  setIsDeviceStatusOpen(true)
-                }}
-                connectionTools={deviceSidebar}
-                iosDevices={ios.devices}
-                iosReady={ios.support.supported && ios.support.found}
-                onViewIos={openIosWorkspace}
-              />
-            }
-            sessions={
-              <SessionsPage
-                runningDevices={runningDevices}
-                activeSessions={sessionHistory.activeSessions}
-                history={sessionHistory.history}
-                activeDevice={activeDevice}
-                customPath={config.scrcpyPath}
-                onSelectDevice={setActiveDevice}
-                onView={(serial) => {
-                  openDeviceWorkspace(serial)
-                }}
-                onStop={(serial) => void stopScrcpy(serial)}
-                onRunAgain={(entry) => {
-                  setActiveDevice(entry.deviceSerial)
-                  setConfig(entry.config)
-                  persistScrcpyLaunchConfig(localStorage, {
-                    ...entry.config,
-                    device: entry.deviceSerial,
-                  })
-                  void runScrcpy(entry.config)
-                }}
-                onClearHistory={sessionHistory.clearHistory}
-                settings={
-                  <div className="space-y-4">
-                    {controlPanel}
-                    {sessionBehavior}
-                    <div className="h-72 overflow-hidden rounded-xl border border-[var(--border-subtle)]">{logPanel}</div>
-                  </div>
+              fallback={
+                <div
+                  role="status"
+                  className="flex min-h-72 flex-1 items-center justify-center text-[var(--font-size-body-sm)] text-[var(--text-subtle)]"
+                >
+                  Loading page…
+                </div>
+              }
+            >
+              <OtherPages
+                route={activeRoute}
+                devices={
+                  <DevicesPage
+                    devices={devices}
+                    activeDevice={activeDevice}
+                    runningDevices={runningDevices}
+                    customPath={config.scrcpyPath}
+                    isRefreshing={isRefreshing}
+                    onRefresh={handleRefresh}
+                    onAddDevice={() => setIsPairingOpen(true)}
+                    onSelectDevice={setActiveDevice}
+                    onView={(serial) => {
+                      openDeviceWorkspace(serial)
+                    }}
+                    onControl={(serial) => {
+                      setActiveDevice(serial)
+                      void runScrcpy({ ...config, device: serial })
+                    }}
+                    onFile={(serial) => {
+                      setActiveDevice(serial)
+                      setIsFileManagerOpen(true)
+                    }}
+                    onShell={(serial) => {
+                      setActiveDevice(serial)
+                      selectWorkspaceTool('shell')
+                    }}
+                    onMore={(serial) => {
+                      setActiveDevice(serial)
+                      setIsDeviceStatusOpen(true)
+                    }}
+                    connectionTools={deviceSidebar}
+                    iosDevices={ios.devices}
+                    iosReady={ios.support.supported && ios.support.found}
+                    onViewIos={openIosWorkspace}
+                  />
                 }
-              />
-            }
-            screenshots={
-              <ScreenshotsPage
-                history={screenshot.history}
-                screenshotDir={screenshot.screenshotDir}
-                canCapture={!!activeDevice}
-                isCapturing={screenshot.isCapturing}
-                onCapture={() => handleScreenshotCapture()}
-                onChangeDirectory={handleChangeScreenshotDir}
-                onOpenImage={(path) => handleScreenshotAction(screenshot.openImage, path)}
-                onOpenFolder={(path) => handleScreenshotAction(screenshot.openFolder, path)}
-                onCopyImage={async (path) => {
-                  try {
-                    await screenshot.copyToClipboard(path)
-                    notify(t('screenshot.copiedTitle'), t('screenshot.copiedMessage'), 'success')
-                  } catch (error) {
-                    notify(t('screenshot.actionFailedTitle'), String(error), 'error')
-                  }
-                }}
-                onDeleteEntry={(id, deleteFile) => void screenshot.deleteEntry(id, deleteFile)}
-                onClearHistory={screenshot.clearHistory}
-              />
-            }
-            recordings={
-              <RecordingsPage
-                deviceControls={deviceToolbar}
-                activeDevice={activeDevice}
-                isRunning={sessionRunning}
-                recordPath={config.recordPath}
-                onChangeRecordPath={handleChangeRecordPath}
-                onOpenDashboard={() => handleNavigate('dashboard')}
-                history={recordingLibrary.history}
-                onOpenRecording={(path) => void recordingLibrary.openRecording(path)}
-                onRevealRecording={(path) => void recordingLibrary.revealRecording(path)}
-                onRemoveEntry={(id, deleteFile) => void recordingLibrary.removeEntry(id, deleteFile)}
-                onClearHistory={recordingLibrary.clearHistory}
-              />
-            }
-            fileExplorer={
-              <FileExplorerPage
-                activeDevice={activeAndroidWorkspaceDevice}
-                customPath={config.scrcpyPath}
-                manager={
-                  activeIosUdid ? iosToolUnavailable : <FileManager
-                    embedded
-                    isOpen={false}
-                    onClose={() => undefined}
+                sessions={
+                  <SessionsPage
+                    runningDevices={runningDevices}
+                    activeSessions={sessionHistory.activeSessions}
+                    history={sessionHistory.history}
                     activeDevice={activeDevice}
                     customPath={config.scrcpyPath}
-                    defaultDownloadDir={screenshot.screenshotDir}
+                    onSelectDevice={setActiveDevice}
+                    onView={(serial) => {
+                      openDeviceWorkspace(serial)
+                    }}
+                    onStop={(serial) => void stopScrcpy(serial)}
+                    onRunAgain={(entry) => {
+                      setActiveDevice(entry.deviceSerial)
+                      setConfig(entry.config)
+                      persistScrcpyLaunchConfig(localStorage, {
+                        ...entry.config,
+                        device: entry.deviceSerial,
+                      })
+                      void runScrcpy(entry.config)
+                    }}
+                    onClearHistory={sessionHistory.clearHistory}
+                    settings={
+                      <div className="space-y-4">
+                        {controlPanel}
+                        {sessionBehavior}
+                        <div className="h-72 overflow-hidden rounded-xl border border-[var(--border-subtle)]">
+                          {logPanel}
+                        </div>
+                      </div>
+                    }
+                  />
+                }
+                screenshots={
+                  <ScreenshotsPage
+                    history={screenshot.history}
+                    screenshotDir={screenshot.screenshotDir}
+                    canCapture={!!activeDevice}
+                    isCapturing={screenshot.isCapturing}
+                    onCapture={() => handleScreenshotCapture()}
+                    onChangeDirectory={handleChangeScreenshotDir}
+                    onOpenImage={(path) =>
+                      handleScreenshotAction(screenshot.openImage, path)
+                    }
+                    onOpenFolder={(path) =>
+                      handleScreenshotAction(screenshot.openFolder, path)
+                    }
+                    onCopyImage={async (path) => {
+                      try {
+                        await screenshot.copyToClipboard(path)
+                        notify(
+                          t('screenshot.copiedTitle'),
+                          t('screenshot.copiedMessage'),
+                          'success',
+                        )
+                      } catch (error) {
+                        notify(
+                          t('screenshot.actionFailedTitle'),
+                          String(error),
+                          'error',
+                        )
+                      }
+                    }}
+                    onDeleteEntry={(id, deleteFile) =>
+                      void screenshot.deleteEntry(id, deleteFile)
+                    }
+                    onClearHistory={screenshot.clearHistory}
+                  />
+                }
+                recordings={
+                  <RecordingsPage
+                    deviceControls={deviceToolbar}
+                    activeDevice={activeDevice}
+                    isRunning={sessionRunning}
+                    recordPath={config.recordPath}
+                    onChangeRecordPath={handleChangeRecordPath}
+                    onOpenDashboard={() => handleNavigate('dashboard')}
+                    history={recordingLibrary.history}
+                    onOpenRecording={(path) =>
+                      void recordingLibrary.openRecording(path)
+                    }
+                    onRevealRecording={(path) =>
+                      void recordingLibrary.revealRecording(path)
+                    }
+                    onRemoveEntry={(id, deleteFile) =>
+                      void recordingLibrary.removeEntry(id, deleteFile)
+                    }
+                    onClearHistory={recordingLibrary.clearHistory}
+                  />
+                }
+                fileExplorer={
+                  <FileExplorerPage
+                    activeDevice={activeAndroidWorkspaceDevice}
+                    customPath={config.scrcpyPath}
+                    manager={
+                      activeIosUdid ? (
+                        iosToolUnavailable
+                      ) : (
+                        <FileManager
+                          embedded
+                          isOpen={false}
+                          onClose={() => undefined}
+                          activeDevice={activeDevice}
+                          customPath={config.scrcpyPath}
+                          defaultDownloadDir={screenshot.screenshotDir}
+                          confirmAction={confirmAction}
+                          notify={notify}
+                        />
+                      )
+                    }
+                  />
+                }
+                wirelessAdb={
+                  <WirelessAdbPage
+                    activeDevice={activeDevice}
+                    historyDevices={historyDevices}
+                    isAutoConnect={isAutoConnect}
+                    onToggleAuto={toggleAutoConnect}
+                    onConnect={(address) => connectDevice(address)}
+                    onOpenAdvanced={() => setIsPairingOpen(true)}
+                  />
+                }
+                appManager={
+                  <AppManagerPage
+                    activeDevice={activeAndroidWorkspaceDevice}
+                    customPath={config.scrcpyPath}
+                    notify={notify}
                     confirmAction={confirmAction}
+                    onInstallApk={handleInstallApkBrowse}
+                  />
+                }
+                simulators={
+                  <SimulatorsPage
+                    notify={notify}
+                    customPath={config.scrcpyPath}
+                    androidDevices={physicalAndroidDevices}
+                    androidLabels={deviceWorkspaceLabels}
+                    iosDevices={ios.devices}
+                    onRefreshAndroid={refreshDevices}
+                    onRefreshIos={ios.refreshDevices}
+                    onOpenAndroid={openDeviceWorkspace}
+                    onOpenIos={openIosWorkspace}
+                  />
+                }
+                logcatViewer={
+                  <LogcatViewerPage
+                    activeDevice={activeAndroidWorkspaceDevice}
+                    customPath={config.scrcpyPath}
                     notify={notify}
                   />
                 }
-              />
-            }
-            wirelessAdb={
-              <WirelessAdbPage
-                activeDevice={activeDevice}
-                historyDevices={historyDevices}
-                isAutoConnect={isAutoConnect}
-                onToggleAuto={toggleAutoConnect}
-                onConnect={(address) => connectDevice(address)}
-                onOpenAdvanced={() => setIsPairingOpen(true)}
-              />
-            }
-            appManager={
-              <AppManagerPage
-                activeDevice={activeAndroidWorkspaceDevice}
-                customPath={config.scrcpyPath}
-                notify={notify}
-                confirmAction={confirmAction}
-                onInstallApk={handleInstallApkBrowse}
-              />
-            }
-            simulators={<SimulatorsPage notify={notify} />}
-            logcatViewer={
-              <LogcatViewerPage
-                activeDevice={activeAndroidWorkspaceDevice}
-                customPath={config.scrcpyPath}
-                notify={notify}
-              />
-            }
-            performance={
-              <PerformancePage
-                connected={!activeIosUdid && sessionRunning}
-                bitrateMbps={config.bitrate}
-                adaptiveEnabled={
-                  config.qualityMode === 'adaptive' ||
-                  config.qualityMode === 'quality' ||
-                  config.qualityMode === 'balanced'
-                }
-                onApplySaferProfile={(profile) => {
-                  const nextConfig = applyQualityMode({ ...config, qualityMode: profile })
-                  setConfig(nextConfig)
-                  if (activeDevice) persistScrcpyLaunchConfig(localStorage, {
-                    ...nextConfig,
-                    device: activeDevice,
-                  })
-                  if (sessionRunning && activeDevice) {
-                    const serial = activeDevice
-                    if (adaptiveRestartTimerRef.current !== null) {
-                      window.clearTimeout(adaptiveRestartTimerRef.current)
+                performance={
+                  <PerformancePage
+                    connected={!activeIosUdid && sessionRunning}
+                    bitrateMbps={config.bitrate}
+                    adaptiveEnabled={
+                      config.qualityMode === 'adaptive' ||
+                      config.qualityMode === 'quality' ||
+                      config.qualityMode === 'balanced'
                     }
-                    void stopScrcpy(serial).then(() => {
-                      adaptiveRestartTimerRef.current = window.setTimeout(() => {
-                        adaptiveRestartTimerRef.current = null
-                        if (latestActiveDeviceRef.current === serial) {
-                          void runScrcpy(nextConfig)
+                    onApplySaferProfile={(profile) => {
+                      const nextConfig = applyQualityMode({
+                        ...config,
+                        qualityMode: profile,
+                      })
+                      setConfig(nextConfig)
+                      if (activeDevice)
+                        persistScrcpyLaunchConfig(localStorage, {
+                          ...nextConfig,
+                          device: activeDevice,
+                        })
+                      if (sessionRunning && activeDevice) {
+                        const serial = activeDevice
+                        if (adaptiveRestartTimerRef.current !== null) {
+                          window.clearTimeout(adaptiveRestartTimerRef.current)
                         }
-                      }, 600)
-                    })
-                  }
-                }}
-              />
-            }
-            inputControl={
-              <InputControlPage
-                activeDevice={activeAndroidWorkspaceDevice}
-                devices={devices}
-                customPath={config.scrcpyPath}
-                notify={notify}
-              />
-            }
-            automation={
-              <AutomationPage
-                activeDevice={activeAndroidWorkspaceDevice}
-                customPath={config.scrcpyPath}
-                outputDir={screenshot.screenshotDir}
-                notify={notify}
-              />
-            }
-            scriptManager={
-              <ScriptManagerPage
-                activeDevice={activeAndroidWorkspaceDevice}
-                customPath={config.scrcpyPath}
-                notify={notify}
-              />
-            }
-            taskScheduler={
-              <TaskSchedulerPage
-                activeDevice={activeAndroidWorkspaceDevice}
-                customPath={config.scrcpyPath}
-                outputDir={screenshot.screenshotDir}
-                notify={notify}
-              />
-            }
-            settings={
-              <SettingsPage
-                general={sessionBehavior}
-                advanced={controlPanel}
-                shortcuts={<ShortcutsPanel />}
-                about={
-                  <div className="rounded-xl border border-[var(--border-subtle)] bg-black/10 p-5">
-                    <h2 className="text-sm font-semibold text-[var(--text-base)]">Mobile Device Studio</h2>
-                    <p className="mt-2 text-[10px] text-[var(--text-subtle)]">Version {appVersion}</p>
-                    <p className="mt-4 text-[10px] leading-relaxed text-[var(--text-muted)]">Built with scrcpy, Tauri, React, and Lucide. Existing application links and setup help remain available from the top bar.</p>
-                  </div>
+                        void stopScrcpy(serial).then(() => {
+                          adaptiveRestartTimerRef.current = window.setTimeout(
+                            () => {
+                              adaptiveRestartTimerRef.current = null
+                              if (latestActiveDeviceRef.current === serial) {
+                                void runScrcpy(nextConfig)
+                              }
+                            },
+                            600,
+                          )
+                        })
+                      }
+                    }}
+                  />
+                }
+                inputControl={
+                  <InputControlPage
+                    activeDevice={activeAndroidWorkspaceDevice}
+                    devices={devices}
+                    customPath={config.scrcpyPath}
+                    notify={notify}
+                  />
+                }
+                automation={
+                  <AutomationPage
+                    activeDevice={activeAndroidWorkspaceDevice}
+                    customPath={config.scrcpyPath}
+                    outputDir={screenshot.screenshotDir}
+                    notify={notify}
+                  />
+                }
+                scriptManager={
+                  <ScriptManagerPage
+                    activeDevice={activeAndroidWorkspaceDevice}
+                    customPath={config.scrcpyPath}
+                    outputDir={screenshot.screenshotDir}
+                    notify={notify}
+                  />
+                }
+                taskScheduler={
+                  <TaskSchedulerPage
+                    activeDevice={activeAndroidWorkspaceDevice}
+                    customPath={config.scrcpyPath}
+                    outputDir={screenshot.screenshotDir}
+                    notify={notify}
+                  />
+                }
+                settings={
+                  <SettingsPage
+                    general={sessionBehavior}
+                    advanced={controlPanel}
+                    shortcuts={<ShortcutsPanel />}
+                    about={
+                      <div className="rounded-xl border border-[var(--border-subtle)] bg-black/10 p-5">
+                        <h2 className="text-sm font-semibold text-[var(--text-base)]">
+                          Mobile Device Studio
+                        </h2>
+                        <p className="mt-2 text-[10px] text-[var(--text-subtle)]">
+                          Version {appVersion}
+                        </p>
+                        <p className="mt-4 text-[10px] leading-relaxed text-[var(--text-muted)]">
+                          Built with scrcpy, Tauri, React, and Lucide. Existing
+                          application links and setup help remain available from
+                          the top bar.
+                        </p>
+                      </div>
+                    }
+                  />
                 }
               />
-            }
-            />
             </Suspense>
           ) : null}
         </>
       }
     >
+      <OnboardingModal
+        isOpen={isOnboardingOpen}
+        onClose={() => setIsOnboardingOpen(false)}
+        binaryStatus={scrcpyStatus}
+        onDownload={downloadScrcpy}
+        isDownloading={isDownloading}
+        downloadProgress={downloadProgress}
+        onComplete={completeOnboarding}
+      />
 
-        <OnboardingModal
-          isOpen={isOnboardingOpen}
-          onClose={() => setIsOnboardingOpen(false)}
-          binaryStatus={scrcpyStatus}
-          onDownload={downloadScrcpy}
-          isDownloading={isDownloading}
-          downloadProgress={downloadProgress}
-          onComplete={completeOnboarding}
-        />
+      <ThemedModal
+        isOpen={alertState.isOpen}
+        onClose={() => setAlertState((prev) => ({ ...prev, isOpen: false }))}
+        title={alertState.title}
+        message={alertState.message}
+        kind={alertState.kind}
+        actionLabel={alertState.actionLabel}
+        onAction={alertState.onAction}
+        showCancel={alertState.showCancel}
+        cancelLabel={alertState.cancelLabel}
+        onCancel={alertState.onCancel}
+      />
 
-        <ThemedModal
-          isOpen={alertState.isOpen}
-          onClose={() => setAlertState((prev) => ({ ...prev, isOpen: false }))}
-          title={alertState.title}
-          message={alertState.message}
-          kind={alertState.kind}
-          actionLabel={alertState.actionLabel}
-          onAction={alertState.onAction}
-          showCancel={alertState.showCancel}
-          cancelLabel={alertState.cancelLabel}
-          onCancel={alertState.onCancel}
-        />
+      <BugReportModal
+        isOpen={isBugReportOpen}
+        onClose={() => setIsBugReportOpen(false)}
+        activeDevice={activeDevice}
+        customPath={config.scrcpyPath}
+        defaultOutputDir={screenshot.screenshotDir}
+        latestScreenshotPath={screenshot.history[0]?.path}
+        notify={notify}
+      />
 
-        <BugReportModal
-          isOpen={isBugReportOpen}
-          onClose={() => setIsBugReportOpen(false)}
-          activeDevice={activeDevice}
-          customPath={config.scrcpyPath}
-          defaultOutputDir={screenshot.screenshotDir}
-          latestScreenshotPath={screenshot.history[0]?.path}
-          notify={notify}
-        />
+      <AppManager
+        isOpen={isAppManagerOpen}
+        onClose={() => setIsAppManagerOpen(false)}
+        activeDevice={activeDevice}
+        customPath={config.scrcpyPath}
+        notify={notify}
+        confirmAction={confirmAction}
+        onInstallApk={handleInstallApkBrowse}
+      />
 
-        <AppManager
-          isOpen={isAppManagerOpen}
-          onClose={() => setIsAppManagerOpen(false)}
-          activeDevice={activeDevice}
-          customPath={config.scrcpyPath}
-          notify={notify}
-          confirmAction={confirmAction}
-          onInstallApk={handleInstallApkBrowse}
-        />
+      <LogcatViewer
+        isOpen={isLogcatOpen}
+        onClose={() => setIsLogcatOpen(false)}
+        activeDevice={activeDevice}
+        customPath={config.scrcpyPath}
+        notify={notify}
+      />
 
-        <LogcatViewer
-          isOpen={isLogcatOpen}
-          onClose={() => setIsLogcatOpen(false)}
-          activeDevice={activeDevice}
-          customPath={config.scrcpyPath}
-          notify={notify}
-        />
+      <DeepLinkLauncher
+        isOpen={isDeepLinkOpen}
+        onClose={() => setIsDeepLinkOpen(false)}
+        activeDevice={activeDevice}
+        customPath={config.scrcpyPath}
+        notify={notify}
+      />
 
-        <DeepLinkLauncher
-          isOpen={isDeepLinkOpen}
-          onClose={() => setIsDeepLinkOpen(false)}
-          activeDevice={activeDevice}
-          customPath={config.scrcpyPath}
-          notify={notify}
-        />
+      <TestSession
+        isOpen={isTestSessionOpen}
+        onClose={() => setIsTestSessionOpen(false)}
+        activeDevice={activeDevice}
+        customPath={config.scrcpyPath}
+        outputDir={screenshot.screenshotDir}
+        notify={notify}
+      />
 
-        <TestSession
-          isOpen={isTestSessionOpen}
-          onClose={() => setIsTestSessionOpen(false)}
-          activeDevice={activeDevice}
-          customPath={config.scrcpyPath}
-          outputDir={screenshot.screenshotDir}
-          notify={notify}
-        />
+      <UiInspector
+        isOpen={isUiInspectorOpen}
+        onClose={() => setIsUiInspectorOpen(false)}
+        activeDevice={activeDevice}
+        customPath={config.scrcpyPath}
+      />
 
-        <UiInspector
-          isOpen={isUiInspectorOpen}
-          onClose={() => setIsUiInspectorOpen(false)}
-          activeDevice={activeDevice}
-          customPath={config.scrcpyPath}
-        />
+      <DeviceStatus
+        isOpen={isDeviceStatusOpen}
+        onClose={() => setIsDeviceStatusOpen(false)}
+        activeDevice={activeDevice}
+        customPath={config.scrcpyPath}
+      />
 
-        <DeviceStatus
-          isOpen={isDeviceStatusOpen}
-          onClose={() => setIsDeviceStatusOpen(false)}
-          activeDevice={activeDevice}
-          customPath={config.scrcpyPath}
-        />
+      <DeviceWorkspace
+        isOpen={workspaceModal === 'batch'}
+        onClose={() => setWorkspaceModal(null)}
+        devices={devices}
+        runningDevices={runningDevices}
+        baseConfig={config}
+        customPath={config.scrcpyPath}
+        outputDir={screenshot.screenshotDir}
+        notify={notify}
+        iosDevices={ios.devices}
+        iosReady={ios.support.supported && ios.support.found}
+        launchDevice={runScrcpy}
+      />
 
-        <DeviceWorkspace
-          isOpen={workspaceModal === 'batch'}
-          onClose={() => setWorkspaceModal(null)}
-          devices={devices}
-          runningDevices={runningDevices}
-          baseConfig={config}
-          customPath={config.scrcpyPath}
-          outputDir={screenshot.screenshotDir}
-          notify={notify}
-          iosDevices={ios.devices}
-          iosReady={ios.support.supported && ios.support.found}
-          launchDevice={runScrcpy}
-        />
+      <EmbeddedDeviceWorkspace
+        isOpen={workspaceModal === 'embedded'}
+        onClose={() => setWorkspaceModal(null)}
+        devices={devices}
+        runningDevices={runningDevices}
+        activeDevice={activeDevice}
+        customPath={config.scrcpyPath}
+        outputDir={screenshot.screenshotDir}
+        notify={notify}
+        onRefreshDevices={handleRefresh}
+      />
 
-        <EmbeddedDeviceWorkspace
-          isOpen={workspaceModal === 'embedded'}
-          onClose={() => setWorkspaceModal(null)}
-          devices={devices}
-          runningDevices={runningDevices}
-          activeDevice={activeDevice}
-          customPath={config.scrcpyPath}
-          outputDir={screenshot.screenshotDir}
-          notify={notify}
-          onRefreshDevices={handleRefresh}
-        />
+      <MirrorStage
+        isOpen={isMirrorStageOpen}
+        deviceName={activeDevice}
+        isRunning={sessionRunning}
+        stageRef={embeddedMirror.stageRef}
+        onClose={handleCloseMirrorStage}
+        onRedock={handleRedock}
+      />
 
-        <MirrorStage
-          isOpen={isMirrorStageOpen}
-          deviceName={activeDevice}
-          isRunning={sessionRunning}
-          stageRef={embeddedMirror.stageRef}
-          onClose={handleCloseMirrorStage}
-          onRedock={handleRedock}
-        />
+      <WirelessPairingWizard
+        isOpen={isPairingOpen}
+        onClose={() => setIsPairingOpen(false)}
+        customPath={config.scrcpyPath}
+        pairDevice={pairDevice}
+        connectDevice={connectDevice}
+        discoverConnectAddress={discoverConnectAddress}
+        historyDevices={historyDevices}
+        isAutoConnect={isAutoConnect}
+        onToggleAuto={toggleAutoConnect}
+        notify={notify}
+      />
 
-        <WirelessPairingWizard
-          isOpen={isPairingOpen}
-          onClose={() => setIsPairingOpen(false)}
-          customPath={config.scrcpyPath}
-          pairDevice={pairDevice}
-          connectDevice={connectDevice}
-          discoverConnectAddress={discoverConnectAddress}
-          historyDevices={historyDevices}
-          isAutoConnect={isAutoConnect}
-          onToggleAuto={toggleAutoConnect}
-          notify={notify}
-        />
+      <ConnectionHealth
+        isOpen={isConnHealthOpen}
+        onClose={() => setIsConnHealthOpen(false)}
+        connected={sessionRunning}
+        bitrateMbps={config.bitrate}
+      />
 
-        <ConnectionHealth
-          isOpen={isConnHealthOpen}
-          onClose={() => setIsConnHealthOpen(false)}
-          connected={sessionRunning}
-          bitrateMbps={config.bitrate}
-        />
+      <PresetProfiles
+        isOpen={isPresetsOpen}
+        onClose={() => setIsPresetsOpen(false)}
+        activeDevice={activeDevice}
+        setConfig={setConfig}
+        notify={notify}
+      />
 
-        <PresetProfiles
-          isOpen={isPresetsOpen}
-          onClose={() => setIsPresetsOpen(false)}
-          activeDevice={activeDevice}
-          setConfig={setConfig}
-          notify={notify}
-        />
+      <MacroRecorder
+        isOpen={isMacroOpen}
+        onClose={() => setIsMacroOpen(false)}
+        activeDevice={activeDevice}
+        customPath={config.scrcpyPath}
+        outputDir={screenshot.screenshotDir}
+        notify={notify}
+      />
 
-        <MacroRecorder
-          isOpen={isMacroOpen}
-          onClose={() => setIsMacroOpen(false)}
-          activeDevice={activeDevice}
-          customPath={config.scrcpyPath}
-          outputDir={screenshot.screenshotDir}
-          notify={notify}
-        />
+      <CustomCommand
+        isOpen={isCustomCmdOpen}
+        onClose={() => setIsCustomCmdOpen(false)}
+        activeDevice={activeDevice}
+        customPath={config.scrcpyPath}
+        notify={notify}
+      />
 
-        <CustomCommand
-          isOpen={isCustomCmdOpen}
-          onClose={() => setIsCustomCmdOpen(false)}
-          activeDevice={activeDevice}
-          customPath={config.scrcpyPath}
-          notify={notify}
-        />
+      <FileManager
+        isOpen={isFileManagerOpen}
+        onClose={() => setIsFileManagerOpen(false)}
+        activeDevice={activeDevice}
+        customPath={config.scrcpyPath}
+        defaultDownloadDir={screenshot.screenshotDir}
+        confirmAction={confirmAction}
+        notify={notify}
+      />
 
-        <FileManager
-          isOpen={isFileManagerOpen}
-          onClose={() => setIsFileManagerOpen(false)}
-          activeDevice={activeDevice}
-          customPath={config.scrcpyPath}
-          defaultDownloadDir={screenshot.screenshotDir}
-          confirmAction={confirmAction}
-          notify={notify}
-        />
+      <WidgetLayout
+        isOpen={isWidgetLayoutOpen}
+        onClose={() => setIsWidgetLayoutOpen(false)}
+        devices={devices}
+        customPath={config.scrcpyPath}
+        baseConfig={config}
+        runScrcpy={runScrcpy}
+        notify={notify}
+      />
 
-        <WidgetLayout
-          isOpen={isWidgetLayoutOpen}
-          onClose={() => setIsWidgetLayoutOpen(false)}
-          devices={devices}
-          customPath={config.scrcpyPath}
-          baseConfig={config}
-          runScrcpy={runScrcpy}
-          notify={notify}
-        />
-
-        <KeymapController
-          isOpen={isKeymapOpen}
-          onClose={() => setIsKeymapOpen(false)}
-          activeDevice={activeDevice}
-          customPath={config.scrcpyPath}
-          notify={notify}
-        />
+      <KeymapController
+        isOpen={isKeymapOpen}
+        onClose={() => setIsKeymapOpen(false)}
+        activeDevice={activeDevice}
+        customPath={config.scrcpyPath}
+        notify={notify}
+      />
     </AppShell>
   )
 }

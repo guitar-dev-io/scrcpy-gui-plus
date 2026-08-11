@@ -12,9 +12,10 @@
 //   4. Connect the sockets in scrcpy's forward-tunnel order: video first, then
 //      control. In forward mode the server only writes its handshake dummy byte
 //      once *all* expected sockets have connected, so the ordering matters.
-//   5. Stream each H.264 access unit to the frontend over a per-session Tauri
-//      binary `Channel` (raw bytes, not base64/JSON) where a WebCodecs decoder
-//      paints it to a canvas.
+//   5. Stream each H.264 access unit to one or more frontend Tauri binary
+//      `Channel`s (raw bytes, not base64/JSON) where WebCodecs decoders paint
+//      it to canvases. Extra views attach to the running device session instead
+//      of starting a second scrcpy-server.
 //   6. Encode scrcpy control messages (touch / key / text) from the strict
 //      allowlist of commands below and write them to the control socket.
 //
@@ -58,6 +59,12 @@ use tokio::sync::Mutex as AsyncMutex;
 /// Largest device dimension we will accept in a control message. Guards against
 /// a malformed/hostile request producing a bogus scrcpy control packet.
 const MAX_DEVICE_DIMENSION: u32 = 16384;
+
+/// Bound the access units cached for a late subscriber. In normal operation a
+/// GOP is only a few megabytes; if an encoder produces a pathological interval,
+/// stop caching and let new subscribers wait for the next key frame instead of
+/// growing memory without limit.
+const MAX_CACHED_GOP_BYTES: usize = 16 * 1024 * 1024;
 
 /// scrcpy control-message channel encoding lives here so it can be unit tested
 /// without a device.
@@ -201,6 +208,111 @@ struct EmbedSession {
     /// Control socket write half (guarded for concurrent control commands).
     control: Arc<AsyncMutex<TcpStream>>,
     state: Arc<Mutex<SessionState>>,
+    video: Arc<Mutex<VideoHub>>,
+    codec: String,
+}
+
+struct VideoSubscriber {
+    id: String,
+    channel: Channel<InvokeResponseBody>,
+}
+
+/// Fan-out state for the single encoded stream owned by a device session.
+///
+/// The current codec config and complete GOP are retained so a Macro Recorder
+/// opened after the workspace stream has started can initialize its own
+/// decoder immediately. Replaying only the last key frame would be incorrect:
+/// the next delta depends on every delta emitted after that key frame.
+struct VideoHub {
+    subscribers: Vec<VideoSubscriber>,
+    latest_config: Option<Vec<u8>>,
+    current_gop: Vec<Vec<u8>>,
+    current_gop_bytes: usize,
+    width: u32,
+    height: u32,
+}
+
+impl VideoHub {
+    fn new(subscriber_id: String, channel: Channel<InvokeResponseBody>) -> Self {
+        Self {
+            subscribers: vec![VideoSubscriber {
+                id: subscriber_id,
+                channel,
+            }],
+            latest_config: None,
+            current_gop: Vec::new(),
+            current_gop_bytes: 0,
+            width: 0,
+            height: 0,
+        }
+    }
+
+    fn cache_frame(&mut self, message: &[u8], is_config: bool, is_key: bool) {
+        if is_config {
+            self.latest_config = Some(message.to_vec());
+            self.current_gop.clear();
+            self.current_gop_bytes = 0;
+            return;
+        }
+
+        if is_key {
+            self.current_gop.clear();
+            self.current_gop_bytes = 0;
+        } else if self.current_gop.is_empty() {
+            return;
+        }
+
+        let next_size = self.current_gop_bytes.saturating_add(message.len());
+        if next_size > MAX_CACHED_GOP_BYTES {
+            self.current_gop.clear();
+            self.current_gop_bytes = 0;
+            return;
+        }
+        self.current_gop.push(message.to_vec());
+        self.current_gop_bytes = next_size;
+    }
+
+    fn broadcast(&mut self, message: Vec<u8>, is_config: bool, is_key: bool) -> usize {
+        self.cache_frame(&message, is_config, is_key);
+        self.subscribers.retain(|subscriber| {
+            subscriber
+                .channel
+                .send(InvokeResponseBody::Raw(message.clone()))
+                .is_ok()
+        });
+        self.subscribers.len()
+    }
+
+    fn attach(
+        &mut self,
+        subscriber_id: String,
+        channel: Channel<InvokeResponseBody>,
+    ) -> Result<(), String> {
+        // Keep the hub locked while priming and registering this subscriber so
+        // the reader cannot interleave a future delta before the cached GOP.
+        if let Some(config) = &self.latest_config {
+            channel
+                .send(InvokeResponseBody::Raw(config.clone()))
+                .map_err(|e| format!("Could not prime video subscriber: {e}"))?;
+        }
+        for frame in &self.current_gop {
+            channel
+                .send(InvokeResponseBody::Raw(frame.clone()))
+                .map_err(|e| format!("Could not prime video subscriber: {e}"))?;
+        }
+        self.subscribers.push(VideoSubscriber {
+            id: subscriber_id,
+            channel,
+        });
+        Ok(())
+    }
+
+    fn detach(&mut self, subscriber_id: &str) -> bool {
+        let before = self.subscribers.len();
+        self.subscribers
+            .retain(|subscriber| subscriber.id != subscriber_id);
+        self.subscribers.len() != before
+    }
 }
 
 #[derive(Default)]
@@ -413,7 +525,7 @@ fn frame_message(is_config: bool, is_key: bool, pts: u64, payload: &[u8]) -> Vec
 /// so the log panel shows whether frames actually flow.
 async fn read_frames(
     mut stream: TcpStream,
-    channel: Channel<InvokeResponseBody>,
+    video_hub: Arc<Mutex<VideoHub>>,
     stop: Arc<AtomicBool>,
     window: Window,
     session_id: String,
@@ -441,6 +553,10 @@ async fn read_frames(
         if pts_and_flags & PACKET_FLAG_SESSION != 0 {
             let width = (pts_and_flags & 0xffff_ffff) as u32;
             let height = size;
+            if let Ok(mut hub) = video_hub.lock() {
+                hub.width = width;
+                hub.height = height;
+            }
             let _ = window.emit(
                 "embed-session-dims",
                 json!({
@@ -474,19 +590,19 @@ async fn read_frames(
         }
 
         let msg = frame_message(is_config, is_key, pts, &payload);
-        if let Err(e) = channel.send(InvokeResponseBody::Raw(msg)) {
-            let _ = window.emit(
-                "scrcpy-log",
-                format!("[WORKSPACE] video channel send failed: {}", e),
-            );
-            break;
-        }
+        let subscriber_count = video_hub
+            .lock()
+            .map(|mut hub| hub.broadcast(msg, is_config, is_key))
+            .unwrap_or(0);
         count += 1;
         if !logged_first {
             logged_first = true;
             let _ = window.emit(
                 "scrcpy-log",
-                "[WORKSPACE] first video packet delivered to the decoder".to_string(),
+                format!(
+                    "[WORKSPACE] first video packet delivered to {} decoder(s)",
+                    subscriber_count
+                ),
             );
         }
     }
@@ -508,15 +624,46 @@ pub async fn start_embedded_session(
     let serial = serial.trim().to_string();
     adb::validate_serial(&serial).map_err(|e| e.message())?;
 
-    // One embedded session per device.
-    {
+    // A device has one scrcpy-server/control socket, but may have multiple UI
+    // decoders (workspace + Macro Recorder). Attach to the existing encoded
+    // stream and replay its config/current GOP so the new decoder starts clean.
+    let existing = {
         let sessions = state.sessions.lock().unwrap();
-        if sessions.values().any(|s| s.serial == serial) {
-            return Ok(json!({
-                "success": false,
-                "message": "An embedded session is already running for this device"
-            }));
-        }
+        sessions
+            .iter()
+            .find(|(_, session)| session.serial == serial)
+            .map(|(session_id, session)| {
+                (
+                    session_id.clone(),
+                    session.video.clone(),
+                    session.codec.clone(),
+                )
+            })
+    };
+    if let Some((session_id, video_hub, codec)) = existing {
+        let subscriber_id = generate_session_token();
+        let (width, height) = {
+            let mut hub = video_hub
+                .lock()
+                .map_err(|_| "The embedded video stream is unavailable".to_string())?;
+            hub.attach(subscriber_id.clone(), on_video)?;
+            (hub.width, hub.height)
+        };
+        let _ = window.emit(
+            "scrcpy-log",
+            format!("[WORKSPACE] attached another decoder for {}", serial),
+        );
+        return Ok(json!({
+            "success": true,
+            "sessionId": session_id,
+            "subscriberId": subscriber_id,
+            "ownsSession": false,
+            "serial": serial,
+            "width": width,
+            "height": height,
+            "codec": codec,
+            "message": "Attached to the running embedded session"
+        }));
     }
 
     let opts = options.unwrap_or_default();
@@ -699,10 +846,29 @@ pub async fn start_embedded_session(
     let _ = (width, height); // dimensions arrive via the first session packet
 
     let session_id = generate_session_token();
+    let subscriber_id = generate_session_token();
     let state_cell = Arc::new(Mutex::new(SessionState::Connected));
     let stop = Arc::new(AtomicBool::new(false));
+    let video_hub = Arc::new(Mutex::new(VideoHub::new(subscriber_id.clone(), on_video)));
 
-    // 5. Spawn the video reader.
+    // 5. Register the session before spawning the reader. If the stream closes
+    // immediately, its teardown task can now remove the real map entry instead
+    // of racing an insertion that has not happened yet.
+    state.sessions.lock().unwrap().insert(
+        session_id.clone(),
+        EmbedSession {
+            serial: serial.clone(),
+            child,
+            stop: stop.clone(),
+            port,
+            control: Arc::new(AsyncMutex::new(control)),
+            state: state_cell,
+            video: video_hub.clone(),
+            codec: actual_codec.clone(),
+        },
+    );
+
+    // 6. Spawn the video reader.
     {
         let stop_loop = stop.clone();
         let win_loop = window.clone();
@@ -713,7 +879,7 @@ pub async fn start_embedded_session(
         tokio::spawn(async move {
             read_frames(
                 video,
-                on_video,
+                video_hub,
                 stop_loop,
                 win_loop.clone(),
                 sid_loop.clone(),
@@ -728,29 +894,36 @@ pub async fn start_embedded_session(
         });
     }
 
-    state.sessions.lock().unwrap().insert(
-        session_id.clone(),
-        EmbedSession {
-            serial: serial.clone(),
-            child,
-            stop,
-            port,
-            control: Arc::new(AsyncMutex::new(control)),
-            state: state_cell,
-        },
-    );
-
     emit_status(&window, &session_id, &serial, SessionState::Connected);
 
     Ok(json!({
         "success": true,
         "sessionId": session_id,
+        "subscriberId": subscriber_id,
+        "ownsSession": true,
         "serial": serial,
         "width": width,
         "height": height,
         "codec": actual_codec,
         "message": "Embedded session started"
     }))
+}
+
+/// Remove only one frontend decoder from a shared device session. The owner
+/// continues streaming and retains the control socket/server process.
+#[tauri::command]
+pub fn detach_embedded_session(
+    state: State<'_, EmbedSessionState>,
+    session_id: String,
+    subscriber_id: String,
+) -> serde_json::Value {
+    let sessions = state.sessions.lock().unwrap();
+    let detached = sessions
+        .get(&session_id)
+        .and_then(|session| session.video.lock().ok())
+        .map(|mut hub| hub.detach(&subscriber_id))
+        .unwrap_or(false);
+    json!({ "success": true, "detached": detached })
 }
 
 #[tauri::command]
@@ -1131,6 +1304,47 @@ mod tests {
         assert_eq!(u64::from_be_bytes(msg[2..10].try_into().unwrap()), 12345);
         assert_eq!(u32::from_be_bytes(msg[10..14].try_into().unwrap()), 4);
         assert_eq!(&msg[14..], &payload);
+    }
+
+    #[test]
+    fn late_video_subscriber_is_primed_with_config_and_complete_gop() {
+        let owner_messages = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+        let owner_sink = owner_messages.clone();
+        let owner_channel = Channel::new(move |body| {
+            if let InvokeResponseBody::Raw(bytes) = body {
+                owner_sink.lock().unwrap().push(bytes);
+            }
+            Ok(())
+        });
+        let mut hub = VideoHub::new("owner".to_string(), owner_channel);
+
+        let config = frame_message(true, false, 0, &[1, 2]);
+        let key = frame_message(false, true, 1, &[3, 4]);
+        let delta = frame_message(false, false, 2, &[5, 6]);
+        hub.broadcast(config.clone(), true, false);
+        hub.broadcast(key.clone(), false, true);
+        hub.broadcast(delta.clone(), false, false);
+
+        let late_messages = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+        let late_sink = late_messages.clone();
+        let late_channel = Channel::new(move |body| {
+            if let InvokeResponseBody::Raw(bytes) = body {
+                late_sink.lock().unwrap().push(bytes);
+            }
+            Ok(())
+        });
+        hub.attach("macro".to_string(), late_channel).unwrap();
+
+        assert_eq!(
+            *late_messages.lock().unwrap(),
+            vec![config.clone(), key.clone(), delta.clone()]
+        );
+
+        let next_delta = frame_message(false, false, 3, &[7, 8]);
+        hub.broadcast(next_delta.clone(), false, false);
+        assert_eq!(late_messages.lock().unwrap().last(), Some(&next_delta));
+        assert!(hub.detach("macro"));
+        assert!(!hub.detach("macro"));
     }
 
     #[test]

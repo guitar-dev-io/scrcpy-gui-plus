@@ -4,7 +4,7 @@
   "version": "1.0.2",
   "identifier": "com.guitar.scrcpy-gui-plus-v4",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "npm run dev:ensure",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
@@ -52,13 +52,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": [
-      "msi",
-      "nsis",
-      "dmg",
-      "appimage",
-      "deb"
-    ],
+    "targets": ["msi", "nsis", "dmg", "appimage", "deb"],
     "publisher": "KB-kil0bit",
     "copyright": "Copyright © 2026 KB-kil0bit",
     "windows": {
