@@ -1,12 +1,12 @@
 <p align="center">
   <img src="public/icon.png" width="128" height="128" alt="ScrcpyGUI Icon">
   <br>
-  <h1>ScrcpyGUI v4</h1>
+  <h1>ScrcpyGUI Plus</h1>
   <strong>A premium, high-performance Android control experience.</strong>
 </p>
 
 <p align="center">
-  <img width="850" alt="ScrcpyGUI Interface" src="https://github.com/user-attachments/assets/a416fcd3-295a-4a01-8769-6f9da429b028" />
+  <img width="850" alt="ScrcpyGUI Interface" src="dashboard.png" />
 </p>
 
 
@@ -104,7 +104,7 @@ environment.systemPackages = [
 ];
 ```
 ---
-
+<!--
 ## 💖 Support the Project
 
 If ScrcpyGUI helps you in your daily workflow, you can support its independent development on Patreon. Your support helps maintain the app and fund future improvements.
@@ -113,15 +113,22 @@ If ScrcpyGUI helps you in your daily workflow, you can support its independent d
   <a href="https://www.patreon.com/cw/KB_kilObit">
     <img src="https://img.shields.io/badge/Patreon-Support_KB-F96854?style=for-the-badge&logo=patreon" alt="Support independent ScrcpyGUI development on Patreon">
   </a>
-</p>
+</p>-->
+
+---
+
+## 🔗 Original Project
+
+This project is based on the original [ScrcpyGUI project](https://github.com/kil0bit-kb/scrcpy-gui). Please visit the original repository for its project history and upstream documentation.
 
 ---
 
 ## 🙏 Acknowledgments
 
-ScrcpyGUI is an independent GUI project built around the upstream [scrcpy project](https://github.com/Genymobile/scrcpy), created and maintained by Genymobile. We are grateful to the upstream project and the other open-source projects that make this app possible. ScrcpyGUI is not affiliated with Genymobile or the scrcpy authors.
+We are grateful to the open-source projects that make this app possible. ScrcpyGUI Plus is an independent project and is not affiliated with Genymobile or the scrcpy authors.
 
-- **[scrcpy](https://github.com/Genymobile/scrcpy)**: The upstream Android display and control engine.
+- **[ScrcpyGUI upstream](https://github.com/kil0bit-kb/scrcpy-gui)**: The original ScrcpyGUI v4 project this project is based on.
+- **[scrcpy](https://github.com/Genymobile/scrcpy)**: The Android display and control engine created and maintained by Genymobile.
 - **[Tauri](https://tauri.app/)**: The secure, lightweight framework for the desktop app.
 - **[Lucide Icons](https://lucide.dev/)**: For the clean and consistent iconography.
 - **[React](https://react.dev/)**: Powering the modern, interactive interface.
