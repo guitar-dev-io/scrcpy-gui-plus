@@ -1,5 +1,6 @@
 import { AlertTriangle } from 'lucide-react'
 import type { MaestroBuilderSelector, MaestroFlow, MaestroValidationIssue } from '../../types/maestroBuilder'
+import type { MaestroActionRunStatus } from '../../hooks/useMaestroRunProgress'
 import MaestroActionCard from './MaestroActionCard'
 
 interface MaestroFlowBuilderPanelProps {
@@ -12,6 +13,8 @@ interface MaestroFlowBuilderPanelProps {
   onSelectorChange: (actionId: string, selector: MaestroBuilderSelector) => void
   onFieldChange: (actionId: string, fieldName: string, value: string | number | boolean | undefined) => void
   onPickElement?: (actionId: string) => void
+  /** Live per-step status while a run is in flight, keyed by action id. Omit/leave empty when no run is active. */
+  runStatusByActionId?: Record<string, MaestroActionRunStatus>
 }
 
 export default function MaestroFlowBuilderPanel({
@@ -24,6 +27,7 @@ export default function MaestroFlowBuilderPanel({
   onSelectorChange,
   onFieldChange,
   onPickElement,
+  runStatusByActionId,
 }: MaestroFlowBuilderPanelProps) {
   const actionIssues = issues.filter((issue) => issue.actionId !== '__flow__')
 
@@ -50,6 +54,7 @@ export default function MaestroFlowBuilderPanel({
             onSelectorChange={(selector) => onSelectorChange(action.id, selector)}
             onFieldChange={(fieldName, value) => onFieldChange(action.id, fieldName, value)}
             onPickElement={onPickElement ? () => onPickElement(action.id) : undefined}
+            runStatus={runStatusByActionId?.[action.id]}
           />
         ))}
         {flow.actions.length === 0 && (

@@ -3,6 +3,7 @@ import { Loader2, Maximize2, Minimize2, Play, Save, X } from 'lucide-react'
 import { useMaestroBuilder } from '../../hooks/useMaestroBuilder'
 import { useUiInspector } from '../../hooks/useUiInspector'
 import { useMaestroTest } from '../../hooks/useMaestroTest'
+import { useMaestroRunProgress } from '../../hooks/useMaestroRunProgress'
 import { parseMaestroBuilderYaml } from '../../utils/maestroBuilderParser'
 import { recommendMaestroSelectors } from '../../utils/maestroSelectorRecommendation'
 import { saveMaestroFlow } from '../../services/maestroService'
@@ -108,6 +109,13 @@ export default function MaestroBuilder({ activeDevice, customPath, packageName, 
   const runDisabled = !activeDevice || !builder.isValid || maestro.running || !maestro.availability?.found
   const flowLevelIssues = builder.issues.filter((issue) => issue.actionId === '__flow__')
 
+  const orderedEnabledActionIds = useMemo(
+    () => builder.flow.actions.filter((action) => action.enabled).map((action) => action.id),
+    [builder.flow.actions],
+  )
+  const runProgress = useMaestroRunProgress(maestro.running, maestro.currentRunId, orderedEnabledActionIds)
+  const hasLiveProgress = Object.keys(runProgress.statusByActionId).length > 0
+
   const lastRunOutput = useMemo(() => {
     if (maestro.error) return maestro.error
     if (!maestro.result) return ''
@@ -205,6 +213,17 @@ export default function MaestroBuilder({ activeDevice, customPath, packageName, 
         <div className="shrink-0 overflow-hidden rounded-xl border border-[var(--border-base)] bg-[var(--bg-surface)]">
           <div className={`flex items-center gap-1.5 border-b border-[var(--border-subtle)] px-3 py-1 text-[8px] font-black uppercase tracking-widest ${maestro.result?.success ? 'text-emerald-400' : 'text-red-400'}`}>
             {maestro.result?.success ? 'Last run passed' : 'Last run failed'}
+            {maestro.result && !maestro.result.success && (
+              <button
+                type="button"
+                onClick={() => void handleRun()}
+                disabled={runDisabled}
+                title="Maestro has no way to re-run a single step in isolation; this re-runs the whole flow."
+                className="ml-auto flex items-center gap-1 rounded-md border border-red-400/30 px-2 py-0.5 text-[8px] font-semibold normal-case tracking-normal text-red-300 hover:bg-red-400/10 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Play size={9} /> Run Flow Again
+              </button>
+            )}
           </div>
           <pre className="max-h-28 overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-[8px] leading-relaxed text-[var(--text-subtle)]">
             {lastRunOutput}
@@ -233,6 +252,11 @@ export default function MaestroBuilder({ activeDevice, customPath, packageName, 
           <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-subtle)] px-3 py-1.5">
             <span className="text-[8px] font-black uppercase tracking-widest text-[var(--text-subtle)]">Flow Builder</span>
             <span className="text-[8px] text-[var(--text-subtle)]">{builder.flow.actions.length} actions</span>
+            {maestro.running && hasLiveProgress && (
+              <span className="text-[8px] font-semibold text-primary">
+                Running {Math.min(runProgress.completedCount + 1, runProgress.totalCount)}/{runProgress.totalCount}
+              </span>
+            )}
             <div className="ml-auto flex items-center gap-1.5">
               <button
                 type="button"
@@ -266,6 +290,7 @@ export default function MaestroBuilder({ activeDevice, customPath, packageName, 
               onSelectorChange={builder.updateActionSelector}
               onFieldChange={builder.updateActionConfigField}
               onPickElement={(actionId) => setPickTargetActionId(actionId)}
+              runStatusByActionId={hasLiveProgress ? runProgress.statusByActionId : undefined}
             />
           </div>
           {pickTargetActionId && (

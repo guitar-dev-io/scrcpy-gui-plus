@@ -1,6 +1,7 @@
-import { AlertTriangle, ArrowDown, ArrowUp, Copy, Trash2 } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowUp, Ban, Check, Copy, Loader2, Trash2, X as XIcon } from 'lucide-react'
 import type { MaestroBuilderSelector, MaestroFlowAction } from '../../types/maestroBuilder'
 import { findMaestroCommandDefinition } from '../../utils/maestroCommandRegistry'
+import type { MaestroActionRunStatus } from '../../hooks/useMaestroRunProgress'
 import MaestroActionFields from './MaestroActionFields'
 import MaestroSelectorEditor from './MaestroSelectorEditor'
 
@@ -16,6 +17,16 @@ interface MaestroActionCardProps {
   onSelectorChange: (selector: MaestroBuilderSelector) => void
   onFieldChange: (fieldName: string, value: string | number | boolean | undefined) => void
   onPickElement?: () => void
+  /** Live per-step status while a run is in flight (see useMaestroRunProgress). Omitted/undefined when no run is active or no per-step detail is available. */
+  runStatus?: MaestroActionRunStatus
+}
+
+const RUN_STATUS_BADGE: Record<MaestroActionRunStatus, { icon: typeof Check; className: string; label: string }> = {
+  pending: { icon: Check, className: 'text-[var(--text-subtle)] opacity-0', label: 'Pending' },
+  running: { icon: Loader2, className: 'text-primary animate-spin', label: 'Running' },
+  passed: { icon: Check, className: 'text-emerald-400', label: 'Passed' },
+  failed: { icon: XIcon, className: 'text-red-400', label: 'Failed' },
+  skipped: { icon: Ban, className: 'text-[var(--text-subtle)]', label: 'Skipped' },
 }
 
 export default function MaestroActionCard({
@@ -30,18 +41,23 @@ export default function MaestroActionCard({
   onSelectorChange,
   onFieldChange,
   onPickElement,
+  runStatus,
 }: MaestroActionCardProps) {
   const definition = findMaestroCommandDefinition(action.command)
   const hasIssues = issues.length > 0
+  const badge = runStatus ? RUN_STATUS_BADGE[runStatus] : null
 
   return (
     <li
-      className={`rounded-lg border p-2 ${hasIssues ? 'border-amber-500/40 bg-amber-500/5' : 'border-[var(--border-subtle)] bg-black/10'} ${!action.enabled ? 'opacity-50' : ''}`}
+      className={`rounded-lg border p-2 ${hasIssues ? 'border-amber-500/40 bg-amber-500/5' : 'border-[var(--border-subtle)] bg-black/10'} ${!action.enabled ? 'opacity-50' : ''} ${runStatus === 'running' ? 'border-primary/50' : ''}`}
     >
       <div className="flex items-start gap-2">
         <span className="mt-1 w-4 shrink-0 text-right text-[8px] tabular-nums text-[var(--text-subtle)]">
           {index + 1}
         </span>
+        {badge && (
+          <badge.icon size={11} className={`mt-1 shrink-0 ${badge.className}`} aria-label={badge.label} />
+        )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <button

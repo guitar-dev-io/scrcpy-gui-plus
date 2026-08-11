@@ -13,6 +13,14 @@ import {
 import type { MaestroAvailability, MaestroRunResult } from '../types/maestro'
 import type { TestRunRecord } from '../types/testingCatalog'
 
+let runSequence = 0
+
+/** Frontend-generated id echoed back in every `maestro-run-progress` event, so a listener started for the current run can ignore stale events from a previous one. */
+function nextRunId(): string {
+  runSequence += 1
+  return `maestro-run-${Date.now().toString(36)}-${runSequence}`
+}
+
 function persistMaestroRun(result: MaestroRunResult, startedAt: string, endedAt: string) {
   const error = result.success
     ? undefined
@@ -52,6 +60,7 @@ export function useMaestroTest(deviceSerial: string) {
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState<MaestroRunResult | null>(null)
   const [error, setError] = useState('')
+  const [currentRunId, setCurrentRunId] = useState<string | null>(null)
 
   const refreshAvailability = useCallback(async () => {
     setChecking(true)
@@ -83,9 +92,11 @@ export function useMaestroTest(deviceSerial: string) {
     setRunning(true)
     setResult(null)
     setError('')
+    const runId = nextRunId()
+    setCurrentRunId(runId)
     const startedAt = new Date().toISOString()
     try {
-      const completed = await runMaestroTest(flowPath, deviceSerial)
+      const completed = await runMaestroTest(flowPath, deviceSerial, runId)
       setResult(completed)
       try {
         persistMaestroRun(completed, startedAt, new Date().toISOString())
@@ -118,6 +129,8 @@ export function useMaestroTest(deviceSerial: string) {
     running,
     result,
     error,
+    /** Id of the in-flight (or most recently started) run; correlates `maestro-run-progress` events via useMaestroRunProgress. */
+    currentRunId,
     refreshAvailability,
     prepareSample,
     run,
