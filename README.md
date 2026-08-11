@@ -107,29 +107,27 @@ environment.systemPackages = [
 
 ## 💖 Support the Project
 
-If ScrcpyGUI helps you in your daily workflow, consider supporting its development on Patreon. Your support keeps the project alive and independent!
+If ScrcpyGUI helps you in your daily workflow, you can support its independent development on Patreon. Your support helps maintain the app and fund future improvements.
 
 <p align="left">
   <a href="https://www.patreon.com/cw/KB_kilObit">
-    <img src="https://img.shields.io/badge/Patreon-Support_KB-F96854?style=for-the-badge&logo=patreon" alt="Support on Patreon">
+    <img src="https://img.shields.io/badge/Patreon-Support_KB-F96854?style=for-the-badge&logo=patreon" alt="Support independent ScrcpyGUI development on Patreon">
   </a>
 </p>
 
 ---
 
-## � Acknowledgments
+## 🙏 Acknowledgments
 
-ScrcpyGUI is made possible by the following amazing open-source projects:
+ScrcpyGUI is an independent GUI project built around the upstream [scrcpy project](https://github.com/Genymobile/scrcpy), created and maintained by Genymobile. We are grateful to the upstream project and the other open-source projects that make this app possible. ScrcpyGUI is not affiliated with Genymobile or the scrcpy authors.
 
-- **[scrcpy](https://github.com/Genymobile/scrcpy)**: The ultra-fast core engine.
+- **[scrcpy](https://github.com/Genymobile/scrcpy)**: The upstream Android display and control engine.
 - **[Tauri](https://tauri.app/)**: The secure, lightweight framework for the desktop app.
 - **[Lucide Icons](https://lucide.dev/)**: For the clean and consistent iconography.
 - **[React](https://react.dev/)**: Powering the modern, interactive interface.
 
 ---
 
-## �📜 License
+## 📜 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-*ScrcpyGUI is an independent project and is not affiliated with Genymobile or scrcpy authors.*
