@@ -38,6 +38,13 @@ export function validateMaestroBuilderAction(action: MaestroFlowAction): Maestro
     issues.push({ actionId: action.id, message: `${definition.label} requires a selector.` })
   }
 
+  if (definition.requiresChildren && (action.children?.length ?? 0) === 0) {
+    issues.push({ actionId: action.id, message: `${definition.label} requires at least one nested action.` })
+  }
+  for (const child of action.children ?? []) {
+    issues.push(...validateMaestroBuilderAction(child))
+  }
+
   for (const field of definition.fields) {
     const value = action.config[field.name]
     const isEmpty = value === undefined || value === null || value === ''

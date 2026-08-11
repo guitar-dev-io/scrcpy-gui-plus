@@ -139,4 +139,51 @@ describe('buildMaestroBuilderYaml', () => {
     expect(yaml).toContain('- tapOn:\n    id: "confirm_payment"')
     expect(yaml).not.toContain('undefined')
   })
+
+  it('serializes a repeat action with nested child actions', () => {
+    const repeat = {
+      ...createMaestroFlowAction('repeat'),
+      config: { times: 3 },
+      children: [
+        { ...createMaestroFlowAction('tapOn'), selector: { type: 'text' as const, value: 'Refresh' } },
+        { ...createMaestroFlowAction('assertVisible'), selector: { type: 'text' as const, value: 'Loaded' } },
+      ],
+    }
+    const yaml = buildMaestroBuilderYaml(flowWithActions([repeat]))
+    expect(yaml).toContain(
+      '- repeat:\n    times: 3\n    commands:\n      - tapOn:\n          text: "Refresh"\n      - assertVisible:\n          text: "Loaded"',
+    )
+  })
+
+  it('serializes a retry action with maxRetries and nested children', () => {
+    const retry = {
+      ...createMaestroFlowAction('retry'),
+      config: { maxRetries: 3 },
+      children: [{ ...createMaestroFlowAction('tapOn'), selector: { type: 'text' as const, value: 'Refresh' } }],
+    }
+    const yaml = buildMaestroBuilderYaml(flowWithActions([retry]))
+    expect(yaml).toContain('- retry:\n    maxRetries: 3\n    commands:\n      - tapOn:\n          text: "Refresh"')
+  })
+
+  it('skips disabled children inside a repeat', () => {
+    const repeat = {
+      ...createMaestroFlowAction('repeat'),
+      config: { times: 2 },
+      children: [
+        { ...createMaestroFlowAction('tapOn'), selector: { type: 'text' as const, value: 'Keep' } },
+        { ...createMaestroFlowAction('tapOn'), selector: { type: 'text' as const, value: 'Skip' }, enabled: false },
+      ],
+    }
+    const yaml = buildMaestroBuilderYaml(flowWithActions([repeat]))
+    expect(yaml).toContain('"Keep"')
+    expect(yaml).not.toContain('"Skip"')
+  })
+
+  it('serializes runFlow and runScript as bare paths', () => {
+    const runFlow = { ...createMaestroFlowAction('runFlow'), config: { path: 'subflows/login.yaml' } }
+    const runScript = { ...createMaestroFlowAction('runScript'), config: { path: 'scripts/setup.js' } }
+    const yaml = buildMaestroBuilderYaml(flowWithActions([runFlow, runScript]))
+    expect(yaml).toContain('- runFlow: "subflows/login.yaml"')
+    expect(yaml).toContain('- runScript: "scripts/setup.js"')
+  })
 })

@@ -58,14 +58,14 @@ describe('parseMaestroBuilderYaml', () => {
   })
 
   it('preserves an unsupported command block verbatim instead of dropping it', () => {
+    // `repeat` used to be the unsupported example here, but it's now a real
+    // structured command (see the "parses a repeat block" test below) — use
+    // a command still genuinely outside the registry's v1 scope instead.
     const yaml = [
       'appId: "com.example.app"',
       '---',
       '- launchApp',
-      '- repeat:',
-      '    times: 3',
-      '    commands:',
-      '      - tapOn: "Refresh"',
+      '- evalScript: ${output.value = 1}',
       '- back',
       '',
     ].join('\n')
@@ -73,11 +73,10 @@ describe('parseMaestroBuilderYaml', () => {
     const flow: MaestroFlow = parseMaestroBuilderYaml(yaml)
     expect(flow.actions).toHaveLength(3)
     expect(flow.actions[1].command).toBe('__unsupported__')
-    expect(String(flow.actions[1].config.raw)).toContain('repeat:')
-    expect(String(flow.actions[1].config.raw)).toContain('tapOn: "Refresh"')
+    expect(String(flow.actions[1].config.raw)).toContain('evalScript:')
 
     const reserialized = buildMaestroBuilderYaml(flow)
-    expect(reserialized).toContain('- repeat:\n    times: 3\n    commands:\n      - tapOn: "Refresh"')
+    expect(reserialized).toContain('- evalScript: ${output.value = 1}')
   })
 
   it('parses a relational selector back into selector.relation/relatedValue', () => {
@@ -142,5 +141,81 @@ describe('parseMaestroBuilderYaml', () => {
     const yaml = ['appId: "com.example.app"', '---', '- tapOn:', '    id: "confirm_payment"', ''].join('\n')
     const flow = parseMaestroBuilderYaml(yaml)
     expect(flow.actions[0].selector).toEqual({ type: 'id', value: 'confirm_payment' })
+  })
+
+  it('parses a repeat block into a structured action with real children', () => {
+    const yaml = [
+      'appId: "com.example.app"',
+      '---',
+      '- repeat:',
+      '    times: 3',
+      '    commands:',
+      '      - tapOn:',
+      '          text: "Refresh"',
+      '      - assertVisible:',
+      '          text: "Loaded"',
+      '',
+    ].join('\n')
+    const flow = parseMaestroBuilderYaml(yaml)
+    expect(flow.actions).toHaveLength(1)
+    expect(flow.actions[0].command).toBe('repeat')
+    expect(flow.actions[0].config).toMatchObject({ times: 3 })
+    expect(flow.actions[0].children).toHaveLength(2)
+    expect(flow.actions[0].children?.[0]).toMatchObject({ command: 'tapOn', selector: { type: 'text', value: 'Refresh' } })
+    expect(flow.actions[0].children?.[1]).toMatchObject({ command: 'assertVisible', selector: { type: 'text', value: 'Loaded' } })
+  })
+
+  it('round-trips a repeat/retry containing multiple nested actions', () => {
+    const original = createEmptyMaestroFlow('com.example.app', 'Nested round trip')
+    original.actions = [
+      {
+        ...createMaestroFlowAction('repeat'),
+        config: { times: 2 },
+        children: [
+          { ...createMaestroFlowAction('tapOn'), selector: { type: 'text', value: 'Refresh' } },
+          { ...createMaestroFlowAction('assertVisible'), selector: { type: 'text', value: 'Loaded' } },
+        ],
+      },
+      {
+        ...createMaestroFlowAction('retry'),
+        config: { maxRetries: 3 },
+        children: [{ ...createMaestroFlowAction('inputText'), config: { value: 'hello' } }],
+      },
+    ]
+    const yaml = buildMaestroBuilderYaml(original)
+    const reparsed = parseMaestroBuilderYaml(yaml)
+    const reserialized = buildMaestroBuilderYaml(reparsed)
+    expect(reserialized).toBe(yaml)
+    expect(reparsed.actions[0].children).toHaveLength(2)
+    expect(reparsed.actions[1].children).toHaveLength(1)
+  })
+
+  it('still preserves a genuinely unknown command verbatim (regression guard)', () => {
+    const yaml = [
+      'appId: "com.example.app"',
+      '---',
+      '- someInventedFutureCommand:',
+      '    withSomeField: 42',
+      '- back',
+      '',
+    ].join('\n')
+    const flow = parseMaestroBuilderYaml(yaml)
+    expect(flow.actions).toHaveLength(2)
+    expect(flow.actions[0].command).toBe('__unsupported__')
+    expect(String(flow.actions[0].config.raw)).toContain('someInventedFutureCommand:')
+    expect(flow.actions[1].command).toBe('back')
+  })
+
+  it('parses runFlow and runScript bare paths', () => {
+    const yaml = [
+      'appId: "com.example.app"',
+      '---',
+      '- runFlow: "subflows/login.yaml"',
+      '- runScript: "scripts/setup.js"',
+      '',
+    ].join('\n')
+    const flow = parseMaestroBuilderYaml(yaml)
+    expect(flow.actions[0]).toMatchObject({ command: 'runFlow', config: { path: 'subflows/login.yaml' } })
+    expect(flow.actions[1]).toMatchObject({ command: 'runScript', config: { path: 'scripts/setup.js' } })
   })
 })

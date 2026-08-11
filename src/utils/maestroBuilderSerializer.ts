@@ -19,6 +19,16 @@ function serializeAction(action: MaestroFlowAction): string[] {
     return definition.serialize(action)
   }
 
+  if (definition.requiresChildren) {
+    const fieldLines = definition.fields
+      .filter((field) => !isEmptyValue(action.config[field.name]))
+      .map((field) => `    ${field.name}: ${formatFieldValue(action.config[field.name])}`)
+    const childLines = (action.children ?? [])
+      .filter((child) => child.enabled)
+      .flatMap((child) => indentLines(serializeAction(child), '      '))
+    return [`- ${definition.id}:`, ...fieldLines, '    commands:', ...childLines]
+  }
+
   if (definition.requiresElement) {
     const selectorLine = action.selector
       ? `    ${action.selector.type}: ${yamlString(action.selector.value)}`
@@ -55,6 +65,10 @@ function serializeAction(action: MaestroFlowAction): string[] {
     `- ${definition.id}:`,
     ...activeFields.map((field) => `    ${field.name}: ${formatFieldValue(action.config[field.name])}`),
   ]
+}
+
+function indentLines(lines: string[], indent: string): string[] {
+  return lines.map((line) => (line ? `${indent}${line}` : line))
 }
 
 function isEmptyValue(value: unknown): boolean {

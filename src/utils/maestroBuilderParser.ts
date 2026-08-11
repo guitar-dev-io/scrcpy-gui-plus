@@ -170,6 +170,29 @@ function parseBlock(block: string[]): MaestroFlowAction {
     return createMaestroFlowAction(command, withRelation(selector, bodyLines))
   }
 
+  if (definition.requiresChildren) {
+    const commandsIndex = bodyLines.findIndex((line) => line.trim() === 'commands:')
+    const ownFieldLines = commandsIndex === -1 ? bodyLines : bodyLines.slice(0, commandsIndex)
+    const nestedLines = commandsIndex === -1 ? [] : bodyLines.slice(commandsIndex + 1)
+    const minIndent = nestedLines
+      .filter((line) => line.trim() !== '')
+      .reduce((min, line) => Math.min(min, indentOf(line)), Infinity)
+    const dedented = Number.isFinite(minIndent) ? nestedLines.map((line) => line.slice(minIndent)) : nestedLines
+
+    const action = createMaestroFlowAction(command)
+    const config: MaestroFlowAction['config'] = {}
+    for (const line of ownFieldLines) {
+      const fieldMatch = line.trim().match(/^([A-Za-z][A-Za-z0-9]*)\s*:\s*(.*)$/)
+      if (!fieldMatch) continue
+      const fieldDefinition = definition.fields.find((f) => f.name === fieldMatch[1])
+      const rawValue = fieldMatch[2]
+      config[fieldMatch[1]] = fieldDefinition?.type === 'number' ? Number(rawValue) : unquoteYamlScalar(rawValue)
+    }
+    action.config = config
+    action.children = groupBlocks(dedented).map(parseBlock)
+    return action
+  }
+
   if (definition.bareValueField) {
     const field = definition.fields.find((f) => f.name === definition.bareValueField)
     const action = createMaestroFlowAction(command)

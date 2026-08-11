@@ -98,6 +98,14 @@ export interface MaestroCommandDefinition {
    * when the command does not require an element selector.
    */
   bareValueField?: string
+  /**
+   * Container commands (repeat, retry) hold a nested `commands:` list of
+   * child actions instead of (or alongside) scalar fields. The Flow Builder
+   * renders these as a nested action list on the card, and every mutator in
+   * useMaestroBuilder recurses through `children` to find/update an action
+   * regardless of nesting depth.
+   */
+  requiresChildren?: boolean
   /** Escape hatch for commands whose YAML shape a generic engine can't express. */
   serialize?: (action: MaestroFlowAction) => string[]
 }
@@ -108,6 +116,8 @@ export interface MaestroFlowAction {
   enabled: boolean
   selector?: MaestroBuilderSelector
   config: Record<string, MaestroFieldValue>
+  /** Nested actions for container commands (repeat/retry). */
+  children?: MaestroFlowAction[]
 }
 
 export interface MaestroFlow {
