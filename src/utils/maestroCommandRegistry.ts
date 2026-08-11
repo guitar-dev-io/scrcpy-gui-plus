@@ -11,6 +11,7 @@
 // (repeat, retry, runFlow, runScript) and AI commands (gated behind Maestro
 // version detection, not yet verified) are intentionally deferred.
 import type {
+  MaestroBuilderSelector,
   MaestroCommandDefinition,
   MaestroCommandId,
 } from '../types/maestroBuilder'
@@ -79,6 +80,7 @@ export const MAESTRO_COMMAND_REGISTRY: MaestroCommandDefinition[] = [
         '- extendedWaitUntil:',
         '    visible:',
         selectorLine,
+        ...buildSelectorRelationLines(action.selector, '      '),
         `    timeout: ${Math.round(timeout)}`,
       ]
     },
@@ -239,6 +241,7 @@ export const MAESTRO_COMMAND_REGISTRY: MaestroCommandDefinition[] = [
         '- scrollUntilVisible:',
         '    element:',
         selectorLine,
+        ...buildSelectorRelationLines(action.selector, '      '),
         `    direction: ${direction}`,
         `    timeout: ${Math.round(timeout)}`,
       ]
@@ -431,6 +434,30 @@ function sanitizeForYaml(value: string): string {
 
 export function yamlString(value: string): string {
   return JSON.stringify(sanitizeForYaml(value))
+}
+
+/**
+ * Renders a selector's relational refinement (above/below/leftOf/rightOf/
+ * containsChild/childOf/containsDescendants) as sibling YAML lines under the
+ * primary selector, e.g.:
+ *   text: "Delete"
+ *   childOf:
+ *     id: "basket_container"
+ * `indent` must match the primary selector line's own indent so the relation
+ * key lands as its sibling. Returns [] when there's no relation set, so
+ * selectors without one serialize byte-for-byte as before.
+ */
+export function buildSelectorRelationLines(
+  selector: MaestroBuilderSelector | undefined,
+  indent: string,
+): string[] {
+  if (!selector?.relation || !selector.relatedValue?.trim()) return []
+  const childIndent = `${indent}  `
+  const relatedField = `${selector.type}: ${yamlString(selector.relatedValue)}`
+  if (selector.relation === 'containsDescendants') {
+    return [`${indent}${selector.relation}:`, `${childIndent}- ${relatedField}`]
+  }
+  return [`${indent}${selector.relation}:`, `${childIndent}${relatedField}`]
 }
 
 const REGISTRY_BY_ID = new Map<MaestroCommandId, MaestroCommandDefinition>(

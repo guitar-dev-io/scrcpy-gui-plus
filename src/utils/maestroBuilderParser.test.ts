@@ -79,4 +79,68 @@ describe('parseMaestroBuilderYaml', () => {
     const reserialized = buildMaestroBuilderYaml(flow)
     expect(reserialized).toContain('- repeat:\n    times: 3\n    commands:\n      - tapOn: "Refresh"')
   })
+
+  it('parses a relational selector back into selector.relation/relatedValue', () => {
+    const yaml = [
+      'appId: "com.example.app"',
+      '---',
+      '- tapOn:',
+      '    text: "Confirm payment"',
+      '    below:',
+      '      text: "Total"',
+      '',
+    ].join('\n')
+    const flow = parseMaestroBuilderYaml(yaml)
+    expect(flow.actions[0]).toMatchObject({
+      command: 'tapOn',
+      selector: { type: 'text', value: 'Confirm payment', relation: 'below', relatedValue: 'Total' },
+    })
+  })
+
+  it('parses containsDescendants single-item list form', () => {
+    const yaml = [
+      'appId: "com.example.app"',
+      '---',
+      '- assertVisible:',
+      '    id: "list_item"',
+      '    containsDescendants:',
+      '      - text: "Wireless Headphones"',
+      '',
+    ].join('\n')
+    const flow = parseMaestroBuilderYaml(yaml)
+    expect(flow.actions[0]).toMatchObject({
+      command: 'assertVisible',
+      selector: { type: 'id', value: 'list_item', relation: 'containsDescendants', relatedValue: 'Wireless Headphones' },
+    })
+  })
+
+  it('round-trips a relational selector on the generic path, waitFor, and scrollUntilVisible', () => {
+    const original = createEmptyMaestroFlow('com.example.app', 'Relational round trip')
+    original.actions = [
+      { ...createMaestroFlowAction('tapOn'), selector: { type: 'text', value: 'Confirm payment', relation: 'below', relatedValue: 'Total' } },
+      {
+        ...createMaestroFlowAction('waitFor'),
+        selector: { type: 'text', value: 'Ready', relation: 'rightOf', relatedValue: 'Spinner' },
+        config: { timeoutMs: 5000 },
+      },
+      {
+        ...createMaestroFlowAction('scrollUntilVisible'),
+        selector: { type: 'text', value: 'Terms', relation: 'childOf', relatedValue: 'footer' },
+        config: { direction: 'DOWN', timeoutMs: 20_000 },
+      },
+    ]
+    const yaml = buildMaestroBuilderYaml(original)
+    const reparsed = parseMaestroBuilderYaml(yaml)
+    const reserialized = buildMaestroBuilderYaml(reparsed)
+    expect(reserialized).toBe(yaml)
+    expect(reparsed.actions[0].selector).toMatchObject({ relation: 'below', relatedValue: 'Total' })
+    expect(reparsed.actions[1].selector).toMatchObject({ relation: 'rightOf', relatedValue: 'Spinner' })
+    expect(reparsed.actions[2].selector).toMatchObject({ relation: 'childOf', relatedValue: 'footer' })
+  })
+
+  it('parses a plain selector with no relation exactly as before (backward compatibility)', () => {
+    const yaml = ['appId: "com.example.app"', '---', '- tapOn:', '    id: "confirm_payment"', ''].join('\n')
+    const flow = parseMaestroBuilderYaml(yaml)
+    expect(flow.actions[0].selector).toEqual({ type: 'id', value: 'confirm_payment' })
+  })
 })

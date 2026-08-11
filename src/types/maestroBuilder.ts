@@ -8,11 +8,42 @@
 // `css`). There is no separate "content description" selector key in real
 // Maestro YAML — its `text` matcher already checks content-description, so a
 // "Content Description" recommendation is represented as `type: 'text'`.
+//
+// `css` is deliberately never offered in any command's `supportedSelectors`
+// (see maestroCommandRegistry.ts) — per Maestro's own docs, the css selector
+// is web-only (https://docs.maestro.dev/reference/selectors/core-selectors).
+// This app's hierarchy comes exclusively from Android `uiautomator dump`, so
+// there is no DOM/CSS tree to select against. The type stays in the union so
+// a future web-target integration (or a raw/custom-YAML action) can produce
+// one without a breaking type change, but the UI must never let a user pick
+// it for an Android element.
 export type MaestroBuilderSelectorType = 'id' | 'text' | 'index' | 'point' | 'css'
+
+// Maestro's relational selectors describe an element by its position or
+// containment relative to another element, instead of (or in addition to) a
+// direct id/text/index match. Verified against
+// https://docs.maestro.dev/reference/selectors/relational-selectors :
+// above/below/leftOf/rightOf are position-based; containsChild/childOf are
+// direct parent-child; containsDescendants matches at any depth and in real
+// Maestro YAML takes a *list* of selectors — this app only ever emits a
+// single-item list for it (see maestroCommandRegistry.buildSelectorRelationLines),
+// which is valid Maestro YAML but not a full multi-descendant editor.
+export type MaestroSelectorRelation =
+  | 'above'
+  | 'below'
+  | 'leftOf'
+  | 'rightOf'
+  | 'containsChild'
+  | 'childOf'
+  | 'containsDescendants'
 
 export interface MaestroBuilderSelector {
   type: MaestroBuilderSelectorType
   value: string
+  /** Optional relational refinement, e.g. `below: { text: "Total" }`. */
+  relation?: MaestroSelectorRelation
+  /** The anchor element's value, matched using the same selector `type`. */
+  relatedValue?: string
 }
 
 export type MaestroCommandCategory =

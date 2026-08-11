@@ -5,6 +5,7 @@
 // docs/redesign/script-management.md.
 import type { MaestroFlow, MaestroFlowAction } from '../types/maestroBuilder'
 import {
+  buildSelectorRelationLines,
   findMaestroCommandDefinition,
   yamlString,
 } from './maestroCommandRegistry'
@@ -22,10 +23,11 @@ function serializeAction(action: MaestroFlowAction): string[] {
     const selectorLine = action.selector
       ? `    ${action.selector.type}: ${yamlString(action.selector.value)}`
       : '    text: ""'
+    const relationLines = buildSelectorRelationLines(action.selector, '    ')
     const extraFieldLines = definition.fields
       .filter((field) => !isEmptyValue(action.config[field.name]))
       .map((field) => `    ${field.name}: ${formatFieldValue(action.config[field.name])}`)
-    return [`- ${definition.id}:`, selectorLine, ...extraFieldLines]
+    return [`- ${definition.id}:`, selectorLine, ...relationLines, ...extraFieldLines]
   }
 
   if (definition.bareValueField) {

@@ -9,9 +9,56 @@
 // an "Unsupported Maestro Command" action that re-serializes byte-for-byte
 // from the original block. See "YAML IMPORT" in
 // docs/redesign/script-management.md.
-import type { MaestroBuilderSelectorType, MaestroFlow, MaestroFlowAction } from '../types/maestroBuilder'
+import type {
+  MaestroBuilderSelector,
+  MaestroBuilderSelectorType,
+  MaestroFlow,
+  MaestroFlowAction,
+  MaestroSelectorRelation,
+} from '../types/maestroBuilder'
 import { createEmptyMaestroFlow, createMaestroFlowAction } from './maestroBuilderFlow'
 import { findMaestroCommandDefinition, UNSUPPORTED_COMMAND_ID } from './maestroCommandRegistry'
+
+const RELATION_KEYWORDS: MaestroSelectorRelation[] = [
+  'above',
+  'below',
+  'leftOf',
+  'rightOf',
+  'containsChild',
+  'childOf',
+  'containsDescendants',
+]
+
+/**
+ * Finds a relational-selector block (e.g. `below:\n  text: "Total"`, or the
+ * single-item `containsDescendants:\n  - text: "..."` list form) anywhere
+ * among a command's body lines and returns it as `{relation, relatedValue}`.
+ * Mirrors maestroCommandRegistry.buildSelectorRelationLines in reverse.
+ */
+function parseRelation(bodyLines: string[]): { relation: MaestroSelectorRelation; relatedValue: string } | null {
+  for (let i = 0; i < bodyLines.length; i += 1) {
+    const keywordMatch = bodyLines[i].trim().match(/^([A-Za-z]+)\s*:\s*$/)
+    if (!keywordMatch) continue
+    const keyword = keywordMatch[1] as MaestroSelectorRelation
+    if (!RELATION_KEYWORDS.includes(keyword)) continue
+    const nextLine = bodyLines[i + 1]
+    if (!nextLine) continue
+    const valueLine = nextLine.trim().replace(/^-\s*/, '')
+    const valueMatch = valueLine.match(/^(?:id|text|index|point|css)\s*:\s*(.*)$/)
+    if (!valueMatch) continue
+    return { relation: keyword, relatedValue: unquoteYamlScalar(valueMatch[1]) }
+  }
+  return null
+}
+
+function withRelation(
+  selector: { type: MaestroBuilderSelectorType; value: string } | null,
+  bodyLines: string[],
+): MaestroBuilderSelector | undefined {
+  if (!selector) return undefined
+  const relation = parseRelation(bodyLines)
+  return relation ? { ...selector, ...relation } : selector
+}
 
 function unquoteYamlScalar(raw: string): string {
   const trimmed = raw.trim()
@@ -61,7 +108,7 @@ function parseBlock(block: string[]): MaestroFlowAction {
     const selector = selectorLine ? parseSelectorLine(selectorLine) : null
     const timeoutLine = findLine(bodyLines, 'timeout')
     const timeoutMs = timeoutLine ? Number(timeoutLine.split(':')[1]) : 20_000
-    const action = createMaestroFlowAction('waitFor', selector ?? undefined)
+    const action = createMaestroFlowAction('waitFor', withRelation(selector, bodyLines))
     action.config = { timeoutMs: Number.isFinite(timeoutMs) ? timeoutMs : 20_000 }
     return action
   }
@@ -71,7 +118,7 @@ function parseBlock(block: string[]): MaestroFlowAction {
     const selector = selectorLine ? parseSelectorLine(selectorLine) : null
     const directionLine = findLine(bodyLines, 'direction')
     const timeoutLine = findLine(bodyLines, 'timeout')
-    const action = createMaestroFlowAction('scrollUntilVisible', selector ?? undefined)
+    const action = createMaestroFlowAction('scrollUntilVisible', withRelation(selector, bodyLines))
     action.config = {
       direction: directionLine ? directionLine.split(':')[1].trim() : 'DOWN',
       timeoutMs: timeoutLine ? Number(timeoutLine.split(':')[1]) || 20_000 : 20_000,
@@ -120,7 +167,7 @@ function parseBlock(block: string[]): MaestroFlowAction {
   if (definition.requiresElement) {
     const selectorLine = bodyLines[0]
     const selector = selectorLine ? parseSelectorLine(selectorLine) : null
-    return createMaestroFlowAction(command, selector ?? undefined)
+    return createMaestroFlowAction(command, withRelation(selector, bodyLines))
   }
 
   if (definition.bareValueField) {

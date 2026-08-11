@@ -79,4 +79,64 @@ describe('buildMaestroBuilderYaml', () => {
     expect(yaml).not.toContain('tags:')
     expect(yaml).toContain('- back')
   })
+
+  it('serializes a relational selector as a sibling key on the generic requiresElement path', () => {
+    const action = {
+      ...createMaestroFlowAction('tapOn'),
+      selector: { type: 'text' as const, value: 'Confirm payment', relation: 'below' as const, relatedValue: 'Total' },
+    }
+    const yaml = buildMaestroBuilderYaml(flowWithActions([action]))
+    expect(yaml).toContain('- tapOn:\n    text: "Confirm payment"\n    below:\n      text: "Total"')
+  })
+
+  it('serializes containsDescendants as a single-item list', () => {
+    const action = {
+      ...createMaestroFlowAction('assertVisible'),
+      selector: { type: 'id' as const, value: 'list_item', relation: 'containsDescendants' as const, relatedValue: 'Wireless Headphones' },
+    }
+    const yaml = buildMaestroBuilderYaml(flowWithActions([action]))
+    expect(yaml).toContain('- assertVisible:\n    id: "list_item"\n    containsDescendants:\n      - id: "Wireless Headphones"')
+  })
+
+  it('serializes a relation on the waitFor override path', () => {
+    const action = {
+      ...createMaestroFlowAction('waitFor'),
+      selector: { type: 'text' as const, value: 'Payment successful', relation: 'below' as const, relatedValue: 'Total' },
+      config: { timeoutMs: 15_000 },
+    }
+    const yaml = buildMaestroBuilderYaml(flowWithActions([action]))
+    expect(yaml).toContain(
+      '- extendedWaitUntil:\n    visible:\n      text: "Payment successful"\n      below:\n        text: "Total"\n    timeout: 15000',
+    )
+  })
+
+  it('serializes a relation on the scrollUntilVisible override path', () => {
+    const action = {
+      ...createMaestroFlowAction('scrollUntilVisible'),
+      selector: { type: 'text' as const, value: 'Terms', relation: 'childOf' as const, relatedValue: 'footer' },
+      config: { direction: 'DOWN', timeoutMs: 20_000 },
+    }
+    const yaml = buildMaestroBuilderYaml(flowWithActions([action]))
+    expect(yaml).toContain(
+      '- scrollUntilVisible:\n    element:\n      text: "Terms"\n      childOf:\n        text: "footer"\n    direction: DOWN\n    timeout: 20000',
+    )
+  })
+
+  it('does not emit relation lines when relatedValue is blank, even if a relation type is set', () => {
+    const action = {
+      ...createMaestroFlowAction('tapOn'),
+      selector: { type: 'text' as const, value: 'Confirm payment', relation: 'below' as const, relatedValue: '' },
+    }
+    const yaml = buildMaestroBuilderYaml(flowWithActions([action]))
+    expect(yaml).toContain('- tapOn:\n    text: "Confirm payment"')
+    expect(yaml).not.toContain('below:')
+  })
+
+  it('leaves a selector without a relation serializing exactly as before (backward compatibility)', () => {
+    const withRelationFields = { type: 'id' as const, value: 'confirm_payment', relation: undefined, relatedValue: undefined }
+    const action = { ...createMaestroFlowAction('tapOn'), selector: withRelationFields }
+    const yaml = buildMaestroBuilderYaml(flowWithActions([action]))
+    expect(yaml).toContain('- tapOn:\n    id: "confirm_payment"')
+    expect(yaml).not.toContain('undefined')
+  })
 })
