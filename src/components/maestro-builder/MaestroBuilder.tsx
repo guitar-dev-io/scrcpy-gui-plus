@@ -228,6 +228,26 @@ export default function MaestroBuilder({ activeDevice, customPath, packageName, 
           <pre className="max-h-28 overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-[8px] leading-relaxed text-[var(--text-subtle)]">
             {lastRunOutput}
           </pre>
+          {(maestro.result?.screenshots.length ?? 0) > 0 && (
+            <div className="flex gap-2 overflow-x-auto border-t border-[var(--border-subtle)] p-2">
+              {maestro.result!.screenshots.map((dataUrl, index) => (
+                <a
+                  key={index}
+                  href={dataUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  title={`Open screenshot ${index + 1} full size`}
+                  className="shrink-0"
+                >
+                  <img
+                    src={dataUrl}
+                    alt={`Run screenshot ${index + 1}`}
+                    className="h-20 w-auto rounded-md border border-[var(--border-base)] object-cover hover:border-primary/50"
+                  />
+                </a>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

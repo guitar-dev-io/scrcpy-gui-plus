@@ -19,6 +19,8 @@ export interface MaestroRunResult {
   flowPath: string
   deviceSerial: string
   timedOut: boolean
+  /** `data:image/png;base64,...` screenshots discovered under Maestro's debug output for this run. May be empty. */
+  screenshots: string[]
 }
 
 export type MaestroSelectorType = 'text' | 'id'

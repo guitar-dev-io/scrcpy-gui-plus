@@ -48,6 +48,10 @@ export default defineConfig(async () => ({
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
     css: true,
+    // Agent-managed git worktrees live under .claude/worktrees/** and each
+    // contains a full copy of this repo — without this exclude, vitest's
+    // default glob picks up their test files too and double-counts results.
+    exclude: ['**/node_modules/**', '**/.claude/**'],
   },
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
