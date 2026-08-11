@@ -1,30 +1,101 @@
+use crate::adb;
 use crate::commands::create_command;
 use crate::screenshot::validate_png;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::Serialize;
 use serde_json::json;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Instant, SystemTime};
-use tauri::{Emitter, Manager, Window};
+use std::time::Instant;
+use tauri::{Emitter, Manager, State, Window};
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio::time::{timeout, Duration};
+use tokio::sync::oneshot;
+use tokio::time::{sleep, Duration};
 
 const RUN_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+const ADB_FOREGROUND_TIMEOUT_SECS: u64 = 10;
 const MAX_LOG_BYTES: usize = 200_000;
 const MAX_FLOW_BYTES: usize = 1_000_000;
 const WASHXPRESS_FLOW: &str = include_str!("../../.maestro/washxpress-smoke.yaml");
-// Maestro CLI writes per-run debug artifacts (screenshots, hierarchy dumps,
-// logs) under `~/.maestro/tests/<run>/` by default. That exact layout isn't
-// contractual and isn't verified against a real install in this environment,
-// so rather than hardcode a folder-naming scheme, we walk the tree bounded by
-// depth and only trust files whose mtime is after the run actually started —
-// that's true regardless of how Maestro names its output directory. If
-// nothing matches, we simply report no screenshots (never fabricated).
-const MAESTRO_DEBUG_WALK_DEPTH: usize = 3;
+const ARTIFACT_WALK_DEPTH: usize = 3;
 const MAX_ARTIFACT_COUNT: usize = 6;
 const MAX_ARTIFACT_BYTES: u64 = 3 * 1024 * 1024;
+
+struct ActiveRun {
+    generation: u64,
+    cancel: Option<oneshot::Sender<()>>,
+    cancel_requested: bool,
+}
+
+#[derive(Default)]
+pub struct MaestroState {
+    active_runs: Mutex<HashMap<String, ActiveRun>>,
+    next_generation: AtomicU64,
+}
+
+impl MaestroState {
+    fn register(&self, run_id: &str) -> Result<(u64, oneshot::Receiver<()>), String> {
+        let (cancel, receiver) = oneshot::channel();
+        let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
+        let mut active_runs = self
+            .active_runs
+            .lock()
+            .map_err(|_| "Maestro run state is unavailable".to_string())?;
+        if active_runs.contains_key(run_id) {
+            return Err(format!(
+                "A Maestro run with id '{run_id}' is already active"
+            ));
+        }
+        active_runs.insert(
+            run_id.to_string(),
+            ActiveRun {
+                generation,
+                cancel: Some(cancel),
+                cancel_requested: false,
+            },
+        );
+        Ok((generation, receiver))
+    }
+
+    fn cancel(&self, run_id: &str) -> Result<bool, String> {
+        let mut active_runs = self
+            .active_runs
+            .lock()
+            .map_err(|_| "Maestro run state is unavailable".to_string())?;
+        let Some(active_run) = active_runs.get_mut(run_id) else {
+            return Ok(false);
+        };
+        let Some(sender) = active_run.cancel.take() else {
+            return Ok(false);
+        };
+        if sender.send(()).is_ok() {
+            active_run.cancel_requested = true;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Removes only the matching run generation and reports whether a
+    /// cancellation was accepted before another terminal outcome deregistered
+    /// the run.
+    fn finish(&self, run_id: &str, generation: u64) -> bool {
+        if let Ok(mut active_runs) = self.active_runs.lock() {
+            let should_remove = active_runs
+                .get(run_id)
+                .is_some_and(|active_run| active_run.generation == generation);
+            if should_remove {
+                return active_runs
+                    .remove(run_id)
+                    .is_some_and(|active_run| active_run.cancel_requested);
+            }
+        }
+        false
+    }
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -32,6 +103,14 @@ pub struct MaestroAvailability {
     found: bool,
     version: Option<String>,
     error: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MaestroArtifact {
+    kind: &'static str,
+    path: String,
+    size_bytes: u64,
 }
 
 #[derive(Serialize)]
@@ -45,11 +124,11 @@ pub struct MaestroRunResult {
     flow_path: String,
     device_serial: String,
     timed_out: bool,
-    /// `data:image/png;base64,...` screenshots discovered under Maestro's
-    /// debug output directory that were created during this run. Empty when
-    /// none are found — never fabricated, see the comment on
-    /// `MAESTRO_DEBUG_WALK_DEPTH` above.
+    cancelled: bool,
+    /// Legacy immediate-preview field. Artifact paths are available in
+    /// `artifacts` and remain valid after this result is discarded.
     screenshots: Vec<String>,
+    artifacts: Vec<MaestroArtifact>,
 }
 
 fn maestro_program() -> PathBuf {
@@ -74,14 +153,23 @@ fn maestro_program() -> PathBuf {
 
 fn validate_device_serial(serial: &str) -> Result<&str, String> {
     let value = serial.trim();
+    if !value.starts_with(|character: char| character.is_ascii_alphanumeric()) {
+        return Err("Invalid device serial".to_string());
+    }
+    adb::validate_serial(value).map_err(|_| "Invalid device serial".to_string())?;
+    Ok(value)
+}
+
+fn validate_run_id(run_id: &str) -> Result<&str, String> {
+    let value = run_id.trim();
     if value.is_empty()
         || value.len() > 200
-        || !value.starts_with(|c: char| c.is_ascii_alphanumeric())
+        || !value.starts_with(|character: char| character.is_ascii_alphanumeric())
         || !value
             .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | ':' | '_' | '-'))
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
     {
-        return Err("Invalid device serial".to_string());
+        return Err("Invalid Maestro run id".to_string());
     }
     Ok(value)
 }
@@ -102,25 +190,34 @@ fn validate_flow_path(flow_path: &str) -> Result<PathBuf, String> {
         .map_err(|error| format!("Could not resolve Maestro flow: {error}"))
 }
 
-fn maestro_debug_root() -> Option<PathBuf> {
-    for home_key in ["HOME", "USERPROFILE"] {
-        if let Some(home) = std::env::var_os(home_key) {
-            let candidate = PathBuf::from(home).join(".maestro").join("tests");
-            if candidate.is_dir() {
-                return Some(candidate);
-            }
-        }
-    }
-    None
+fn prepare_artifact_directory(
+    app_handle: &tauri::AppHandle,
+    run_id: &str,
+) -> Result<PathBuf, String> {
+    let root = app_handle
+        .path()
+        .app_local_data_dir()
+        .map_err(|error| error.to_string())?
+        .join("maestro-runs");
+    std::fs::create_dir_all(&root)
+        .map_err(|error| format!("Could not create Maestro artifact root: {error}"))?;
+    let run_directory = root.join(run_id);
+    std::fs::create_dir(&run_directory)
+        .map_err(|error| format!("Could not create Maestro artifact directory: {error}"))?;
+    run_directory
+        .canonicalize()
+        .map_err(|error| format!("Could not resolve Maestro artifact directory: {error}"))
 }
 
-/// Walk `root` up to `MAESTRO_DEBUG_WALK_DEPTH` levels deep, collecting `.png`
-/// files modified at or after `since`, oldest first, capped at `limit`.
-fn find_recent_screenshots(root: &Path, since: SystemTime, limit: usize) -> Vec<PathBuf> {
-    let mut found: Vec<(SystemTime, PathBuf)> = Vec::new();
-    let mut stack: Vec<(PathBuf, usize)> = vec![(root.to_path_buf(), 0)];
-    while let Some((dir, depth)) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
+fn find_screenshots(root: &Path, limit: usize) -> Vec<PathBuf> {
+    let canonical_root = match root.canonicalize() {
+        Ok(path) => path,
+        Err(_) => return Vec::new(),
+    };
+    let mut found: Vec<(std::time::SystemTime, PathBuf)> = Vec::new();
+    let mut stack = vec![(canonical_root.clone(), 0)];
+    while let Some((directory, depth)) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&directory) else {
             continue;
         };
         for entry in entries.flatten() {
@@ -129,26 +226,31 @@ fn find_recent_screenshots(root: &Path, since: SystemTime, limit: usize) -> Vec<
                 continue;
             };
             if metadata.is_dir() {
-                if depth < MAESTRO_DEBUG_WALK_DEPTH {
+                if depth < ARTIFACT_WALK_DEPTH {
                     stack.push((path, depth + 1));
                 }
                 continue;
             }
             let is_png = path
                 .extension()
-                .and_then(|ext| ext.to_str())
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("png"));
-            if !is_png {
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("png"));
+            if !is_png || metadata.len() == 0 || metadata.len() > MAX_ARTIFACT_BYTES {
                 continue;
             }
-            if let Ok(modified) = metadata.modified() {
-                if modified >= since {
-                    found.push((modified, path));
-                }
+            let Ok(canonical_path) = path.canonicalize() else {
+                continue;
+            };
+            if !canonical_path.starts_with(&canonical_root) {
+                continue;
             }
+            found.push((
+                metadata.modified().unwrap_or(std::time::UNIX_EPOCH),
+                canonical_path,
+            ));
         }
     }
-    found.sort_by_key(|(modified, _)| *modified);
+    found.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
     found
         .into_iter()
         .map(|(_, path)| path)
@@ -156,28 +258,26 @@ fn find_recent_screenshots(root: &Path, since: SystemTime, limit: usize) -> Vec<
         .collect()
 }
 
-fn encode_screenshot(path: &Path) -> Option<String> {
-    let metadata = std::fs::metadata(path).ok()?;
-    if metadata.len() == 0 || metadata.len() > MAX_ARTIFACT_BYTES {
-        return None;
-    }
-    let bytes = std::fs::read(path).ok()?;
-    if !validate_png(&bytes) {
-        return None;
-    }
-    Some(format!("data:image/png;base64,{}", STANDARD.encode(&bytes)))
-}
-
-/// Best-effort screenshot discovery for a run that started at `since`. Never
-/// fails the run: any error just means an empty list.
-fn collect_run_screenshots(since: SystemTime) -> Vec<String> {
-    let Some(root) = maestro_debug_root() else {
-        return Vec::new();
-    };
-    find_recent_screenshots(&root, since, MAX_ARTIFACT_COUNT)
-        .iter()
-        .filter_map(|path| encode_screenshot(path))
-        .collect()
+fn collect_run_artifacts(root: &Path) -> (Vec<MaestroArtifact>, Vec<String>) {
+    let collected: Vec<(MaestroArtifact, String)> = find_screenshots(root, MAX_ARTIFACT_COUNT)
+        .into_iter()
+        .filter_map(|path| {
+            let metadata = std::fs::metadata(&path).ok()?;
+            let bytes = std::fs::read(&path).ok()?;
+            if !validate_png(&bytes) {
+                return None;
+            }
+            Some((
+                MaestroArtifact {
+                    kind: "screenshot",
+                    path: path.to_string_lossy().to_string(),
+                    size_bytes: metadata.len(),
+                },
+                format!("data:image/png;base64,{}", STANDARD.encode(bytes)),
+            ))
+        })
+        .collect();
+    collected.into_iter().unzip()
 }
 
 fn bounded_log(bytes: &[u8]) -> String {
@@ -190,6 +290,47 @@ fn bounded_log(bytes: &[u8]) -> String {
         String::from_utf8_lossy(&bytes[..MAX_LOG_BYTES / 2]),
         String::from_utf8_lossy(&bytes[tail_start..]),
     )
+}
+
+fn parse_component_package(line: &str) -> Option<String> {
+    line.split_whitespace().find_map(|raw_token| {
+        let token = raw_token.trim_matches(|character: char| {
+            matches!(
+                character,
+                '{' | '}' | '[' | ']' | '(' | ')' | ',' | ':' | '='
+            )
+        });
+        let (package, activity) = token.split_once('/')?;
+        if activity.is_empty() {
+            return None;
+        }
+        let package = package.rsplit(['{', '=']).next().unwrap_or(package);
+        let package = package
+            .rsplit_once(':')
+            .map_or(package, |(_, suffix)| suffix)
+            .trim_matches(|character: char| {
+                !character.is_ascii_alphanumeric() && character != '_' && character != '.'
+            });
+        adb::validate_package_name(package).ok()?;
+        Some(package.to_string())
+    })
+}
+
+fn parse_foreground_package(output: &str) -> Option<String> {
+    const MARKERS: [&str; 6] = [
+        "mResumedActivity",
+        "topResumedActivity",
+        "ResumedActivity",
+        "mCurrentFocus",
+        "mFocusedApp",
+        "mFocusedWindow",
+    ];
+    MARKERS.iter().find_map(|marker| {
+        output
+            .lines()
+            .filter(|line| line.contains(marker))
+            .find_map(parse_component_package)
+    })
 }
 
 #[tauri::command]
@@ -269,25 +410,81 @@ pub async fn save_maestro_flow(
     Ok(path.to_string_lossy().to_string())
 }
 
-/// Runs the Maestro CLI with piped stdout/stderr instead of `Command::output()`
-/// so each line can be emitted to the frontend as it arrives (event
-/// `maestro-run-progress`, payload `{ runId, line }`), while still returning
-/// the same accumulated `MaestroRunResult` as before once the process exits.
-/// `run_id` is generated by the frontend per run and echoed back in every
-/// event purely so a UI that started a new run can ignore stale events from a
-/// previous one; the backend does not itself use it for anything else (only
-/// one Maestro run is expected at a time today).
+#[tauri::command]
+pub fn cancel_maestro_run(state: State<'_, MaestroState>, run_id: String) -> Result<bool, String> {
+    let run_id = validate_run_id(&run_id)?;
+    state.cancel(run_id)
+}
+
+#[tauri::command]
+pub async fn get_foreground_app_package(
+    serial: String,
+    custom_path: Option<String>,
+) -> Result<String, String> {
+    let serial = validate_device_serial(&serial)?.to_string();
+    let activity_result = adb::run_adb_text(
+        Some(&serial),
+        &["shell", "dumpsys", "activity", "activities"],
+        custom_path.clone(),
+        ADB_FOREGROUND_TIMEOUT_SECS,
+    )
+    .await;
+    if let Ok(activity_output) = &activity_result {
+        if let Some(package) = parse_foreground_package(activity_output) {
+            return Ok(package);
+        }
+    }
+
+    let window_result = adb::run_adb_text(
+        Some(&serial),
+        &["shell", "dumpsys", "window", "windows"],
+        custom_path,
+        ADB_FOREGROUND_TIMEOUT_SECS,
+    )
+    .await;
+    match window_result {
+        Ok(window_output) => parse_foreground_package(&window_output)
+            .ok_or_else(|| "Could not determine the foreground app package".to_string()),
+        Err(window_error) => {
+            let activity_error = activity_result
+                .err()
+                .map(|error| format!("; activity query failed: {error}"))
+                .unwrap_or_default();
+            Err(format!(
+                "Window query failed: {window_error}{activity_error}"
+            ))
+        }
+    }
+}
+
+enum RunCompletion {
+    Exited(std::io::Result<std::process::ExitStatus>),
+    TimedOut,
+    Cancelled,
+}
+
 #[tauri::command]
 pub async fn run_maestro_test(
+    app_handle: tauri::AppHandle,
     window: Window,
+    state: State<'_, MaestroState>,
     flow_path: String,
     device_serial: String,
     run_id: String,
 ) -> Result<MaestroRunResult, String> {
     let serial = validate_device_serial(&device_serial)?.to_string();
     let path = validate_flow_path(&flow_path)?;
+    let run_id = validate_run_id(&run_id)?.to_string();
+    let (generation, mut cancel_receiver) = state.register(&run_id)?;
+
+    let artifact_directory = match prepare_artifact_directory(&app_handle, &run_id) {
+        Ok(directory) => directory,
+        Err(error) => {
+            state.finish(&run_id, generation);
+            return Err(error);
+        }
+    };
     let started = Instant::now();
-    let wall_start = SystemTime::now();
     let mut command = create_command(maestro_program());
     command
         .kill_on_drop(true)
@@ -295,6 +492,10 @@ pub async fn run_maestro_test(
         .arg(&serial)
         .arg("--no-ansi")
         .arg("test")
+        .arg("--debug-output")
+        .arg(&artifact_directory)
+        .arg("--test-output-dir")
+        .arg(&artifact_directory)
         .arg(&path)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -302,86 +503,97 @@ pub async fn run_maestro_test(
 
     let mut child = match command.spawn() {
         Ok(child) => child,
-        Err(error) => return Err(format!("Could not start Maestro CLI: {error}")),
+        Err(error) => {
+            state.finish(&run_id, generation);
+            return Err(format!("Could not start Maestro CLI: {error}"));
+        }
     };
-
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "Failed to capture Maestro stdout".to_string())?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| "Failed to capture Maestro stderr".to_string())?;
+    let stdout = match child.stdout.take() {
+        Some(stdout) => stdout,
+        None => {
+            state.finish(&run_id, generation);
+            return Err("Failed to capture Maestro stdout".to_string());
+        }
+    };
+    let stderr = match child.stderr.take() {
+        Some(stderr) => stderr,
+        None => {
+            state.finish(&run_id, generation);
+            return Err("Failed to capture Maestro stderr".to_string());
+        }
+    };
 
     let stdout_buffer = Arc::new(Mutex::new(String::new()));
     let stderr_buffer = Arc::new(Mutex::new(String::new()));
-
-    // Stream stdout line-by-line: append to the accumulated buffer (used for
-    // the final result, matching the previous `Command::output()` behavior)
-    // and emit each line immediately so the frontend can render progress
-    // while the flow is still running.
     let stdout_task = {
         let buffer = stdout_buffer.clone();
         let window = window.clone();
-        let run_id = run_id.clone();
+        let event_run_id = run_id.clone();
         tokio::spawn(async move {
             let mut lines = BufReader::new(stdout).lines();
-            loop {
-                match lines.next_line().await {
-                    Ok(Some(line)) => {
-                        {
-                            let mut buf = buffer.lock().unwrap();
-                            if !buf.is_empty() {
-                                buf.push('\n');
-                            }
-                            buf.push_str(&line);
-                        }
-                        let _ = window.emit(
-                            "maestro-run-progress",
-                            json!({ "runId": run_id, "line": line }),
-                        );
+            while let Ok(Some(line)) = lines.next_line().await {
+                if let Ok(mut buffer) = buffer.lock() {
+                    if !buffer.is_empty() {
+                        buffer.push('\n');
                     }
-                    Ok(None) => break,
-                    Err(_) => break,
+                    buffer.push_str(&line);
                 }
+                let _ = window.emit(
+                    "maestro-run-progress",
+                    json!({ "runId": event_run_id, "line": line }),
+                );
             }
         })
     };
-
-    // stderr is only accumulated (matches previous behavior); it is not
-    // step-progress output so it is not emitted line-by-line.
     let stderr_task = {
         let buffer = stderr_buffer.clone();
         tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                let mut buf = buffer.lock().unwrap();
-                if !buf.is_empty() {
-                    buf.push('\n');
+                if let Ok(mut buffer) = buffer.lock() {
+                    if !buffer.is_empty() {
+                        buffer.push('\n');
+                    }
+                    buffer.push_str(&line);
                 }
-                buf.push_str(&line);
             }
         })
     };
 
-    let wait_result = timeout(RUN_TIMEOUT, child.wait()).await;
-    let timed_out = wait_result.is_err();
-    if timed_out {
+    let mut completion = tokio::select! {
+        biased;
+        _ = &mut cancel_receiver => RunCompletion::Cancelled,
+        status = child.wait() => RunCompletion::Exited(status),
+        _ = sleep(RUN_TIMEOUT) => RunCompletion::TimedOut,
+    };
+    // Close the cancellation window before any post-processing. If a cancel
+    // sender won the state lock after process exit but before deregistration,
+    // honor that accepted cancellation in the returned result.
+    if state.finish(&run_id, generation) {
+        completion = RunCompletion::Cancelled;
+    }
+    if matches!(
+        completion,
+        RunCompletion::TimedOut | RunCompletion::Cancelled
+    ) {
         let _ = child.kill().await;
+        let _ = child.wait().await;
     }
 
-    // The child's stdout/stderr pipes close on exit (or kill), so these
-    // reader tasks finish on their own shortly after; awaiting them just
-    // ensures every already-emitted line has landed in the buffers below.
     let _ = stdout_task.await;
     let _ = stderr_task.await;
+    let stdout_text = stdout_buffer
+        .lock()
+        .map(|value| value.clone())
+        .unwrap_or_default();
+    let stderr_text = stderr_buffer
+        .lock()
+        .map(|value| value.clone())
+        .unwrap_or_default();
+    let (artifacts, screenshots) = collect_run_artifacts(&artifact_directory);
 
-    let stdout_text = stdout_buffer.lock().unwrap().clone();
-    let stderr_text = stderr_buffer.lock().unwrap().clone();
-
-    match wait_result {
-        Ok(Ok(status)) => Ok(MaestroRunResult {
+    let result = match completion {
+        RunCompletion::Exited(Ok(status)) => Ok(MaestroRunResult {
             success: status.success(),
             exit_code: status.code(),
             stdout: bounded_log(stdout_text.as_bytes()),
@@ -390,10 +602,12 @@ pub async fn run_maestro_test(
             flow_path: path.to_string_lossy().to_string(),
             device_serial: serial,
             timed_out: false,
-            screenshots: collect_run_screenshots(wall_start),
+            cancelled: false,
+            screenshots,
+            artifacts,
         }),
-        Ok(Err(error)) => Err(format!("Maestro CLI process error: {error}")),
-        Err(_) => Ok(MaestroRunResult {
+        RunCompletion::Exited(Err(error)) => Err(format!("Maestro CLI process error: {error}")),
+        RunCompletion::TimedOut => Ok(MaestroRunResult {
             success: false,
             exit_code: None,
             stdout: bounded_log(stdout_text.as_bytes()),
@@ -404,26 +618,33 @@ pub async fn run_maestro_test(
             flow_path: path.to_string_lossy().to_string(),
             device_serial: serial,
             timed_out: true,
-            screenshots: collect_run_screenshots(wall_start),
+            cancelled: false,
+            screenshots,
+            artifacts,
         }),
-    }
+        RunCompletion::Cancelled => Ok(MaestroRunResult {
+            success: false,
+            exit_code: None,
+            stdout: bounded_log(stdout_text.as_bytes()),
+            stderr: bounded_log(format!("{stderr_text}\nMaestro test cancelled").as_bytes()),
+            duration_ms: started.elapsed().as_millis() as u64,
+            flow_path: path.to_string_lossy().to_string(),
+            device_serial: serial,
+            timed_out: false,
+            cancelled: true,
+            screenshots,
+            artifacts,
+        }),
+    };
+    result
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicUsize;
 
-    #[test]
-    fn accepts_realistic_adb_serials() {
-        assert!(validate_device_serial("emulator-5554").is_ok());
-        assert!(validate_device_serial("192.168.1.4:5555").is_ok());
-    }
-
-    #[test]
-    fn rejects_serials_that_could_be_cli_arguments() {
-        assert!(validate_device_serial("--help").is_err());
-        assert!(validate_device_serial("serial; reboot").is_err());
-    }
+    static TEMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
     fn png_bytes() -> Vec<u8> {
         let mut bytes = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
@@ -434,13 +655,14 @@ mod tests {
     struct TempDir(PathBuf);
     impl TempDir {
         fn new(label: &str) -> Self {
-            let dir = std::env::temp_dir().join(format!(
+            let sequence = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let directory = std::env::temp_dir().join(format!(
                 "maestro_rs_test_{label}_{}_{}",
                 std::process::id(),
-                Instant::now().elapsed().as_nanos()
+                sequence
             ));
-            std::fs::create_dir_all(&dir).unwrap();
-            TempDir(dir)
+            std::fs::create_dir_all(&directory).unwrap();
+            TempDir(directory)
         }
     }
     impl Drop for TempDir {
@@ -450,56 +672,96 @@ mod tests {
     }
 
     #[test]
-    fn find_recent_screenshots_only_returns_files_modified_since_cutoff() {
-        let dir = TempDir::new("recent");
-        let old_path = dir.0.join("old.png");
-        std::fs::write(&old_path, png_bytes()).unwrap();
-
-        // Filesystem mtime resolution can be coarse; sleep past it so "new"
-        // is unambiguously after the cutoff we capture below.
-        std::thread::sleep(Duration::from_millis(20));
-        let cutoff = SystemTime::now();
-        std::thread::sleep(Duration::from_millis(20));
-
-        let nested = dir.0.join("run-1");
-        std::fs::create_dir_all(&nested).unwrap();
-        let new_path = nested.join("step-1.png");
-        std::fs::write(&new_path, png_bytes()).unwrap();
-        std::fs::write(nested.join("not-a-screenshot.txt"), b"log output").unwrap();
-
-        let found = find_recent_screenshots(&dir.0, cutoff, MAX_ARTIFACT_COUNT);
-        assert_eq!(found, vec![new_path]);
+    fn validates_serials_and_run_ids() {
+        assert!(validate_device_serial("emulator-5554").is_ok());
+        assert!(validate_device_serial("192.168.1.4:5555").is_ok());
+        assert!(validate_device_serial("--help").is_err());
+        assert!(validate_device_serial("serial; reboot").is_err());
+        assert!(validate_run_id("maestro-run-123_4").is_ok());
+        assert!(validate_run_id("../other-run").is_err());
+        assert!(validate_run_id("--argument").is_err());
     }
 
     #[test]
-    fn find_recent_screenshots_respects_limit() {
-        let dir = TempDir::new("limit");
-        let cutoff = SystemTime::now();
-        std::thread::sleep(Duration::from_millis(5));
-        for i in 0..10 {
-            std::fs::write(dir.0.join(format!("s{i}.png")), png_bytes()).unwrap();
+    fn cancellation_registration_is_duplicate_safe_and_generation_safe() {
+        let state = MaestroState::default();
+        let (first_generation, mut first_receiver) = state.register("run-1").unwrap();
+        assert!(state.register("run-1").is_err());
+        assert_eq!(state.cancel("run-1"), Ok(true));
+        assert_eq!(state.cancel("run-1"), Ok(false));
+        assert!(matches!(first_receiver.try_recv(), Ok(())));
+        assert!(!state.finish("run-1", first_generation.wrapping_add(1)));
+        assert!(state.register("run-1").is_err());
+        assert!(state.finish("run-1", first_generation));
+        assert!(state.register("run-1").is_ok());
+    }
+
+    #[test]
+    fn parses_foreground_activity_and_window_fixtures() {
+        let fixtures = [
+            (
+                "mResumedActivity: ActivityRecord{abc u0 com.example/.MainActivity t42}",
+                "com.example",
+            ),
+            (
+                "topResumedActivity=ActivityRecord{abc u10 org.example.app/org.example.app.HomeActivity t7}",
+                "org.example.app",
+            ),
+            (
+                "mCurrentFocus=Window{123 u0 io.sample.app/io.sample.app.MainActivity}\r\n",
+                "io.sample.app",
+            ),
+            (
+                "mFocusedApp=ActivityRecord{abc u0 com.android.launcher3/.Launcher t1}",
+                "com.android.launcher3",
+            ),
+            (
+                "ResumedActivity: ComponentInfo{dev.example.product/.MainActivity}",
+                "dev.example.product",
+            ),
+        ];
+        for (output, expected) in fixtures {
+            assert_eq!(parse_foreground_package(output).as_deref(), Some(expected));
         }
-        assert_eq!(find_recent_screenshots(&dir.0, cutoff, 3).len(), 3);
     }
 
     #[test]
-    fn encode_screenshot_rejects_non_png_and_accepts_valid_png() {
-        let dir = TempDir::new("encode");
-        let bad = dir.0.join("bad.png");
-        std::fs::write(&bad, b"not a real png").unwrap();
-        assert!(encode_screenshot(&bad).is_none());
-
-        let good = dir.0.join("good.png");
-        std::fs::write(&good, png_bytes()).unwrap();
-        let encoded = encode_screenshot(&good).unwrap();
-        assert!(encoded.starts_with("data:image/png;base64,"));
+    fn ignores_null_or_malformed_foreground_entries() {
+        assert_eq!(parse_foreground_package("mCurrentFocus=null"), None);
+        assert_eq!(
+            parse_foreground_package("mResumedActivity: ActivityRecord{abc u0 invalid/.Main}"),
+            None
+        );
+        assert_eq!(
+            parse_foreground_package("random com.example/.NotForeground"),
+            None
+        );
     }
 
     #[test]
-    fn collect_run_screenshots_returns_empty_without_a_debug_root() {
-        // No HOME/.maestro/tests directory is guaranteed in a test sandbox,
-        // and this must never panic or fabricate results either way.
-        let result = collect_run_screenshots(SystemTime::now());
-        assert!(result.iter().all(|s| s.starts_with("data:image/png;base64,")));
+    fn artifact_collection_is_scoped_bounded_and_typed() {
+        let directory = TempDir::new("artifacts");
+        let nested = directory.0.join("nested");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(nested.join("valid.png"), png_bytes()).unwrap();
+        std::fs::write(nested.join("invalid.png"), b"not a png").unwrap();
+        std::fs::write(nested.join("notes.txt"), b"ignored").unwrap();
+
+        let (artifacts, screenshots) = collect_run_artifacts(&directory.0);
+        assert_eq!(artifacts.len(), 1);
+        assert_eq!(screenshots.len(), 1);
+        assert_eq!(artifacts[0].kind, "screenshot");
+        assert!(Path::new(&artifacts[0].path).starts_with(directory.0.canonicalize().unwrap()));
+        assert!(screenshots[0].starts_with("data:image/png;base64,"));
+        assert_eq!(artifacts[0].size_bytes, png_bytes().len() as u64);
+    }
+
+    #[test]
+    fn screenshot_discovery_respects_limit() {
+        let directory = TempDir::new("limit");
+        for index in 0..10 {
+            std::fs::write(directory.0.join(format!("s{index}.png")), png_bytes()).unwrap();
+        }
+        assert_eq!(find_screenshots(&directory.0, 3).len(), 3);
     }
 }

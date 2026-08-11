@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, Copy, FolderOpen, Plus, Trash2 } from 'lucide-react'
 import type { MaestroFlow } from '../../types/maestroBuilder'
+import {
+  MAESTRO_FLOW_TEMPLATES,
+  type MaestroTemplateId,
+} from '../../utils/maestroTemplates'
 
 function timeAgo(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime()
@@ -20,6 +24,7 @@ interface MaestroFlowLibraryMenuProps {
   onLoad: (id: string) => void
   onDelete: (id: string) => void
   onDuplicate: () => void
+  onTemplate: (id: MaestroTemplateId) => void
 }
 
 export default function MaestroFlowLibraryMenu({
@@ -29,6 +34,7 @@ export default function MaestroFlowLibraryMenu({
   onLoad,
   onDelete,
   onDuplicate,
+  onTemplate,
 }: MaestroFlowLibraryMenuProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -36,7 +42,8 @@ export default function MaestroFlowLibraryMenu({
   useEffect(() => {
     if (!open) return
     const onPointerDown = (event: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false)
+      if (rootRef.current && !rootRef.current.contains(event.target as Node))
+        setOpen(false)
     }
     document.addEventListener('mousedown', onPointerDown)
     return () => document.removeEventListener('mousedown', onPointerDown)
@@ -56,7 +63,12 @@ export default function MaestroFlowLibraryMenu({
         className="flex h-7 items-center gap-1 rounded-md border border-[var(--border-base)] px-2.5 text-[9px] font-semibold text-[var(--text-muted)] hover:border-primary/40 hover:text-primary"
       >
         <FolderOpen size={11} /> Flows ({library.length})
-        <ChevronDown size={10} className={open ? 'rotate-180 transition-transform' : 'transition-transform'} />
+        <ChevronDown
+          size={10}
+          className={
+            open ? 'rotate-180 transition-transform' : 'transition-transform'
+          }
+        />
       </button>
       {open && (
         <div
@@ -87,9 +99,32 @@ export default function MaestroFlowLibraryMenu({
               <Copy size={11} />
             </button>
           </div>
+          <div className="border-b border-[var(--border-subtle)] p-1.5">
+            <p className="px-1 pb-1 text-[8px] font-black uppercase tracking-widest text-[var(--text-subtle)]">
+              Start from template
+            </p>
+            <div className="grid grid-cols-2 gap-1">
+              {MAESTRO_FLOW_TEMPLATES.map((template) => (
+                <button
+                  key={template.id}
+                  type="button"
+                  title={template.description}
+                  onClick={() => {
+                    onTemplate(template.id)
+                    setOpen(false)
+                  }}
+                  className="rounded px-2 py-1 text-left text-[8px] text-[var(--text-muted)] hover:bg-primary/10 hover:text-primary"
+                >
+                  {template.name}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="max-h-64 overflow-y-auto p-1">
             {sorted.length === 0 ? (
-              <p className="px-2 py-3 text-center text-[8px] text-[var(--text-subtle)]">No saved flows yet.</p>
+              <p className="px-2 py-3 text-center text-[8px] text-[var(--text-subtle)]">
+                No saved flows yet.
+              </p>
             ) : (
               sorted.map((item) => (
                 <div
@@ -104,7 +139,9 @@ export default function MaestroFlowLibraryMenu({
                     }}
                     className="min-w-0 flex-1 text-left"
                   >
-                    <p className="truncate text-[9px] font-semibold text-[var(--text-base)]">{item.name}</p>
+                    <p className="truncate text-[9px] font-semibold text-[var(--text-base)]">
+                      {item.name}
+                    </p>
                     <p className="truncate text-[8px] text-[var(--text-subtle)]">
                       {item.actions.length} actions · {timeAgo(item.updatedAt)}
                     </p>

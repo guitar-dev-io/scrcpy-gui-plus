@@ -1,7 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { onMaestroRunProgress } from '../services/maestroService'
 
-export type MaestroActionRunStatus = 'pending' | 'running' | 'passed' | 'failed' | 'skipped'
+export type MaestroActionRunStatus =
+  | 'pending'
+  | 'running'
+  | 'passed'
+  | 'failed'
+  | 'skipped'
+
+export type MaestroActionStatus = 'passed' | 'failed'
+
+export type MaestroActionStatusListener = (
+  actionId: string,
+  status: MaestroActionStatus,
+) => void
 
 /**
  * Classifies one streamed Maestro CLI output line as a step pass/fail marker.
@@ -26,10 +38,18 @@ export type MaestroActionRunStatus = 'pending' | 'running' | 'passed' | 'failed'
 export function classifyProgressLine(line: string): 'passed' | 'failed' | null {
   const trimmed = line.trim()
   if (!trimmed) return null
-  if (/[✓✔]/.test(trimmed) || /^\[[xX]\]/.test(trimmed) || /\bPASS(?:ED)?\b/i.test(trimmed)) {
+  if (
+    /[✓✔]/.test(trimmed) ||
+    /^\[[xX]\]/.test(trimmed) ||
+    /\bPASS(?:ED)?\b/i.test(trimmed)
+  ) {
     return 'passed'
   }
-  if (/[✗✘]/.test(trimmed) || /^\[!\]/.test(trimmed) || /\bFAIL(?:ED)?\b/i.test(trimmed)) {
+  if (
+    /[✗✘]/.test(trimmed) ||
+    /^\[!\]/.test(trimmed) ||
+    /\bFAIL(?:ED)?\b/i.test(trimmed)
+  ) {
     return 'failed'
   }
   return null
@@ -43,28 +63,35 @@ interface UseMaestroRunProgressResult {
 
 /**
  * Correlates streamed Maestro output lines to ordered flow actions BY
- * SEQUENCE: the serializer writes one command per enabled action, in the
- * same order `orderedActionIds` lists them, and Maestro is assumed to print
- * one pass/fail line per top-level command in that same order — so the Nth
- * classified line is taken to describe `orderedActionIds[N]`.
+ * SEQUENCE: the serializer writes enabled executable actions in the same
+ * depth-first order `orderedActionIds` lists them, and Maestro is assumed to
+ * print one pass/fail line per executable command in that same order — so the
+ * Nth classified line is taken to describe `orderedActionIds[N]`. Container
+ * actions are represented by their enabled leaf actions.
  *
  * Gracefully degrades: if fewer lines classify than there are actions by the
  * time the run ends (wrong output format, crash, timeout, cancellation),
- * per-step status is cleared entirely rather than left showing stale
- * "running"/"pending" badges — callers should treat an empty
- * `statusByActionId` as "no per-step detail available" and fall back to
- * whatever overall run state they already track.
+ * incomplete non-failing state is cleared rather than left showing stale
+ * "running"/"pending" badges. A classified failure is retained so the
+ * failed card can expose post-run logs and edit actions.
  */
 export function useMaestroRunProgress(
   running: boolean,
   runId: string | null,
   orderedActionIds: string[],
+  onActionStatus?: MaestroActionStatusListener,
 ): UseMaestroRunProgressResult {
-  const [statusByActionId, setStatusByActionId] = useState<Record<string, MaestroActionRunStatus>>({})
+  const [statusByActionId, setStatusByActionId] = useState<
+    Record<string, MaestroActionRunStatus>
+  >({})
   const nextIndexRef = useRef(0)
   const orderedIdsRef = useRef<string[]>(orderedActionIds)
+  const onActionStatusRef = useRef<MaestroActionStatusListener | undefined>(
+    onActionStatus,
+  )
   const prevRunningRef = useRef(running)
   orderedIdsRef.current = orderedActionIds
+  onActionStatusRef.current = onActionStatus
 
   // A fresh run starts: reset per-step status and mark the first action running.
   useEffect(() => {
@@ -72,7 +99,8 @@ export function useMaestroRunProgress(
     nextIndexRef.current = 0
     const initial: Record<string, MaestroActionRunStatus> = {}
     for (const id of orderedIdsRef.current) initial[id] = 'pending'
-    if (orderedIdsRef.current.length > 0) initial[orderedIdsRef.current[0]] = 'running'
+    if (orderedIdsRef.current.length > 0)
+      initial[orderedIdsRef.current[0]] = 'running'
     setStatusByActionId(initial)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running, runId])
@@ -90,12 +118,14 @@ export function useMaestroRunProgress(
       const actionId = ids[index]
       if (!actionId) return
       nextIndexRef.current += 1
+      onActionStatusRef.current?.(actionId, status)
       setStatusByActionId((current) => {
         const next = { ...current, [actionId]: status }
         if (status === 'failed') {
           // Maestro aborts the flow on the first failure by default, so the
           // remaining steps never ran.
-          for (let i = index + 1; i < ids.length; i += 1) next[ids[i]] = 'skipped'
+          for (let i = index + 1; i < ids.length; i += 1)
+            next[ids[i]] = 'skipped'
         } else {
           const followingId = ids[index + 1]
           if (followingId) next[followingId] = 'running'
@@ -113,14 +143,19 @@ export function useMaestroRunProgress(
   }, [running, runId])
 
   // Run just ended: if parsing didn't account for every action, drop
-  // per-step state so the UI shows no stale badges instead of guessing.
+  // incomplete non-failing state so the UI does not show stale badges. Keep
+  // a classified failure and its skipped descendants for post-run actions.
   useEffect(() => {
     if (prevRunningRef.current && !running) {
       setStatusByActionId((current) => {
-        const classifiedCount = Object.values(current).filter(
+        const values = Object.values(current)
+        const classifiedCount = values.filter(
           (status) => status === 'passed' || status === 'failed',
         ).length
-        return classifiedCount < orderedIdsRef.current.length ? {} : current
+        const hasFailure = values.includes('failed')
+        return hasFailure || classifiedCount === orderedIdsRef.current.length
+          ? current
+          : {}
       })
     }
     prevRunningRef.current = running
@@ -128,9 +163,15 @@ export function useMaestroRunProgress(
 
   const completedCount = useMemo(
     () =>
-      Object.values(statusByActionId).filter((status) => status === 'passed' || status === 'failed').length,
+      Object.values(statusByActionId).filter(
+        (status) => status === 'passed' || status === 'failed',
+      ).length,
     [statusByActionId],
   )
 
-  return { statusByActionId, completedCount, totalCount: orderedActionIds.length }
+  return {
+    statusByActionId,
+    completedCount,
+    totalCount: orderedActionIds.length,
+  }
 }

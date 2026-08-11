@@ -105,6 +105,8 @@ pub fn run() {
 
             app.manage(SimDeckState::default());
 
+            app.manage(maestro::MaestroState::default());
+
             // Show splashscreen instantly
             if let Some(splash_window) = app.get_webview_window("splashscreen") {
                 splash_window.show().unwrap();
@@ -165,6 +167,8 @@ pub fn run() {
             maestro::prepare_washxpress_maestro_flow,
             maestro::save_maestro_flow,
             maestro::run_maestro_test,
+            maestro::cancel_maestro_run,
+            maestro::get_foreground_app_package,
             custom_command::run_custom_command,
             file_manager::fm_list_dir,
             file_manager::fm_pull,

@@ -10,7 +10,11 @@ export type TestingEntityKind =
   | 'test-suite'
   | 'test-run'
 
-export type ExecutableEntityKind = 'automation' | 'script' | 'test-case' | 'test-suite'
+export type ExecutableEntityKind =
+  | 'automation'
+  | 'script'
+  | 'test-case'
+  | 'test-suite'
 
 export type TestExecutionStatus =
   | 'pending'
@@ -88,6 +92,8 @@ export interface TestRunArtifact {
   kind: 'screenshot' | 'recording' | 'report' | 'log'
   path: string
   createdAt: string
+  /** Optional artifact size supplied by a runner without changing old records. */
+  sizeBytes?: number
 }
 
 export interface TestRunStepResult {
@@ -99,6 +105,38 @@ export interface TestRunStepResult {
   durationMs?: number
   error?: string
   artifacts: TestRunArtifact[]
+}
+
+/** A serializable subset of structured Maestro failure detail. */
+export interface MaestroFailureSnapshot {
+  kind: 'expected' | 'maestro' | 'raw'
+  title: string
+  message: string
+  raw?: string
+  expected?: string
+  actual?: string
+  reason?: string
+  source?: 'stdout' | 'stderr'
+  lineNumber?: number
+}
+
+/** Additive Maestro metadata kept optional so older catalog entries remain readable. */
+export interface MaestroRunSnapshot {
+  runId?: string
+  flowId: string
+  flowName: string
+  appId: string
+  yaml: string
+  flowPath: string
+  stdout: string
+  stderr: string
+  exitCode?: number
+  timedOut: boolean
+  cancelled: boolean
+  failedActionId?: string
+  failedActionName?: string
+  artifacts?: TestRunArtifact[]
+  failure?: MaestroFailureSnapshot
 }
 
 /** Immutable execution snapshot; targetName survives later renames/deletions. */
@@ -116,6 +154,8 @@ export interface TestRunRecord extends TestingEntityBase {
   steps: TestRunStepResult[]
   artifacts: TestRunArtifact[]
   error?: string
+  /** Optional Maestro execution snapshot; additive for catalog compatibility. */
+  maestro?: MaestroRunSnapshot
 }
 
 export type TestingCatalogEntity =

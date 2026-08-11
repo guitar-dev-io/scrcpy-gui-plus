@@ -17,7 +17,12 @@
 // a future web-target integration (or a raw/custom-YAML action) can produce
 // one without a breaking type change, but the UI must never let a user pick
 // it for an Android element.
-export type MaestroBuilderSelectorType = 'id' | 'text' | 'index' | 'point' | 'css'
+export type MaestroBuilderSelectorType =
+  | 'id'
+  | 'text'
+  | 'index'
+  | 'point'
+  | 'css'
 
 // Maestro's relational selectors describe an element by its position or
 // containment relative to another element, instead of (or in addition to) a
@@ -76,6 +81,8 @@ export interface MaestroFieldDefinition {
   placeholder?: string
   min?: number
   max?: number
+  /** Optional fields are hidden under the action card's Advanced options disclosure. */
+  advanced?: boolean
 }
 
 export type MaestroCommandId = string
