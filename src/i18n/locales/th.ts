@@ -4,6 +4,20 @@ import type { DeepPartialTranslations } from './en'
 // via the i18n deep-merge. The new workspace features (screenshot manager,
 // device control toolbar, bug report) are fully translated below.
 export const th: DeepPartialTranslations = {
+  logPanel: {
+    systemConsole: 'คอนโซลระบบ',
+    report: 'รายงาน',
+    reportTitle: 'ส่งออกรายงานวิเคราะห์ไปยัง Downloads',
+    clear: 'ล้าง',
+    waitingForSequence: 'กำลังรอข้อมูล...',
+    terminalPlaceholder: 'พิมพ์คำสั่ง หรือค้นหาว่า ADB ทำอะไรได้บ้าง...',
+    commandSuggestions: 'คำสั่ง ADB ที่แนะนำ',
+    suggestionHint: 'Tab เพื่อใส่ • Enter เพื่อรัน',
+    noCommandSuggestions: 'ไม่พบคำสั่งที่ตรงกัน แต่ยังสามารถรันข้อความที่พิมพ์ได้',
+    editBeforeRunning: 'แก้ค่าตัวอย่างก่อนรันคำสั่ง',
+    diagnosticReportSaved: 'บันทึกรายงานวิเคราะห์ไว้ใน Downloads แล้ว: {fileName}',
+    reportSavedAlert: 'บันทึกรายงานไว้ใน Downloads แล้ว: {fileName}',
+  },
   languages: {
     en: 'อังกฤษ',
     fr: 'ฝรั่งเศส',

@@ -241,6 +241,8 @@ function AppContent() {
     enabled: Boolean(activeDevice),
   })
   const workspaceShell = useWorkspaceShell(runTerminalCommand)
+  const [appToolPackage, setAppToolPackage] = useState('')
+  const [workspaceShellDraft, setWorkspaceShellDraft] = useState('')
   const recordingLibrary = useRecordingLibrary()
   const appliedDeviceProfileRef = useRef('')
   const latestActiveDeviceRef = useRef(activeDevice)
@@ -1642,8 +1644,21 @@ function AppContent() {
       onClear={workspaceShell.clear}
       onAddLog={workspaceShell.addLog}
       onRunCommand={workspaceShell.runCommand}
+      initialCommand={workspaceShellDraft}
     />
   )
+
+  const openPackageLogcat = (packageName: string) => {
+    setAppToolPackage(packageName)
+    handleNavigate('logcat-viewer')
+  }
+
+  const openPackageShell = (packageName: string) => {
+    setWorkspaceShellDraft(`shell run-as ${packageName} pwd`)
+    workspaceShell.addLog(`[Package context] ${packageName}`)
+    handleNavigate('dashboard')
+    selectWorkspaceTool('shell')
+  }
 
   const viewOnlyToolUnavailable = (
     <div className="flex h-full min-h-64 flex-col items-center justify-center gap-2 px-6 text-center">
@@ -2327,6 +2342,8 @@ function AppContent() {
                     notify={notify}
                     confirmAction={confirmAction}
                     onInstallApk={handleInstallApkBrowse}
+                    onOpenLogcat={openPackageLogcat}
+                    onOpenShell={openPackageShell}
                   />
                 }
                 simulators={
@@ -2352,6 +2369,7 @@ function AppContent() {
                     activeDevice={activeAndroidWorkspaceDevice}
                     customPath={config.scrcpyPath}
                     notify={notify}
+                    initialTagFilter={appToolPackage}
                   />
                 }
                 performance={
@@ -2503,6 +2521,8 @@ function AppContent() {
         notify={notify}
         confirmAction={confirmAction}
         onInstallApk={handleInstallApkBrowse}
+        onOpenLogcat={openPackageLogcat}
+        onOpenShell={openPackageShell}
       />
 
       <LogcatViewer
@@ -2511,6 +2531,7 @@ function AppContent() {
         activeDevice={activeDevice}
         customPath={config.scrcpyPath}
         notify={notify}
+        initialTagFilter={appToolPackage}
       />
 
       <DeepLinkLauncher

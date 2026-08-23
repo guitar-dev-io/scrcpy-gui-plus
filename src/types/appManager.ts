@@ -25,6 +25,10 @@ export interface PackageEntry {
     packageName: string;
     /** True when the package lives in a system partition. */
     system: boolean;
+    /** True when `ps` reports a process owned by this package. */
+    running: boolean;
+    /** False when Package Manager lists the package as disabled. */
+    enabled: boolean;
 }
 
 export interface PackageListResult {
@@ -39,6 +43,18 @@ export interface PackageInfoResult {
     packageName: string;
     versionName?: string;
     versionCode?: string;
+    firstInstallTime?: string;
+    lastUpdateTime?: string;
+    codePath?: string;
+    dataDir?: string;
+    apkSizeBytes?: number;
+    dataSizeBytes?: number;
+    uid?: string;
+    targetSdk?: string;
+    minSdk?: string;
+    debuggable?: boolean;
+    enabled?: boolean;
+    installSource?: string;
     error?: string;
     errorCode?: string;
 }

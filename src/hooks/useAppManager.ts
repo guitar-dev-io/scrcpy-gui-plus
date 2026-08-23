@@ -11,6 +11,7 @@ import type {
     PackageFilter,
     PackageInfoResult
 } from '../types/appManager';
+import { filterPackages } from '../utils/appManagerView';
 
 interface UseAppManagerOptions {
     activeDevice: string;
@@ -24,7 +25,7 @@ interface UseAppManagerOptions {
  */
 export function useAppManager({ activeDevice, customPath }: UseAppManagerOptions) {
     const [packages, setPackages] = useState<PackageEntry[]>([]);
-    const [filter, setFilter] = useState<PackageFilter>('third_party');
+    const [filter, setFilter] = useState<PackageFilter>('all');
     const [search, setSearch] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -40,17 +41,16 @@ export function useAppManager({ activeDevice, customPath }: UseAppManagerOptions
     const serial = (activeDevice || '').trim();
 
     const refresh = useCallback(
-        async (nextFilter?: PackageFilter) => {
+        async () => {
             if (!serial) {
                 setPackages([]);
                 setError('no_device');
                 return;
             }
-            const useFilter = nextFilter ?? filter;
             setLoading(true);
             setError(null);
             try {
-                const res = await listPackages(serial, useFilter, customPath);
+                const res = await listPackages(serial, 'all', customPath);
                 if (res.success) {
                     setPackages(res.packages);
                 } else {
@@ -64,15 +64,15 @@ export function useAppManager({ activeDevice, customPath }: UseAppManagerOptions
                 setLoading(false);
             }
         },
-        [serial, filter, customPath]
+        [serial, customPath]
     );
 
     const changeFilter = useCallback(
         (next: PackageFilter) => {
             setFilter(next);
-            void refresh(next);
+            setError(null);
         },
-        [refresh]
+        []
     );
 
     const fetchInfo = useCallback(
@@ -143,10 +143,8 @@ export function useAppManager({ activeDevice, customPath }: UseAppManagerOptions
     );
 
     const filtered = useMemo(() => {
-        const q = search.trim().toLowerCase();
-        if (!q) return packages;
-        return packages.filter((p) => p.packageName.toLowerCase().includes(q));
-    }, [packages, search]);
+        return filterPackages(packages, filter, search);
+    }, [packages, filter, search]);
 
     return {
         packages,

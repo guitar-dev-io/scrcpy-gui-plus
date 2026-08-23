@@ -1,5 +1,7 @@
 import { useRef, useEffect, useMemo, useState, memo } from 'react'
 import {
+  AlertTriangle,
+  Command,
   Download,
   Pause,
   Play,
@@ -11,6 +13,10 @@ import {
 import { invoke } from '@tauri-apps/api/core'
 import { useI18n } from '../i18n'
 import { reconcileStableLogEntries, type StableLogEntry } from '../utils/stableLogEntries'
+import {
+  filterAdbShellSuggestions,
+  type AdbShellSuggestion,
+} from '../data/adbShellSuggestions'
 
 interface LogPanelProps {
   logs: string[]
@@ -20,14 +26,17 @@ interface LogPanelProps {
   onRunCommand?: (cmd: string) => void
   dashboard?: boolean
   mode?: 'logcat' | 'shell' | 'events'
+  initialCommand?: string
 }
 
 const LogPanel = memo(
-  ({ logs, stableEntries, onClear, onAddLog, onRunCommand, dashboard = false, mode = 'logcat' }: LogPanelProps) => {
+  ({ logs, stableEntries, onClear, onAddLog, onRunCommand, dashboard = false, mode = 'logcat', initialCommand = '' }: LogPanelProps) => {
     const { t } = useI18n()
     const containerRef = useRef<HTMLDivElement>(null)
     const [isLive, setIsLive] = useState(false)
     const [command, setCommand] = useState('')
+    const [commandMenuOpen, setCommandMenuOpen] = useState(false)
+    const [activeSuggestion, setActiveSuggestion] = useState(0)
     const [query, setQuery] = useState('')
     const [paused, setPaused] = useState(false)
     const stableEntriesRef = useRef<StableLogEntry[]>([])
@@ -44,6 +53,23 @@ const LogPanel = memo(
     const visibleLogs = query.trim()
       ? modeLogs.filter(({ text }) => text.toLowerCase().includes(query.trim().toLowerCase()))
       : modeLogs
+    const commandSuggestions = useMemo(
+      () => filterAdbShellSuggestions(command),
+      [command],
+    )
+    const groupedCommandSuggestions = useMemo(() => {
+      const groups = new Map<string, AdbShellSuggestion[]>()
+      for (const suggestion of commandSuggestions) {
+        const group = groups.get(suggestion.category) ?? []
+        group.push(suggestion)
+        groups.set(suggestion.category, group)
+      }
+      return [...groups.entries()]
+    }, [commandSuggestions])
+
+    useEffect(() => {
+      if (initialCommand) setCommand(initialCommand)
+    }, [initialCommand])
 
     useEffect(() => {
       if (!paused && containerRef.current) {
@@ -56,10 +82,39 @@ const LogPanel = memo(
       }
     }, [logs.length, paused]) // Only trigger scroll on length change
 
-    const handleKeyDown = (e: React.KeyboardEvent) => {
+    const selectSuggestion = (suggestion: AdbShellSuggestion) => {
+      setCommand(suggestion.command)
+      setCommandMenuOpen(false)
+      setActiveSuggestion(0)
+    }
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (commandMenuOpen && commandSuggestions.length > 0) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault()
+          setActiveSuggestion((current) => (current + 1) % commandSuggestions.length)
+          return
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault()
+          setActiveSuggestion((current) => (current - 1 + commandSuggestions.length) % commandSuggestions.length)
+          return
+        }
+        if (e.key === 'Tab') {
+          e.preventDefault()
+          selectSuggestion(commandSuggestions[activeSuggestion] ?? commandSuggestions[0])
+          return
+        }
+      }
+      if (e.key === 'Escape') {
+        setCommandMenuOpen(false)
+        return
+      }
       if (e.key === 'Enter' && command.trim()) {
         onRunCommand?.(command.trim())
         setCommand('')
+        setCommandMenuOpen(false)
+        setActiveSuggestion(0)
       }
     }
 
@@ -197,14 +252,73 @@ const LogPanel = memo(
 
         {/* Terminal Input */}
         {(!dashboard || mode === 'shell') && (
-        <div className="px-4 py-2 border-t border-zinc-800/80 bg-black/40 flex items-center gap-2 shrink-0 group">
+        <div className="relative px-4 py-2 border-t border-zinc-800/80 bg-black/40 flex items-center gap-2 shrink-0 group">
+          {commandMenuOpen && (
+            <div className="absolute bottom-full left-2 right-2 z-30 mb-1 max-h-72 overflow-y-auto rounded-lg border border-zinc-700/80 bg-[#0b0f17] shadow-2xl custom-scrollbar">
+              <div className="sticky top-0 z-10 flex items-center justify-between border-b border-zinc-800 bg-[#0b0f17]/95 px-3 py-2 backdrop-blur">
+                <div className="flex items-center gap-2 text-[10px] font-semibold text-zinc-300">
+                  <Command size={12} className="text-primary" />
+                  {t('logPanel.commandSuggestions')}
+                  <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[9px] text-zinc-500">
+                    {commandSuggestions.length}
+                  </span>
+                </div>
+                <span className="text-[9px] text-zinc-600">{t('logPanel.suggestionHint')}</span>
+              </div>
+              {groupedCommandSuggestions.length === 0 ? (
+                <div className="px-3 py-5 text-center text-[10px] text-zinc-500">
+                  {t('logPanel.noCommandSuggestions')}
+                </div>
+              ) : (
+                groupedCommandSuggestions.map(([category, suggestions]) => (
+                  <div key={category} className="border-b border-zinc-900/80 last:border-b-0">
+                    <div className="sticky top-8 bg-[#0b0f17]/95 px-3 py-1.5 text-[9px] font-bold uppercase tracking-wider text-zinc-600 backdrop-blur">
+                      {category}
+                    </div>
+                    {suggestions.map((suggestion) => {
+                      const suggestionIndex = commandSuggestions.indexOf(suggestion)
+                      return (
+                        <button
+                          key={suggestion.id}
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => selectSuggestion(suggestion)}
+                          onMouseEnter={() => setActiveSuggestion(suggestionIndex)}
+                          className={`flex w-full items-start gap-3 px-3 py-2 text-left transition-colors ${suggestionIndex === activeSuggestion ? 'bg-primary/10' : 'hover:bg-white/[0.04]'}`}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 text-[10px] font-semibold text-zinc-200">
+                              {suggestion.label}
+                              {suggestion.requiresEdit && (
+                                <AlertTriangle size={10} className="shrink-0 text-amber-400" aria-label={t('logPanel.editBeforeRunning')} />
+                              )}
+                            </div>
+                            <div className="mt-0.5 text-[9px] text-zinc-500">{suggestion.description}</div>
+                          </div>
+                          <code className="max-w-[55%] break-all rounded bg-black/40 px-2 py-1 text-[9px] text-primary/80">
+                            {suggestion.command}
+                          </code>
+                        </button>
+                      )
+                    })}
+                  </div>
+                ))
+              )}
+            </div>
+          )}
           <span className="text-primary font-bold text-[11px] select-none">
             $
           </span>
           <input
             type="text"
             value={command}
-            onChange={(e) => setCommand(e.target.value)}
+            onChange={(e) => {
+              setCommand(e.target.value)
+              setCommandMenuOpen(true)
+              setActiveSuggestion(0)
+            }}
+            onFocus={() => setCommandMenuOpen(true)}
+            onBlur={() => setCommandMenuOpen(false)}
             onKeyDown={handleKeyDown}
             placeholder={t('logPanel.terminalPlaceholder')}
             className="flex-1 bg-transparent border-none outline-none text-[11px] text-zinc-300 placeholder:text-zinc-500 font-mono transition-colors focus:placeholder:text-zinc-600"

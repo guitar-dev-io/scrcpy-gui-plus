@@ -36,6 +36,10 @@ pub struct PackageEntry {
     pub package_name: String,
     /// True when the package lives in a system partition (`pm list -s`).
     pub system: bool,
+    /// True when a process for the package is present in `ps` output.
+    pub running: bool,
+    /// False when Package Manager lists the package as disabled.
+    pub enabled: bool,
 }
 
 /// Result of listing packages.
@@ -60,6 +64,30 @@ pub struct PackageInfoResult {
     pub version_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_install_time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_update_time: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_dir: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub apk_size_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_size_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uid: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_sdk: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_sdk: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub debuggable: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub install_source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -281,6 +309,8 @@ fn parse_package_lines(text: &str, system: bool) -> Vec<PackageEntry> {
                 Some(PackageEntry {
                     package_name: name.to_string(),
                     system,
+                    running: false,
+                    enabled: true,
                 })
             }
         })
@@ -338,21 +368,20 @@ pub async fn list_packages(
         }
     };
 
-    // The `-s` filter is inherently "system"; everything else defaults to
-    // non-system. For the "all" view, fetch the system list once to tag them.
+    // Cross-reference system, disabled, and running sets once. This keeps the
+    // UI honest without issuing one process/package query per row.
     let mut packages = parse_package_lines(&text, filter == "system");
-
-    if filter == "all" {
-        if let Ok(sys_text) = adb::run_adb_text(
+    if filter != "third_party" && filter != "system" {
+        if let Ok(system_text) = adb::run_adb_text(
             Some(&serial),
             &["shell", "pm", "list", "packages", "-s"],
-            custom_path,
+            custom_path.clone(),
             LIST_TIMEOUT_SECS,
         )
         .await
         {
             let system_set: std::collections::HashSet<String> =
-                parse_package_lines(&sys_text, true)
+                parse_package_lines(&system_text, true)
                     .into_iter()
                     .map(|p| p.package_name)
                     .collect();
@@ -360,6 +389,44 @@ pub async fn list_packages(
                 pkg.system = system_set.contains(&pkg.package_name);
             }
         }
+    }
+
+    let disabled_set = if filter == "disabled" {
+        packages
+            .iter()
+            .map(|pkg| pkg.package_name.clone())
+            .collect()
+    } else {
+        match adb::run_adb_text(
+            Some(&serial),
+            &["shell", "pm", "list", "packages", "-d"],
+            custom_path.clone(),
+            LIST_TIMEOUT_SECS,
+        )
+        .await
+        {
+            Ok(disabled_text) => parse_package_lines(&disabled_text, false)
+                .into_iter()
+                .map(|pkg| pkg.package_name)
+                .collect(),
+            Err(_) => std::collections::HashSet::new(),
+        }
+    };
+
+    let running_set = match adb::run_adb_text(
+        Some(&serial),
+        &["shell", "ps", "-A"],
+        custom_path,
+        LIST_TIMEOUT_SECS,
+    )
+    .await
+    {
+        Ok(process_text) => parse_running_packages(&process_text),
+        Err(_) => std::collections::HashSet::new(),
+    };
+    for pkg in packages.iter_mut() {
+        pkg.enabled = !disabled_set.contains(&pkg.package_name);
+        pkg.running = running_set.contains(&pkg.package_name);
     }
 
     PackageListResult {
@@ -370,34 +437,125 @@ pub async fn list_packages(
     }
 }
 
-/// Extract `versionName` and `versionCode` from `dumpsys package` output.
-fn parse_version_info(text: &str) -> (Option<String>, Option<String>) {
-    let mut version_name = None;
-    let mut version_code = None;
+fn parse_running_packages(text: &str) -> std::collections::HashSet<String> {
+    text.lines()
+        .skip(1)
+        .filter_map(|line| line.split_whitespace().last())
+        .filter(|name| name.contains('.'))
+        .map(|name| name.split(':').next().unwrap_or(name).to_string())
+        .collect()
+}
+
+#[derive(Default)]
+struct ParsedPackageInfo {
+    version_name: Option<String>,
+    version_code: Option<String>,
+    first_install_time: Option<String>,
+    last_update_time: Option<String>,
+    code_path: Option<String>,
+    data_dir: Option<String>,
+    uid: Option<String>,
+    target_sdk: Option<String>,
+    min_sdk: Option<String>,
+    debuggable: Option<bool>,
+    enabled: Option<bool>,
+    install_source: Option<String>,
+}
+
+fn value_after(line: &str, key: &str) -> Option<String> {
+    let index = line.find(key)?;
+    let value = line[index + key.len()..].split_whitespace().next()?.trim();
+    (!value.is_empty() && value != "null").then(|| value.to_string())
+}
+
+/// Extract the package metadata already exposed by `dumpsys package`.
+fn parse_package_info(text: &str) -> ParsedPackageInfo {
+    let mut info = ParsedPackageInfo::default();
     for line in text.lines() {
         let line = line.trim();
-        if version_name.is_none() {
+        if info.version_name.is_none() {
             if let Some(rest) = line.strip_prefix("versionName=") {
                 let val = rest.split_whitespace().next().unwrap_or("").to_string();
                 if !val.is_empty() {
-                    version_name = Some(val);
+                    info.version_name = Some(val);
                 }
             }
         }
-        if version_code.is_none() {
-            if let Some(idx) = line.find("versionCode=") {
-                let rest = &line[idx + "versionCode=".len()..];
-                let val = rest.split_whitespace().next().unwrap_or("").to_string();
-                if !val.is_empty() {
-                    version_code = Some(val);
-                }
-            }
+        if info.version_code.is_none() {
+            info.version_code = value_after(line, "versionCode=");
         }
-        if version_name.is_some() && version_code.is_some() {
-            break;
+        if info.first_install_time.is_none() {
+            info.first_install_time = line.strip_prefix("firstInstallTime=").map(str::to_string);
+        }
+        if info.last_update_time.is_none() {
+            info.last_update_time = line.strip_prefix("lastUpdateTime=").map(str::to_string);
+        }
+        if info.code_path.is_none() {
+            info.code_path = line.strip_prefix("codePath=").map(str::to_string);
+        }
+        if info.data_dir.is_none() {
+            info.data_dir = line.strip_prefix("dataDir=").map(str::to_string);
+        }
+        if info.uid.is_none() {
+            info.uid = line.strip_prefix("userId=").map(str::to_string);
+        }
+        if info.target_sdk.is_none() {
+            info.target_sdk = value_after(line, "targetSdk=");
+        }
+        if info.min_sdk.is_none() {
+            info.min_sdk = value_after(line, "minSdk=");
+        }
+        if info.install_source.is_none() {
+            info.install_source = line
+                .strip_prefix("installerPackageName=")
+                .and_then(|value| (value != "null").then(|| value.to_string()));
+        }
+        if info.debuggable.is_none() && line.starts_with("pkgFlags=") {
+            info.debuggable = Some(
+                line.split_whitespace()
+                    .any(|flag| flag.trim_matches(|c| c == '[' || c == ']').eq("DEBUGGABLE")),
+            );
+        }
+        if info.enabled.is_none() && line.starts_with("User 0:") {
+            info.enabled = value_after(line, "enabled=").and_then(|value| match value.as_str() {
+                "0" | "1" => Some(true),
+                "2" | "3" | "4" => Some(false),
+                _ => None,
+            });
         }
     }
-    (version_name, version_code)
+    info
+}
+
+fn parse_du_bytes(text: &str) -> Option<u64> {
+    text.split_whitespace()
+        .next()?
+        .parse::<u64>()
+        .ok()?
+        .checked_mul(1024)
+}
+
+fn info_error(package_name: String, error: &AdbError) -> PackageInfoResult {
+    PackageInfoResult {
+        success: false,
+        package_name,
+        version_name: None,
+        version_code: None,
+        first_install_time: None,
+        last_update_time: None,
+        code_path: None,
+        data_dir: None,
+        apk_size_bytes: None,
+        data_size_bytes: None,
+        uid: None,
+        target_sdk: None,
+        min_sdk: None,
+        debuggable: None,
+        enabled: None,
+        install_source: None,
+        error: Some(error.message()),
+        error_code: Some(error.code().to_string()),
+    }
 }
 
 /// Query version metadata for a single package.
@@ -411,47 +569,64 @@ pub async fn get_package_info(
     let package = package.trim().to_string();
 
     if let Err(e) = adb::validate_serial(&serial) {
-        return PackageInfoResult {
-            success: false,
-            package_name: package,
-            version_name: None,
-            version_code: None,
-            error: Some(e.message()),
-            error_code: Some(e.code().to_string()),
-        };
+        return info_error(package, &e);
     }
     if let Err(e) = adb::validate_package_name(&package) {
-        return PackageInfoResult {
-            success: false,
-            package_name: package,
-            version_name: None,
-            version_code: None,
-            error: Some(e.message()),
-            error_code: Some(e.code().to_string()),
-        };
+        return info_error(package, &e);
     }
 
     let args = ["shell", "dumpsys", "package", package.as_str()];
-    match adb::run_adb_text(Some(&serial), &args, custom_path, INFO_TIMEOUT_SECS).await {
+    match adb::run_adb_text(Some(&serial), &args, custom_path.clone(), INFO_TIMEOUT_SECS).await {
         Ok(text) => {
-            let (version_name, version_code) = parse_version_info(&text);
+            let info = parse_package_info(&text);
+            let apk_size_bytes = if let Some(path) = info.code_path.as_deref() {
+                adb::run_adb_text(
+                    Some(&serial),
+                    &["shell", "du", "-sk", path],
+                    custom_path.clone(),
+                    INFO_TIMEOUT_SECS,
+                )
+                .await
+                .ok()
+                .and_then(|output| parse_du_bytes(&output))
+            } else {
+                None
+            };
+            let data_size_bytes = if let Some(path) = info.data_dir.as_deref() {
+                adb::run_adb_text(
+                    Some(&serial),
+                    &["shell", "du", "-sk", path],
+                    custom_path,
+                    INFO_TIMEOUT_SECS,
+                )
+                .await
+                .ok()
+                .and_then(|output| parse_du_bytes(&output))
+            } else {
+                None
+            };
             PackageInfoResult {
                 success: true,
                 package_name: package,
-                version_name,
-                version_code,
+                version_name: info.version_name,
+                version_code: info.version_code,
+                first_install_time: info.first_install_time,
+                last_update_time: info.last_update_time,
+                code_path: info.code_path,
+                data_dir: info.data_dir,
+                apk_size_bytes,
+                data_size_bytes,
+                uid: info.uid,
+                target_sdk: info.target_sdk,
+                min_sdk: info.min_sdk,
+                debuggable: info.debuggable,
+                enabled: info.enabled,
+                install_source: info.install_source,
                 error: None,
                 error_code: None,
             }
         }
-        Err(e) => PackageInfoResult {
-            success: false,
-            package_name: package,
-            version_name: None,
-            version_code: None,
-            error: Some(e.message()),
-            error_code: Some(e.code().to_string()),
-        },
+        Err(e) => info_error(package, &e),
     }
 }
 
@@ -525,18 +700,37 @@ mod tests {
     }
 
     #[test]
-    fn parse_version_info_extracts_name_and_code() {
-        let text = "  Package [com.example.app]\n    versionCode=123 minSdk=21 targetSdk=33\n    versionName=1.2.3\n";
-        let (name, code) = parse_version_info(text);
-        assert_eq!(name, Some("1.2.3".to_string()));
-        assert_eq!(code, Some("123".to_string()));
+    fn parse_package_info_extracts_supported_metadata() {
+        let text = "  Package [com.example.app]\n    userId=10123\n    codePath=/data/app/example/base.apk\n    dataDir=/data/user/0/com.example.app\n    versionCode=123 minSdk=21 targetSdk=33\n    versionName=1.2.3\n    firstInstallTime=2024-05-10 10:21:00\n    lastUpdateTime=2024-05-15 08:42:00\n    installerPackageName=com.android.vending\n    pkgFlags=[ HAS_CODE DEBUGGABLE ]\n    User 0: installed=true enabled=0\n";
+        let info = parse_package_info(text);
+        assert_eq!(info.version_name, Some("1.2.3".to_string()));
+        assert_eq!(info.version_code, Some("123".to_string()));
+        assert_eq!(info.uid, Some("10123".to_string()));
+        assert_eq!(info.target_sdk, Some("33".to_string()));
+        assert_eq!(info.min_sdk, Some("21".to_string()));
+        assert_eq!(info.debuggable, Some(true));
+        assert_eq!(info.enabled, Some(true));
+        assert_eq!(info.install_source, Some("com.android.vending".to_string()));
     }
 
     #[test]
-    fn parse_version_info_handles_missing() {
+    fn parse_package_info_handles_missing() {
         let text = "no relevant fields here";
-        let (name, code) = parse_version_info(text);
-        assert_eq!(name, None);
-        assert_eq!(code, None);
+        let info = parse_package_info(text);
+        assert_eq!(info.version_name, None);
+        assert_eq!(info.version_code, None);
+    }
+
+    #[test]
+    fn parse_running_packages_normalizes_secondary_processes() {
+        let text = "USER PID PPID VSZ RSS WCHAN ADDR S NAME\nu0_a12 1 0 0 0 0 0 S com.example.app\nu0_a12 2 0 0 0 0 0 S com.example.app:worker\nroot 3 0 0 0 0 0 S adbd\n";
+        let packages = parse_running_packages(text);
+        assert_eq!(packages.len(), 1);
+        assert!(packages.contains("com.example.app"));
+    }
+
+    #[test]
+    fn parse_du_bytes_converts_kibibytes() {
+        assert_eq!(parse_du_bytes("284\t/data/app/base.apk"), Some(290_816));
     }
 }

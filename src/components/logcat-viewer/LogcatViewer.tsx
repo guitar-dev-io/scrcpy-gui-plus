@@ -25,6 +25,7 @@ interface LogcatViewerProps {
   activeDevice: string
   customPath?: string
   notify: ToolbarNotifier
+  initialTagFilter?: string
 }
 
 const LEVEL_STYLES: Record<LogLevel, string> = {
@@ -43,9 +44,10 @@ export default function LogcatViewer({
   activeDevice,
   customPath,
   notify,
+  initialTagFilter,
 }: LogcatViewerProps) {
   const { t } = useI18n()
-  const logcat = useLogcat({ activeDevice, customPath, enabled: isOpen || embedded })
+  const logcat = useLogcat({ activeDevice, customPath, enabled: isOpen || embedded, initialTagFilter })
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // Auto-start streaming when opened for a device; stop on close.

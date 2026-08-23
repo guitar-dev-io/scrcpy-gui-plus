@@ -18,6 +18,8 @@ interface UseLogcatOptions {
     customPath?: string;
     /** When false, listeners/streams are torn down (e.g. modal closed). */
     enabled: boolean;
+    /** Optional package/tag context supplied by another developer tool. */
+    initialTagFilter?: string;
 }
 
 const THREADTIME_RE =
@@ -81,7 +83,7 @@ export function filterLogcatEntries(entries: readonly LogEntry[], filters: Logca
  * Filtering (level, tag/package, text search), pausing and export are handled
  * here so the UI stays a thin renderer.
  */
-export function useLogcat({ activeDevice, customPath, enabled }: UseLogcatOptions) {
+export function useLogcat({ activeDevice, customPath, enabled, initialTagFilter = '' }: UseLogcatOptions) {
     const [entries, setEntries] = useState<LogEntry[]>([]);
     const [running, setRunning] = useState(false);
     const [busy, setBusy] = useState(false);
@@ -89,7 +91,7 @@ export function useLogcat({ activeDevice, customPath, enabled }: UseLogcatOption
 
     // Filters.
     const [minLevel, setMinLevel] = useState<LogLevel>('V');
-    const [tagFilter, setTagFilter] = useState('');
+    const [tagFilter, setTagFilter] = useState(initialTagFilter);
     const [search, setSearch] = useState('');
     const [crashOnly, setCrashOnly] = useState(false);
 
@@ -98,6 +100,10 @@ export function useLogcat({ activeDevice, customPath, enabled }: UseLogcatOption
     pausedRef.current = paused;
     // Holds lines that arrive while paused so nothing is lost on resume.
     const pausedBuffer = useRef<LogEntry[]>([]);
+
+    useEffect(() => {
+        setTagFilter(initialTagFilter);
+    }, [initialTagFilter]);
 
     const appendEntries = useCallback((incoming: LogEntry[]) => {
         setEntries((prev) => {
