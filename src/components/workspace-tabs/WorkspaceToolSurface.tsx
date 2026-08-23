@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { ListChecks, ScrollText, Terminal } from 'lucide-react'
+import { Columns3, ListChecks, ScrollText, Terminal } from 'lucide-react'
 import type { WorkspaceToolTab } from '../../types/workspace'
 
 interface WorkspaceToolSurfaceProps {
@@ -22,6 +22,11 @@ const metadata = {
     title: 'Shell',
     description: 'Run commands against the selected device.',
     icon: Terminal,
+  },
+  compare: {
+    title: 'Compare',
+    description: 'Review captures across devices and choose a reference.',
+    icon: Columns3,
   },
 } as const
 

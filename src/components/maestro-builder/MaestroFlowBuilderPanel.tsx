@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type KeyboardEvent } from 'react'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, Circle, Plus } from 'lucide-react'
 import type {
   MaestroBuilderSelector,
   MaestroCommandId,
@@ -9,6 +9,7 @@ import type {
 } from '../../types/maestroBuilder'
 import type { MaestroActionRunStatus } from '../../hooks/useMaestroRunProgress'
 import MaestroActionCard from './MaestroActionCard'
+import { MAESTRO_COMMON_COMMANDS } from '../../utils/maestroCommandRegistry'
 
 interface MaestroFlowBuilderPanelProps {
   flow: MaestroFlow
@@ -41,6 +42,9 @@ interface MaestroFlowBuilderPanelProps {
   /** Actions shown on a failed card while per-step run status is available. */
   onViewLogs?: () => void
   onEditAction?: (actionId: string) => void
+  onAddAction?: (command: MaestroCommandId) => void
+  recording?: boolean
+  onToggleRecording?: () => void
 }
 
 function flattenActionIds(actions: MaestroFlowAction[]): string[] {
@@ -80,9 +84,15 @@ export default function MaestroFlowBuilderPanel({
   onClearSelection,
   onViewLogs,
   onEditAction,
+  onAddAction,
+  recording = false,
+  onToggleRecording,
 }: MaestroFlowBuilderPanelProps) {
   const [uncontrolledSelectedActionId, setUncontrolledSelectedActionId] =
     useState<string | null>(null)
+  const [newCommand, setNewCommand] = useState(
+    MAESTRO_COMMON_COMMANDS[0]?.id ?? 'launchApp',
+  )
   const controlledSelection = selectedActionId !== undefined
   const effectiveSelectedActionId = controlledSelection
     ? selectedActionId
@@ -144,6 +154,22 @@ export default function MaestroFlowBuilderPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--border-subtle)] px-3">
+        <span className="text-[8px] font-black uppercase tracking-widest text-[var(--text-muted)]">
+          Steps ({flow.actions.length})
+        </span>
+        {onToggleRecording && (
+          <button
+            type="button"
+            onClick={onToggleRecording}
+            aria-pressed={recording}
+            className={`ml-auto flex h-6 items-center gap-1 rounded border px-2 text-[8px] font-semibold ${recording ? 'border-red-400/50 bg-red-400/10 text-red-300' : 'border-[var(--border-base)] text-[var(--text-muted)] hover:border-primary/40 hover:text-primary'}`}
+          >
+            <Circle size={8} fill={recording ? 'currentColor' : 'none'} className={recording ? 'animate-pulse' : ''} />
+            {recording ? 'Recording' : 'Record'}
+          </button>
+        )}
+      </div>
       {actionIssues.length > 0 && (
         <div className="flex shrink-0 items-center gap-1.5 border-b border-amber-500/20 bg-amber-500/10 px-3 py-1.5 text-[8px] font-semibold text-amber-400">
           <AlertTriangle size={10} />
@@ -176,12 +202,32 @@ export default function MaestroFlowBuilderPanel({
           />
         ))}
         {flow.actions.length === 0 && (
-          <li className="rounded-lg border border-dashed border-[var(--border-subtle)] py-10 text-center text-[9px] text-[var(--text-subtle)]">
-            Add an action from the library, or select an element on the device
-            preview.
+          <li className="rounded-lg border border-dashed border-[var(--border-subtle)] px-5 py-8 text-center text-[9px] text-[var(--text-subtle)]">
+            <p className="font-semibold text-[var(--text-muted)]">No steps yet</p>
+            <p className="mt-1 leading-relaxed">Select an element from the device or start recording your actions.</p>
+            {onToggleRecording && (
+              <button type="button" onClick={onToggleRecording} className="mt-3 rounded border border-red-400/35 px-2 py-1 text-[8px] font-semibold text-red-300 hover:bg-red-400/10">
+                Start Recording
+              </button>
+            )}
           </li>
         )}
       </ol>
+      {onAddAction && (
+        <div className="flex shrink-0 items-center gap-1 border-t border-[var(--border-subtle)] p-2">
+          <select
+            aria-label="Step type"
+            value={newCommand}
+            onChange={(event) => setNewCommand(event.target.value)}
+            className="h-7 min-w-0 flex-1 rounded border border-[var(--border-base)] bg-[var(--bg-input)] px-1.5 text-[8px] text-[var(--text-muted)] outline-none focus:border-primary/50"
+          >
+            {MAESTRO_COMMON_COMMANDS.map((command) => <option key={command.id} value={command.id}>{command.label}</option>)}
+          </select>
+          <button type="button" onClick={() => onAddAction(newCommand)} className="flex h-7 items-center gap-1 rounded border border-primary/35 px-2 text-[8px] font-semibold text-primary hover:bg-primary/10">
+            <Plus size={9} /> Add Step
+          </button>
+        </div>
+      )}
     </div>
   )
 }

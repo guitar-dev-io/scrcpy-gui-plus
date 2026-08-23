@@ -104,6 +104,23 @@ describe('useScreenshot', () => {
     expect(res.errorCode).toBe('no_device')
   })
 
+  it('captures selected devices sequentially and records their metadata', async () => {
+    ;(captureScreenshot as any)
+      .mockResolvedValueOnce({ success: true, path: '/p/a.png', filename: 'a.png', deviceSerial: 'a', capturedAt: '2026-08-23T00:00:00Z' })
+      .mockResolvedValueOnce({ success: true, path: '/p/b.png', filename: 'b.png', deviceSerial: 'b', capturedAt: '2026-08-23T00:00:01Z' })
+    const { result } = renderHook(() =>
+      useScreenshot({ activeDevice: 'a', customPath: undefined }),
+    )
+    let captures: any[] = []
+    await act(async () => {
+      captures = await result.current.captureMany(['a', 'b', 'a'])
+    })
+    expect(captures).toHaveLength(2)
+    expect(captureScreenshot).toHaveBeenCalledTimes(2)
+    expect(result.current.history.map((item) => item.deviceSerial)).toEqual(['b', 'a'])
+    expect(result.current.history.every((item) => item.deviceName === 'Pixel 7')).toBe(true)
+  })
+
   it('records an auto-capture result once with its stitched segment count', () => {
     const config = defaultAutoCaptureConfig('dev', '/shots')
     const completed: AutoCaptureSession = {

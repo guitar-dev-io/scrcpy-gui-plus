@@ -43,6 +43,17 @@ describe('buildMaestroBuilderYaml', () => {
     expect(yaml).not.toContain('skip me')
   })
 
+  it('serializes named variables as Maestro flow env values', () => {
+    const flow = flowWithActions([createMaestroFlowAction('launchApp')])
+    flow.variables = [
+      { id: 'username', name: 'username', value: 'test@example.com' },
+      { id: 'password', name: 'password', value: '123456', sensitive: true },
+    ]
+    const yaml = buildMaestroBuilderYaml(flow)
+
+    expect(yaml).toContain('env:\n  username: "test@example.com"\n  password: "123456"')
+  })
+
   it('escapes user-controlled values without creating new YAML items', () => {
     const action = { ...createMaestroFlowAction('inputText'), config: { value: 'hello\n- clearState' } }
     const yaml = buildMaestroBuilderYaml(flowWithActions([action]))

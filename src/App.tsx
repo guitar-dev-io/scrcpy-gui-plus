@@ -26,6 +26,7 @@ import CompanionWorkspaceStage from './components/dashboard/CompanionWorkspaceSt
 import IosWorkspaceStage from './components/dashboard/IosWorkspaceStage'
 import WorkspaceTabBar from './components/workspace-tabs'
 import WorkspaceToolSurface from './components/workspace-tabs/WorkspaceToolSurface'
+import CompareWorkspace from './components/compare/CompareWorkspace'
 import TestRunnerPanel from './components/test-runner'
 import OnboardingModal from './components/OnboardingModal'
 import ThemedModal from './components/ThemedModal'
@@ -55,7 +56,11 @@ import DevicesBatchActions from './components/devices/DevicesBatchActions'
 import { DEFAULT_SCRCPY_CONFIG, useScrcpy } from './hooks/useScrcpy'
 import { useDeviceSelection } from './hooks/useDeviceSelection'
 import { useCompanion } from './hooks/useCompanion'
-import { useScreenshot } from './hooks/useScreenshot'
+import {
+  screenshotHistoryEntryFromResult,
+  useScreenshot,
+} from './hooks/useScreenshot'
+import { useCompareSessions } from './hooks/useCompareSessions'
 import { useAutoCapture } from './hooks/useAutoCapture'
 import { useRecordingLibrary } from './hooks/useRecordingLibrary'
 import { useDeviceStatus } from './hooks/useDeviceStatus'
@@ -335,6 +340,7 @@ function AppContent() {
     activeDevice,
     customPath: config.scrcpyPath,
   })
+  const compareSessions = useCompareSessions()
   const adbLiveFrame = useAdbLiveFrame(activeDevice)
   const [selectedScreenshotSourceId, setSelectedScreenshotSourceId] =
     useState('android-adb')
@@ -1611,6 +1617,22 @@ function AppContent() {
     }
   }
 
+  const handleCaptureAllSelected = async () => {
+    if (selectedOnlineDeviceIds.length < 2) return
+    const results = await screenshot.captureMany(selectedOnlineDeviceIds)
+    const successful = results.filter((result) => result.success)
+    const session = compareSessions.createSession(
+      successful.map((result) => screenshotHistoryEntryFromResult(result)),
+    )
+    const failed = results.length - successful.length
+    notify(
+      session ? 'Capture All complete' : 'Capture All incomplete',
+      `${successful.length} captured, ${failed} failed.${session ? ' Compare workspace opened.' : ' At least two successful captures are required.'}`,
+      failed === 0 && session ? 'success' : 'warning',
+    )
+    if (session) selectWorkspaceTool('compare')
+  }
+
   const workspaceShellPanel = (
     <LogPanel
       dashboard
@@ -1966,7 +1988,34 @@ function AppContent() {
           </div>
           {activeWorkspaceTool && activeWorkspaceTool !== 'file-explorer' ? (
             <WorkspaceToolSurface tool={activeWorkspaceTool}>
-              {activeIosUdid || activeCompanionWorkspaceId ? (
+              {activeWorkspaceTool === 'compare' ? (
+                <CompareWorkspace
+                  sessions={compareSessions.sessions}
+                  history={screenshot.history}
+                  onSetReference={compareSessions.setReference}
+                  onDeleteSession={compareSessions.deleteSession}
+                  onRecapture={async (sessionId, entry) => {
+                    const result = await screenshot.capture(entry.deviceSerial)
+                    if (!result.success) {
+                      notify('Recapture failed', result.error || 'Unknown error', 'error')
+                      return
+                    }
+                    compareSessions.replaceScreenshot(
+                      sessionId,
+                      entry.id,
+                      screenshotHistoryEntryFromResult(result, entry.deviceName),
+                    )
+                  }}
+                  onOpenDevice={(serial) => {
+                    setActiveDevice(serial)
+                    setIsDeviceStatusOpen(true)
+                  }}
+                  onOpenLogcat={(serial) => {
+                    setActiveDevice(serial)
+                    selectWorkspaceTool('logcat')
+                  }}
+                />
+              ) : activeIosUdid || activeCompanionWorkspaceId ? (
                 viewOnlyToolUnavailable
               ) : activeWorkspaceTool === 'test-runner' ? (
                 <TestRunnerPanel
@@ -2105,6 +2154,12 @@ function AppContent() {
                       onChange: setSelectedScreenshotSourceId,
                     }}
                     onCapture={handleScreenshotPageCapture}
+                    onCaptureAll={() => void handleCaptureAllSelected()}
+                    captureAllCount={selectedOnlineDeviceIds.length}
+                    onCompareSelected={(entries) => {
+                      const session = compareSessions.createSession(entries)
+                      if (session) selectWorkspaceTool('compare')
+                    }}
                     onCaptureScroll={
                       selectedScreenshotSource?.kind === 'android-adb'
                         ? () => void autoCapture.start()
@@ -2364,6 +2419,8 @@ function AppContent() {
                 scriptManager={
                   <ScriptManagerPage
                     activeDevice={activeAndroidWorkspaceDevice}
+                    availableDeviceIds={devices}
+                    selectedDeviceIds={selectedDeviceIds}
                     customPath={config.scrcpyPath}
                     outputDir={screenshot.screenshotDir}
                     notify={notify}

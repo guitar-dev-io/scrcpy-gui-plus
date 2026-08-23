@@ -1,197 +1,124 @@
 import { useMemo, useState } from 'react'
-import { ChevronRight, Search } from 'lucide-react'
-import { shortClassName, type UiNode } from '../../types/uiInspector'
+import { Check, Copy, MousePointerClick } from 'lucide-react'
+import type { UiNode } from '../../types/uiInspector'
 import { recommendMaestroSelectors } from '../../utils/maestroSelectorRecommendation'
 import type { MaestroBuilderSelector, MaestroCommandId } from '../../types/maestroBuilder'
-
-interface TreeRowProps {
-  node: UiNode
-  selectedId: number | null
-  onSelect: (node: UiNode) => void
-  query: string
-}
-
-function nodeMatches(node: UiNode, query: string): boolean {
-  return (
-    node.className.toLowerCase().includes(query) ||
-    node.resourceId.toLowerCase().includes(query) ||
-    node.text.toLowerCase().includes(query) ||
-    node.contentDesc.toLowerCase().includes(query)
-  )
-}
-
-function TreeRow({ node, selectedId, onSelect, query }: TreeRowProps) {
-  const [open, setOpen] = useState(node.depth < 2)
-  const hasChildren = node.children.length > 0
-  const matches = !query || nodeMatches(node, query)
-  const childMatch = useMemo(() => {
-    if (!query) return true
-    const stack = [...node.children]
-    while (stack.length) {
-      const n = stack.pop()!
-      if (nodeMatches(n, query)) return true
-      stack.push(...n.children)
-    }
-    return false
-  }, [node, query])
-
-  if (query && !matches && !childMatch) return null
-
-  const idLabel = node.resourceId ? node.resourceId.split('/').pop() : node.text || node.contentDesc
-
-  return (
-    <div>
-      <div
-        className={`flex items-center gap-1 rounded-md pr-2 cursor-pointer ${selectedId === node.id ? 'bg-primary/20 text-primary' : 'text-[var(--text-subtle)] hover:bg-white/5'}`}
-        style={{ paddingLeft: `${node.depth * 10 + 2}px` }}
-        onClick={() => onSelect(node)}
-      >
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation()
-            setOpen((o) => !o)
-          }}
-          tabIndex={hasChildren ? 0 : -1}
-          aria-label={open ? 'Collapse' : 'Expand'}
-          aria-hidden={!hasChildren}
-          className={`p-0.5 shrink-0 ${hasChildren ? '' : 'opacity-0 pointer-events-none'}`}
-        >
-          <ChevronRight size={10} className={`transition-transform ${open ? 'rotate-90' : ''}`} />
-        </button>
-        <span className="truncate py-0.5 text-[9px] font-semibold">
-          {shortClassName(node.className)}
-          {idLabel && <span className="font-normal text-[var(--text-subtle)]"> · {idLabel}</span>}
-        </span>
-      </div>
-      {open && hasChildren && node.children.map((child) => (
-        <TreeRow key={child.id} node={child} selectedId={selectedId} onSelect={onSelect} query={query} />
-      ))}
-    </div>
-  )
-}
 
 interface MaestroElementInspectorPanelProps {
   root: UiNode | null
   selected: UiNode | null
-  onSelect: (node: UiNode) => void
   onQuickAction: (commandId: MaestroCommandId, selector: MaestroBuilderSelector) => void
 }
 
 const QUICK_ACTIONS: Array<{ id: MaestroCommandId; label: string }> = [
   { id: 'tapOn', label: 'Tap' },
-  { id: 'assertVisible', label: 'Assert Visible' },
+  { id: 'doubleTapOn', label: 'Double Tap' },
   { id: 'longPressOn', label: 'Long Press' },
-  { id: 'scrollUntilVisible', label: 'Scroll Until Visible' },
+  { id: 'assertVisible', label: 'Assert Visible' },
+  { id: 'inputText', label: 'Input Text' },
+  { id: 'scrollUntilVisible', label: 'Wait / Scroll Until' },
 ]
 
-export default function MaestroElementInspectorPanel({
-  root,
-  selected,
-  onSelect,
-  onQuickAction,
-}: MaestroElementInspectorPanelProps) {
-  const [tab, setTab] = useState<'hierarchy' | 'element'>('hierarchy')
-  const [query, setQuery] = useState('')
+function CopyValue({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      type="button"
+      title={`Copy ${label}`}
+      aria-label={`Copy ${label}`}
+      disabled={!value}
+      onClick={() => {
+        void navigator.clipboard.writeText(value).then(() => {
+          setCopied(true)
+          window.setTimeout(() => setCopied(false), 1000)
+        })
+      }}
+      className="shrink-0 rounded p-1 text-[var(--text-subtle)] hover:bg-white/5 hover:text-primary disabled:opacity-20"
+    >
+      {copied ? <Check size={10} className="text-emerald-400" /> : <Copy size={10} />}
+    </button>
+  )
+}
 
+export default function MaestroElementInspectorPanel({ root, selected, onQuickAction }: MaestroElementInspectorPanelProps) {
+  const [tab, setTab] = useState<'inspector' | 'actions'>('inspector')
   const recommendations = useMemo(
     () => (root && selected ? recommendMaestroSelectors(root, selected) : []),
     [root, selected],
   )
+  const primarySelector = recommendations[0]?.selector
+  const selectorText = primarySelector ? `${primarySelector.type}: ${primarySelector.value}` : ''
+  const rows = selected
+    ? [
+        ['Resource ID', selected.resourceId],
+        ['Class', selected.className],
+        ['Text', selected.text],
+        ['Content Desc', selected.contentDesc],
+        ['Bounds (px)', `[${selected.bounds.x}, ${selected.bounds.y}] – [${selected.bounds.x + selected.bounds.width}, ${selected.bounds.y + selected.bounds.height}]`],
+        ['Size (px)', `${selected.bounds.width} × ${selected.bounds.height}`],
+        ['Visible', selected.bounds.width > 0 && selected.bounds.height > 0 ? 'Yes' : 'No'],
+        ['Enabled', selected.enabled ? 'Yes' : 'No'],
+        ['XPath', selected.xpath],
+        ['Selector', selectorText],
+      ]
+    : []
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 gap-1 border-b border-[var(--border-subtle)] p-2">
-        <button
-          type="button"
-          onClick={() => setTab('hierarchy')}
-          className={`h-6 flex-1 rounded-md text-[8px] font-semibold ${tab === 'hierarchy' ? 'bg-primary text-on-primary' : 'text-[var(--text-subtle)] hover:bg-white/5'}`}
-        >
-          Hierarchy
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab('element')}
-          className={`h-6 flex-1 rounded-md text-[8px] font-semibold ${tab === 'element' ? 'bg-primary text-on-primary' : 'text-[var(--text-subtle)] hover:bg-white/5'}`}
-        >
-          Selected Element
-        </button>
+      <div className="flex h-9 shrink-0 border-b border-[var(--border-subtle)] px-2">
+        {(['inspector', 'actions'] as const).map((value) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setTab(value)}
+            className={`relative px-3 text-[9px] font-semibold capitalize ${tab === value ? 'text-[var(--text-base)] after:absolute after:inset-x-1 after:bottom-0 after:h-0.5 after:bg-primary' : 'text-[var(--text-subtle)] hover:text-[var(--text-muted)]'}`}
+          >
+            {value}
+          </button>
+        ))}
       </div>
 
-      {tab === 'hierarchy' ? (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div className="relative shrink-0 p-2">
-            <Search size={10} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-subtle)]" />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value.toLowerCase())}
-              placeholder="Search in hierarchy..."
-              className="h-6 w-full rounded-md border border-[var(--border-base)] bg-[var(--bg-input)] pl-6 pr-2 text-[9px] text-[var(--text-base)] outline-none focus:border-primary/50"
-            />
+      {!selected ? (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center text-[var(--text-subtle)]">
+          <MousePointerClick size={20} />
+          <p className="text-[9px] leading-relaxed">Select an element on Device Preview or in the Hierarchy.</p>
+        </div>
+      ) : tab === 'inspector' ? (
+        <div className="min-h-0 flex-1 overflow-auto p-2">
+          <div className="mb-2 rounded border border-primary/25 bg-primary/10 px-2 py-1.5">
+            <p className="text-[8px] font-black uppercase tracking-widest text-[var(--text-subtle)]">Selected Element</p>
+            <p className="mt-1 truncate font-mono text-[9px] text-primary">{selected.resourceId.split('/').pop() || selected.text || selected.className}</p>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-            {root ? (
-              <TreeRow node={root} selectedId={selected?.id ?? null} onSelect={onSelect} query={query} />
-            ) : (
-              <p className="p-2 text-[9px] text-[var(--text-subtle)]">Refresh the device preview to load the hierarchy.</p>
-            )}
-          </div>
+          <dl className="divide-y divide-[var(--border-subtle)]">
+            {rows.map(([label, value]) => (
+              <div key={label} className="grid grid-cols-[80px_minmax(0,1fr)_22px] items-start gap-2 py-1.5 text-[8px]">
+                <dt className="font-medium text-[var(--text-subtle)]">{label}</dt>
+                <dd className={`break-all ${value === 'Yes' ? 'text-emerald-400' : 'text-[var(--text-muted)]'}`}>{value || '—'}</dd>
+                {['Resource ID', 'Text', 'XPath', 'Selector'].includes(label) ? <CopyValue label={label} value={value} /> : <span />}
+              </div>
+            ))}
+          </dl>
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto p-3">
-          {!selected ? (
-            <p className="text-[9px] text-[var(--text-subtle)]">Select an element on the device preview or hierarchy.</p>
-          ) : (
-            <div className="space-y-3">
-              <div className="space-y-1">
-                {[
-                  ['Type', selected.className || '—'],
-                  ['Text', selected.text || '—'],
-                  ['Resource ID', selected.resourceId || '—'],
-                  ['Content Description', selected.contentDesc || '—'],
-                  ['Enabled', String(selected.enabled)],
-                  ['Clickable', String(selected.clickable)],
-                  ['Focusable', String(selected.focusable)],
-                  ['Bounds', `[${selected.bounds.x},${selected.bounds.y}][${selected.bounds.x + selected.bounds.width},${selected.bounds.y + selected.bounds.height}]`],
-                ].map(([label, value]) => (
-                  <div key={label} className="flex items-start gap-2 border-b border-[var(--border-subtle)]/50 py-1 text-[9px]">
-                    <span className="w-24 shrink-0 font-black uppercase tracking-wider text-[var(--text-subtle)]">{label}</span>
-                    <span className="break-all text-[var(--text-muted)]">{value}</span>
-                  </div>
-                ))}
-              </div>
-
-              <div>
-                <p className="mb-1 text-[8px] font-black uppercase tracking-widest text-[var(--text-subtle)]">Recommended Selectors</p>
-                <div className="space-y-1">
-                  {recommendations.map((rec) => (
-                    <div key={`${rec.label}-${rec.selector.value}`} className="rounded-md border border-[var(--border-subtle)] bg-black/10 px-2 py-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[8px] font-semibold text-[var(--text-muted)]">{rec.label}</span>
-                        <span className="text-[8px] text-amber-400">{'★'.repeat(rec.stars)}{'☆'.repeat(5 - rec.stars)}</span>
-                      </div>
-                      <p className="truncate text-[9px] text-[var(--text-base)]">{rec.selector.value}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <p className="mb-1 text-[8px] font-black uppercase tracking-widest text-[var(--text-subtle)]">Quick Actions</p>
-                <div className="grid grid-cols-2 gap-1">
-                  {QUICK_ACTIONS.map((action) => (
-                    <button
-                      key={action.id}
-                      type="button"
-                      disabled={recommendations.length === 0}
-                      onClick={() => onQuickAction(action.id, recommendations[0].selector)}
-                      className="rounded-md border border-primary/25 px-2 py-1.5 text-[8px] font-semibold text-primary hover:bg-primary/10 disabled:opacity-30"
-                    >
-                      {action.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+        <div className="min-h-0 flex-1 overflow-auto p-3">
+          <p className="mb-2 text-[8px] leading-relaxed text-[var(--text-subtle)]">Add a supported Maestro command using the strongest live selector.</p>
+          <div className="grid grid-cols-2 gap-1.5">
+            {QUICK_ACTIONS.map((action) => (
+              <button
+                key={action.id}
+                type="button"
+                disabled={!primarySelector}
+                onClick={() => primarySelector && onQuickAction(action.id, primarySelector)}
+                className="h-8 rounded border border-[var(--border-base)] bg-black/10 px-2 text-left text-[8px] font-semibold text-[var(--text-muted)] hover:border-primary/45 hover:bg-primary/10 hover:text-primary disabled:opacity-30"
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
+          {primarySelector && (
+            <div className="mt-3 rounded border border-[var(--border-subtle)] bg-black/10 p-2">
+              <p className="text-[8px] font-black uppercase tracking-widest text-[var(--text-subtle)]">Target</p>
+              <p className="mt-1 break-all font-mono text-[8px] text-[var(--text-muted)]">{selectorText}</p>
             </div>
           )}
         </div>

@@ -69,7 +69,7 @@ function failedCapture(
   }
 }
 
-function historyEntryFromResult(
+export function screenshotHistoryEntryFromResult(
   result: ScreenshotResult,
   fallbackDeviceName?: string,
 ): ScreenshotHistoryEntry {
@@ -155,7 +155,7 @@ export function useScreenshot({
   const recordCaptureResult = useCallback(
     (result: ScreenshotResult, fallbackDeviceName?: string) => {
       if (!result.success) return
-      const entry = historyEntryFromResult(result, fallbackDeviceName)
+      const entry = screenshotHistoryEntryFromResult(result, fallbackDeviceName)
       persistHistory((current) =>
         current.some((existing) => existing.id === entry.id)
           ? current
@@ -247,6 +247,52 @@ export function useScreenshot({
   const captureScroll = useCallback(
     (serialOverride?: string) => performCapture('scroll', serialOverride),
     [performCapture],
+  )
+
+  const captureMany = useCallback(
+    async (serials: readonly string[]): Promise<ScreenshotResult[]> => {
+      const targets = Array.from(new Set(serials.map((serial) => serial.trim()).filter(Boolean)))
+      if (targets.length === 0) return []
+      if (capturingRef.current) {
+        return targets.map((serial) => failedCapture(
+          serial,
+          'screen',
+          'A capture is already in progress',
+          'busy',
+        ))
+      }
+      capturingRef.current = true
+      setIsCapturing(true)
+      try {
+        const results: ScreenshotResult[] = []
+        // Capture sequentially so ADB/file writes stay bounded on large selections.
+        for (const serial of targets) {
+          try {
+            const deviceName = await resolveDeviceName(serial)
+            const result = await captureScreenshot({
+              deviceSerial: serial,
+              deviceName,
+              outputDir: screenshotDir || undefined,
+              customPath,
+            })
+            if (result.success) recordCaptureResult(result, deviceName)
+            results.push(result)
+          } catch (error) {
+            results.push(failedCapture(
+              serial,
+              'screen',
+              error instanceof Error ? error.message : String(error),
+              'capture_failed',
+            ))
+          }
+        }
+        return results
+      } finally {
+        capturingRef.current = false
+        setIsCapturing(false)
+      }
+    },
+    [customPath, recordCaptureResult, resolveDeviceName, screenshotDir],
   )
 
   const captureExternal = useCallback(
@@ -457,6 +503,7 @@ export function useScreenshot({
     setScreenshotDir,
     isCapturing,
     capture,
+    captureMany,
     captureScroll,
     captureExternal,
     captureMac,

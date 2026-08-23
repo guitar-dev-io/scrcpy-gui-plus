@@ -116,26 +116,33 @@ Status: **Implementation complete; available-hardware QA pending**
 
 ## Phase 5 - Capture All and compare sessions
 
-Status: **Pending; screenshot/history infrastructure available**
+Status: **Implementation complete; available-hardware QA pending**
 
-- [ ] Capture selected devices with device metadata and existing storage rules.
-- [ ] Persist lightweight compare sessions and reference selection.
-- [ ] Add a Compare workspace/tab without a new top-level navigation section.
+- [x] Capture selected online devices sequentially with device metadata and
+  existing screenshot storage/history rules.
+- [x] Persist bounded lightweight compare sessions and reference selection.
+- [x] Add a Compare workspace/tab without a new top-level navigation section.
+- [x] Allow compare-session creation from Capture All or selected history
+  entries, with malformed-storage and missing-history handling.
 
 ## Phase 6 - Visual compare workspace
 
-Status: **Pending**
+Status: **Implementation complete; available-hardware QA pending**
 
-- [ ] Side-by-side, fit, zoom, pan, fullscreen, reference change, and recapture.
-- [ ] Optional synchronized zoom/pan and links back to Device Detail/Logcat.
+- [x] Side-by-side, fit, zoom, pan, fullscreen, reference change, and recapture.
+- [x] Shared synchronized zoom, optional synchronized pan, and links back to
+  Device Detail/Logcat.
+- [x] Preserve reference intent when replacing a recaptured screenshot.
 
 ## Phase 7 - Overlay and deterministic difference
 
-Status: **Pending**
+Status: **Implementation complete; available-hardware QA pending**
 
-- [ ] Overlay with opacity.
-- [ ] Aspect-ratio-safe normalization and configurable pixel threshold.
-- [ ] Difference mask, deterministic similarity score, and configurable labels.
+- [x] Overlay with opacity and selectable comparison target.
+- [x] Aspect-ratio-safe contain normalization and configurable pixel threshold.
+- [x] Difference mask, deterministic similarity score, and configurable labels.
+- [x] Unit coverage for normalization, validity masking, thresholds, scores,
+  labels, and compare view-mode controls.
 
 ## Phase 8 - Ignore regions and baselines
 
@@ -186,9 +193,9 @@ Status: **Partial**
 - [x] Phase 2 - Basic broadcast and sync groups (available-hardware QA pending)
 - [x] Phase 3 - Relative tap/swipe/long press (available-hardware QA pending)
 - [x] Phase 4 - Smart element broadcast (available-hardware QA pending)
-- [ ] Phase 5 - Capture All and compare sessions
-- [ ] Phase 6 - Visual compare workspace
-- [ ] Phase 7 - Overlay and deterministic difference
+- [x] Phase 5 - Capture All and compare sessions (available-hardware QA pending)
+- [x] Phase 6 - Visual compare workspace (available-hardware QA pending)
+- [x] Phase 7 - Overlay and deterministic difference (available-hardware QA pending)
 - [ ] Phase 8 - Ignore regions and baselines
 - [ ] Phase 9 - Automation visual integration
 - [ ] Phase 10 - Product tooling

@@ -5,6 +5,23 @@ import { createEmptyMaestroFlow, createMaestroFlowAction } from './maestroBuilde
 import type { MaestroFlow } from '../types/maestroBuilder'
 
 describe('parseMaestroBuilderYaml', () => {
+  it('round-trips Maestro env variables into the visual model', () => {
+    const parsed = parseMaestroBuilderYaml([
+      'appId: "com.example.app"',
+      'env:',
+      '  username: "test@example.com"',
+      '  password: "123456"',
+      '---',
+      '- launchApp',
+      '',
+    ].join('\n'))
+
+    expect(parsed.variables?.map(({ name, value }) => ({ name, value }))).toEqual([
+      { name: 'username', value: 'test@example.com' },
+      { name: 'password', value: '123456' },
+    ])
+    expect(buildMaestroBuilderYaml(parsed)).toContain('env:\n  username: "test@example.com"')
+  })
   it('parses the reference Payment Success Flow header and every action', () => {
     const yaml = [
       'appId: "com.laundryyou.washxpress.dev"',

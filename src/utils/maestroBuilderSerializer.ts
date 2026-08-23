@@ -86,6 +86,15 @@ export function buildMaestroBuilderYaml(flow: MaestroFlow): string {
     lines.push('tags:')
     for (const tag of flow.tags) lines.push(`  - ${tag}`)
   }
+  const variables = (flow.variables ?? []).filter(
+    (variable) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(variable.name),
+  )
+  if (variables.length > 0) {
+    lines.push('env:')
+    for (const variable of variables) {
+      lines.push(`  ${variable.name}: ${yamlString(variable.value)}`)
+    }
+  }
   lines.push('---')
   for (const action of flow.actions) {
     if (!action.enabled) continue

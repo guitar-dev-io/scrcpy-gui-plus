@@ -3,6 +3,7 @@ export const WORKSPACE_TOOL_TABS = [
   'logcat',
   'shell',
   'file-explorer',
+  'compare',
 ] as const
 
 export type WorkspaceToolTab = (typeof WORKSPACE_TOOL_TABS)[number]

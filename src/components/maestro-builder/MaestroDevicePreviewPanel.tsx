@@ -45,6 +45,8 @@ export interface MaestroDevicePreviewPanelProps {
   loading: boolean
   error: { message: string; code?: string } | null
   onRefresh: () => void
+  recording?: boolean
+  onRecordNode?: (node: UiNode) => void
   /** Optional parent-owned rotation action; the typed device action is used by default. */
   onRotate?: PreviewActionHandler
   /** Optional parent-owned capture action; the typed screenshot service is used by default. */
@@ -71,6 +73,8 @@ export default function MaestroDevicePreviewPanel(
     loading,
     error,
     onRefresh,
+    recording = false,
+    onRecordNode,
     onRotate,
     onCaptureScreenshot,
     rotation = 0,
@@ -302,13 +306,13 @@ export default function MaestroDevicePreviewPanel(
 
   return (
     <div
-      className={`flex min-h-0 flex-col ${expanded ? 'fixed inset-4 z-50 rounded-xl border border-[var(--border-base)] bg-[var(--bg-surface)] shadow-2xl' : 'h-full'}`}
+      className={`flex min-h-0 flex-col ${expanded ? 'fixed inset-4 z-50 rounded-xl border border-[var(--border-base)] bg-[var(--bg-surface)] shadow-2xl' : 'h-full'} ${recording ? 'ring-1 ring-inset ring-red-400/70' : ''}`}
       aria-label="Maestro device preview"
     >
       <div className="flex shrink-0 items-center gap-1 border-b border-[var(--border-subtle)] px-3 py-1.5">
         <div className="min-w-0 flex-1">
           <div className="text-[8px] font-black uppercase tracking-widest text-[var(--text-subtle)]">
-            Device Preview
+            Device Preview {activeDevice ? `— ${activeDevice}` : ''}
           </div>
           <div
             className="truncate text-[8px] text-[var(--text-subtle)]"
@@ -376,7 +380,19 @@ export default function MaestroDevicePreviewPanel(
           {expanded ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
         </button>
       </div>
-      <div className="flex shrink-0 items-center gap-1 border-b border-[var(--border-subtle)] px-3 py-1">
+      {recording && (
+        <div className="flex h-6 shrink-0 items-center justify-center gap-1.5 border-b border-red-400/20 bg-red-400/5 text-[8px] font-semibold text-red-300" role="status">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-400" /> Recording · preview taps append locator-based steps
+        </div>
+      )}
+      <div className="flex shrink-0 items-center justify-center gap-1 border-b border-[var(--border-subtle)] px-3 py-1">
+        <button
+          type="button"
+          onClick={() => setScale(100)}
+          className="h-5 rounded border border-[var(--border-base)] px-2 text-[8px] text-[var(--text-muted)] hover:text-primary"
+        >
+          Fit
+        </button>
         <button
           type="button"
           aria-label="Zoom out"
@@ -389,17 +405,7 @@ export default function MaestroDevicePreviewPanel(
         >
           <Minus size={10} />
         </button>
-        <input
-          aria-label="Preview scale"
-          aria-valuetext={`${scale}%`}
-          type="range"
-          min={MIN_SCALE}
-          max={MAX_SCALE}
-          step={SCALE_STEP}
-          value={scale}
-          onChange={(event) => setScale(Number(event.target.value))}
-          className="h-1 flex-1"
-        />
+        <span className="w-10 text-center text-[8px] tabular-nums text-[var(--text-muted)]">{scale}%</span>
         <button
           type="button"
           aria-label="Zoom in"
@@ -412,9 +418,6 @@ export default function MaestroDevicePreviewPanel(
         >
           <Plus size={10} />
         </button>
-        <span className="w-8 text-right text-[8px] text-[var(--text-subtle)]">
-          {scale}%
-        </span>
       </div>
       {feedback && (
         <p
@@ -473,7 +476,10 @@ export default function MaestroDevicePreviewPanel(
                 }}
                 onMouseLeave={() => setHovered(null)}
                 onClick={(event) => {
-                  if (inspectMode) onSelect(pointToNode(event))
+                  if (!inspectMode) return
+                  const node = pointToNode(event)
+                  onSelect(node)
+                  if (recording && node) onRecordNode?.(node)
                 }}
               >
                 {hoveredRect && hovered?.id !== selected?.id && (

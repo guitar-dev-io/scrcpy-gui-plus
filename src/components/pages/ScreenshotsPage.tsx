@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import {
   Camera,
+  Columns3,
   ChevronsDown,
   Copy,
   ExternalLink,
@@ -44,6 +45,9 @@ export interface ScreenshotsPageProps {
     onChange: (id: string) => void
   }
   onCapture?: () => void
+  onCaptureAll?: () => void
+  captureAllCount?: number
+  onCompareSelected?: (entries: ScreenshotHistoryEntry[]) => void
   onCaptureScroll?: () => void
   autoCapture?: AutoScreenCapturePanelProps
   onChangeDirectory?: () => void
@@ -124,6 +128,9 @@ export default function ScreenshotsPage({
   isCapturing = false,
   captureSource,
   onCapture,
+  onCaptureAll,
+  captureAllCount = 0,
+  onCompareSelected,
   onCaptureScroll,
   autoCapture,
   onChangeDirectory,
@@ -356,6 +363,17 @@ export default function ScreenshotsPage({
               {isCapturing ? 'Capturing…' : 'Take screenshot'}
             </button>
           )}
+          {onCaptureAll && captureAllCount > 1 && (
+            <button
+              type="button"
+              onClick={onCaptureAll}
+              disabled={isCapturing}
+              className="flex h-9 items-center gap-2 rounded-lg border border-primary/45 bg-primary/10 px-3 text-[10px] font-semibold text-primary hover:bg-primary/15 disabled:opacity-40"
+            >
+              {isCapturing ? <Loader2 size={13} className="animate-spin" /> : <Columns3 size={13} />}
+              Capture All ({captureAllCount})
+            </button>
+          )}
         </div>
       </header>
 
@@ -468,6 +486,18 @@ export default function ScreenshotsPage({
           <span className="mr-auto text-[10px] font-semibold text-primary">
             {t('screenshot.selectedCount', { count: selectedIds.size })}
           </span>
+          {onCompareSelected && selectedIds.size > 1 && (
+            <button
+              type="button"
+              onClick={() => onCompareSelected(
+                visibleHistory.filter((entry) => selectedIds.has(entry.id)),
+              )}
+              disabled={bulkBusy}
+              className="flex h-8 items-center gap-1.5 rounded-lg border border-primary/40 px-2.5 text-[9px] text-primary hover:bg-primary/10 disabled:opacity-40"
+            >
+              <Columns3 size={11} /> Compare selected
+            </button>
+          )}
           <button
             type="button"
             onClick={() => void runBulkDelete(false)}

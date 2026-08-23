@@ -7,6 +7,8 @@ import type { ToolbarNotifier } from '../device-control-toolbar'
 
 interface ScriptManagerPageProps {
   activeDevice: string
+  availableDeviceIds?: readonly string[]
+  selectedDeviceIds?: ReadonlySet<string>
   customPath?: string
   outputDir?: string
   notify: ToolbarNotifier
@@ -22,6 +24,8 @@ const TABS: Array<{ id: ScriptManagerTab; label: string }> = [
 
 export default function ScriptManagerPage({
   activeDevice,
+  availableDeviceIds = activeDevice ? [activeDevice] : [],
+  selectedDeviceIds = new Set<string>(),
   customPath,
   outputDir,
   notify,
@@ -37,14 +41,14 @@ export default function ScriptManagerPage({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col px-4 pb-6 lg:px-6">
-      <header className="flex min-h-[72px] items-center border-b border-[var(--border-subtle)] py-4">
+      <header className={`flex items-center border-b border-[var(--border-subtle)] ${tab === 'maestro' ? 'min-h-10 py-1.5' : 'min-h-[72px] py-4'}`}>
         <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/25 bg-primary/10 text-primary">
+          <span className={`${tab === 'maestro' ? 'hidden' : 'flex'} h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/25 bg-primary/10 text-primary`}>
             <Braces size={16} aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <h1 className="text-lg font-semibold text-[var(--text-base)]">Script Manager</h1>
-            <p className="mt-1 text-[10px] text-[var(--text-subtle)]">
+            <h1 className={tab === 'maestro' ? 'text-[9px] font-semibold text-[var(--text-subtle)]' : 'text-lg font-semibold text-[var(--text-base)]'}>Script Manager</h1>
+            <p className={`mt-1 text-[10px] text-[var(--text-subtle)] ${tab === 'maestro' ? 'hidden' : ''}`}>
               Build ADB scripts around an app package and run a repeatable smoke test.
             </p>
           </div>
@@ -67,8 +71,11 @@ export default function ScriptManagerPage({
         <section aria-label="Maestro Builder" className="mt-3 min-h-0 flex-1">
           <MaestroBuilder
             activeDevice={activeDevice}
+            availableDeviceIds={availableDeviceIds}
+            selectedDeviceIds={selectedDeviceIds}
             customPath={customPath}
             packageName={packageName}
+            outputDir={outputDir}
             notify={notify}
           />
         </section>

@@ -202,10 +202,40 @@ describe('MaestroFlowBuilderPanel', () => {
     )
 
     expect(
+      screen.getByText('No steps yet'),
+    ).toBeInTheDocument()
+    expect(
       screen.getByText(
-        'Add an action from the library, or select an element on the device preview.',
+        'Select an element from the device or start recording your actions.',
       ),
     ).toBeInTheDocument()
+  })
+
+  it('wires the compact add-step and record controls', () => {
+    const flow = panelFlow([])
+    const onAddAction = vi.fn()
+    const onToggleRecording = vi.fn()
+
+    render(
+      <MaestroFlowBuilderPanel
+        flow={flow}
+        issues={noIssues}
+        onToggleEnabled={vi.fn()}
+        onMove={vi.fn()}
+        onDuplicate={vi.fn()}
+        onDelete={vi.fn()}
+        onSelectorChange={vi.fn()}
+        onFieldChange={vi.fn()}
+        onAddAction={onAddAction}
+        onToggleRecording={onToggleRecording}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add Step' }))
+
+    expect(onToggleRecording).toHaveBeenCalledOnce()
+    expect(onAddAction).toHaveBeenCalledWith(expect.any(String))
   })
 
   it('renders action issues and passes selected-card events to the current callbacks', () => {

@@ -40,8 +40,10 @@ function ArtifactImage({ path }: { path: string }) {
 
 export default function MaestroRunHistoryPanel({
   refreshToken,
+  showHeader = true,
 }: {
   refreshToken: number
+  showHeader?: boolean
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const runs = useMemo(
@@ -57,12 +59,12 @@ export default function MaestroRunHistoryPanel({
   )
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-1.5 border-b border-[var(--border-subtle)] px-3 py-1.5">
+      {showHeader && <div className="flex shrink-0 items-center gap-1.5 border-b border-[var(--border-subtle)] px-3 py-1.5">
         <History size={11} className="text-[var(--text-subtle)]" />
         <span className="text-[8px] font-black uppercase tracking-widest text-[var(--text-subtle)]">
           Run History
         </span>
-      </div>
+      </div>}
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {!runs.length ? (
           <p className="p-2 text-[9px] text-[var(--text-subtle)]">

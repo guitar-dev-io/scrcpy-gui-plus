@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   Check,
+  Columns3,
   FileText,
   LayoutGrid,
   ListChecks,
@@ -38,6 +39,7 @@ const toolTabs: ReadonlyArray<{
   { id: 'logcat', label: 'Logcat', icon: ScrollText },
   { id: 'shell', label: 'Shell', icon: Terminal },
   { id: 'file-explorer', label: 'File Explorer', icon: FileText },
+  { id: 'compare', label: 'Compare', icon: Columns3 },
 ]
 
 export default function WorkspaceTabBar({

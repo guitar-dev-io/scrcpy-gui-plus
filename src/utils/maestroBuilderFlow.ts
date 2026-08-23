@@ -50,6 +50,7 @@ export function createEmptyMaestroFlow(
     name,
     appId,
     tags: [],
+    variables: [],
     actions: [],
     createdAt: now,
     updatedAt: now,

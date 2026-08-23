@@ -132,6 +132,8 @@ export interface MaestroFlow {
   name: string
   appId: string
   tags: string[]
+  /** Named references used by action fields as `${name}` expressions. */
+  variables?: Array<{ id: string; name: string; value: string; sensitive?: boolean }>
   actions: MaestroFlowAction[]
   createdAt: string
   updatedAt: string

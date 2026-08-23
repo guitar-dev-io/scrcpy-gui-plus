@@ -250,6 +250,7 @@ export function parseMaestroBuilderYaml(yaml: string, name = 'Imported flow'): M
 
   let appId = ''
   const tags: string[] = []
+  const variables: NonNullable<MaestroFlow['variables']> = []
   for (let i = 0; i < headerLines.length; i += 1) {
     const line = headerLines[i]
     const appIdMatch = line.match(/^appId:\s*(.*)$/)
@@ -264,11 +265,27 @@ export function parseMaestroBuilderYaml(yaml: string, name = 'Imported flow'): M
         j += 1
       }
       i = j - 1
+      continue
+    }
+    if (line.trim() === 'env:') {
+      let j = i + 1
+      while (j < headerLines.length) {
+        const match = headerLines[j].match(/^\s{2,}([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$/)
+        if (!match) break
+        variables.push({
+          id: `variable-import-${variables.length + 1}`,
+          name: match[1],
+          value: unquoteYamlScalar(match[2]),
+        })
+        j += 1
+      }
+      i = j - 1
     }
   }
 
   const flow = createEmptyMaestroFlow(appId, name)
   flow.tags = tags
+  flow.variables = variables
   flow.actions = groupBlocks(bodyLines).map(parseBlock)
   return flow
 }

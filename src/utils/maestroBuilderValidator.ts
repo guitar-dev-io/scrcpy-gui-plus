@@ -19,6 +19,15 @@ export function validateMaestroBuilderFlow(flow: MaestroFlow): MaestroValidation
   if (flow.actions.length === 0) {
     issues.push({ actionId: FLOW_LEVEL_ISSUE, message: 'Add at least one action.' })
   }
+  const variableNames = new Set<string>()
+  for (const variable of flow.variables ?? []) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(variable.name)) {
+      issues.push({ actionId: FLOW_LEVEL_ISSUE, message: `Variable "${variable.name}" must use letters, numbers, or underscores and cannot start with a number.` })
+    } else if (variableNames.has(variable.name)) {
+      issues.push({ actionId: FLOW_LEVEL_ISSUE, message: `Variable "${variable.name}" is duplicated.` })
+    }
+    variableNames.add(variable.name)
+  }
 
   for (const action of flow.actions) {
     issues.push(...validateMaestroBuilderAction(action))

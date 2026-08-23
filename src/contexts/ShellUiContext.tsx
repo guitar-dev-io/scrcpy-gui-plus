@@ -147,7 +147,7 @@ export function ShellUiProvider({
       navigate('file-explorer', { preserveWorkspace: true })
       return
     }
-    setDashboardBottomTab(tab)
+    if (tab !== 'compare') setDashboardBottomTab(tab)
     navigate('dashboard', { preserveWorkspace: true })
   }
 
