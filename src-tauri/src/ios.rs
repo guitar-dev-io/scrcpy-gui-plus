@@ -73,6 +73,17 @@ impl Default for IosState {
     }
 }
 
+impl IosState {
+    pub fn kill_all_blocking(&self) {
+        if let Ok(mut processes) = self.processes.lock() {
+            for (_, child) in processes.iter_mut() {
+                let _ = child.start_kill();
+            }
+            processes.clear();
+        }
+    }
+}
+
 #[derive(Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct IosDeviceInfo {

@@ -10,6 +10,14 @@ use serde::Serialize;
 
 const TIMEOUT_SECS: u64 = 15;
 
+#[derive(Debug, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AndroidScreenState {
+    On,
+    Off,
+    Dozing,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeviceStatus {
@@ -35,11 +43,17 @@ pub struct DeviceStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resolution: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub rotation: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub density: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub battery_level: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub battery_temperature_c: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub charging: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub screen_state: Option<AndroidScreenState>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ip_address: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -62,6 +76,21 @@ pub struct DeviceStatus {
     pub error_code: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceDisplayGeometry {
+    pub success: bool,
+    pub serial: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolution: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rotation: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<String>,
+}
+
 impl DeviceStatus {
     fn empty(serial: String) -> Self {
         DeviceStatus {
@@ -76,9 +105,12 @@ impl DeviceStatus {
             bootloader: None,
             uptime_seconds: None,
             resolution: None,
+            rotation: None,
             density: None,
             battery_level: None,
+            battery_temperature_c: None,
             charging: None,
+            screen_state: None,
             ip_address: None,
             storage_total_kb: None,
             storage_used_kb: None,
@@ -122,9 +154,13 @@ fn value_after_colon(text: &str, key: &str) -> Option<String> {
     None
 }
 
-/// Parse `dumpsys battery` for level + charging state.
-fn parse_battery(text: &str) -> (Option<i32>, Option<bool>) {
+/// Parse `dumpsys battery` for level, temperature (tenths of a degree Celsius),
+/// and charging state.
+fn parse_battery(text: &str) -> (Option<i32>, Option<f64>, Option<bool>) {
     let level = value_after_colon(text, "level").and_then(|v| v.parse::<i32>().ok());
+    let temperature = value_after_colon(text, "temperature")
+        .and_then(|v| v.parse::<i32>().ok())
+        .map(|value| value as f64 / 10.0);
     // `status: 2` == charging; also treat any powered source as charging.
     let mut charging = None;
     if let Some(status) = value_after_colon(text, "status").and_then(|v| v.parse::<i32>().ok()) {
@@ -137,7 +173,47 @@ fn parse_battery(text: &str) -> (Option<i32>, Option<bool>) {
             }
         }
     }
-    (level, charging)
+    (level, temperature, charging)
+}
+
+/// Parse the stable and legacy screen-state markers emitted by `dumpsys power`.
+/// Prefer the display controller state because wakefulness may remain `Awake`
+/// briefly while the panel is already turning off.
+fn parse_screen_state(text: &str) -> Option<AndroidScreenState> {
+    let lowercase = text.to_ascii_lowercase();
+
+    if lowercase.contains("display power: state=doze")
+        || lowercase.contains("display power: state=doze_suspend")
+    {
+        return Some(AndroidScreenState::Dozing);
+    }
+    if lowercase.contains("display power: state=on") {
+        return Some(AndroidScreenState::On);
+    }
+    if lowercase.contains("display power: state=off") {
+        return Some(AndroidScreenState::Off);
+    }
+
+    for line in lowercase.lines().map(str::trim) {
+        if line.contains("mwakefulness=dozing") {
+            return Some(AndroidScreenState::Dozing);
+        }
+        if line.contains("mwakefulness=awake")
+            || line.contains("mwakefulness=dreaming")
+            || line.contains("mscreenon=true")
+            || line.contains("minteractive=true")
+        {
+            return Some(AndroidScreenState::On);
+        }
+        if line.contains("mwakefulness=asleep")
+            || line.contains("mscreenon=false")
+            || line.contains("minteractive=false")
+        {
+            return Some(AndroidScreenState::Off);
+        }
+    }
+
+    None
 }
 
 /// Extract an IPv4 address from `ip addr show` output ("inet 192.168.x.x/24").
@@ -201,6 +277,76 @@ fn parse_uptime_seconds(text: &str) -> Option<u64> {
         .and_then(|value| value.parse::<f64>().ok())
         .filter(|value| value.is_finite() && *value >= 0.0)
         .map(|value| value.floor() as u64)
+}
+
+fn parse_display_rotation(text: &str) -> Option<u8> {
+    for line in text.lines().map(str::trim) {
+        for marker in ["SurfaceOrientation:", "mCurrentOrientation="] {
+            if let Some(value) = line.split_once(marker).map(|(_, value)| value.trim()) {
+                if let Ok(rotation) = value.parse::<u8>() {
+                    if rotation <= 3 {
+                        return Some(rotation);
+                    }
+                }
+            }
+        }
+        if let Some((_, value)) = line.split_once("mCurrentRotation=") {
+            return match value.trim().split_whitespace().next().unwrap_or("") {
+                "ROTATION_0" | "0" => Some(0),
+                "ROTATION_90" | "1" => Some(1),
+                "ROTATION_180" | "2" => Some(2),
+                "ROTATION_270" | "3" => Some(3),
+                _ => None,
+            };
+        }
+    }
+    None
+}
+
+#[tauri::command]
+pub async fn get_device_display_geometry(
+    serial: String,
+    custom_path: Option<String>,
+) -> DeviceDisplayGeometry {
+    let serial = serial.trim().to_string();
+    if let Err(error) = adb::validate_serial(&serial) {
+        return DeviceDisplayGeometry {
+            success: false,
+            serial,
+            resolution: None,
+            rotation: None,
+            error: Some(error.message()),
+            error_code: Some(error.code().to_string()),
+        };
+    }
+
+    let resolution = adb::run_adb_text(
+        Some(&serial),
+        &["shell", "wm", "size"],
+        custom_path.clone(),
+        TIMEOUT_SECS,
+    )
+    .await
+    .ok()
+    .and_then(|output| value_after_colon(&output, "Physical size"));
+    let rotation = adb::run_adb_text(
+        Some(&serial),
+        &["shell", "dumpsys", "input"],
+        custom_path,
+        TIMEOUT_SECS,
+    )
+    .await
+    .ok()
+    .and_then(|output| parse_display_rotation(&output));
+    let success = resolution.is_some();
+    DeviceDisplayGeometry {
+        success,
+        serial,
+        resolution,
+        rotation,
+        error: (!success).then(|| "Device display geometry is unavailable".to_string()),
+        error_code: (!success).then(|| "geometry_unavailable".to_string()),
+    }
 }
 
 /// Gather a full status snapshot for a device.
@@ -282,6 +428,17 @@ pub async fn get_device_status(serial: String, custom_path: Option<String>) -> D
 
     if let Ok(t) = adb::run_adb_text(
         Some(&serial),
+        &["shell", "dumpsys", "input"],
+        custom_path.clone(),
+        TIMEOUT_SECS,
+    )
+    .await
+    {
+        status.rotation = parse_display_rotation(&t);
+    }
+
+    if let Ok(t) = adb::run_adb_text(
+        Some(&serial),
         &["shell", "wm", "density"],
         custom_path.clone(),
         TIMEOUT_SECS,
@@ -299,9 +456,21 @@ pub async fn get_device_status(serial: String, custom_path: Option<String>) -> D
     )
     .await
     {
-        let (level, charging) = parse_battery(&t);
+        let (level, temperature, charging) = parse_battery(&t);
         status.battery_level = level;
+        status.battery_temperature_c = temperature;
         status.charging = charging;
+    }
+
+    if let Ok(t) = adb::run_adb_text(
+        Some(&serial),
+        &["shell", "dumpsys", "power"],
+        custom_path.clone(),
+        TIMEOUT_SECS,
+    )
+    .await
+    {
+        status.screen_state = parse_screen_state(&t);
     }
 
     // IP: prefer wlan0; fall back to a generic `ip route` src.
@@ -378,18 +547,63 @@ mod tests {
 
     #[test]
     fn parse_battery_level_and_charging() {
-        let text = "  level: 87\n  status: 2\n  AC powered: false\n";
-        let (level, charging) = parse_battery(text);
+        let text = "  level: 87\n  temperature: 321\n  status: 2\n  AC powered: false\n";
+        let (level, temperature, charging) = parse_battery(text);
         assert_eq!(level, Some(87));
+        assert_eq!(temperature, Some(32.1));
         assert_eq!(charging, Some(true));
     }
 
     #[test]
     fn parse_battery_not_charging() {
         let text = "  level: 50\n  status: 3\n  AC powered: false\n  USB powered: false\n";
-        let (level, charging) = parse_battery(text);
+        let (level, temperature, charging) = parse_battery(text);
         assert_eq!(level, Some(50));
+        assert_eq!(temperature, None);
         assert_eq!(charging, Some(false));
+    }
+
+    #[test]
+    fn parse_screen_state_prefers_display_controller_state() {
+        let text = "Power Manager State:\n  mWakefulness=Awake\nDisplay Power: state=OFF\n";
+        assert_eq!(parse_screen_state(text), Some(AndroidScreenState::Off));
+    }
+
+    #[test]
+    fn parse_screen_state_supports_wakefulness_and_legacy_markers() {
+        assert_eq!(
+            parse_screen_state("Power Manager State:\n  mWakefulness=Dozing\n"),
+            Some(AndroidScreenState::Dozing)
+        );
+        assert_eq!(
+            parse_screen_state("mScreenOn=true\nmInteractive=true\n"),
+            Some(AndroidScreenState::On)
+        );
+        assert_eq!(parse_screen_state("unrecognized output"), None);
+    }
+
+    #[test]
+    fn health_additions_serialize_with_frontend_field_names() {
+        let mut status = DeviceStatus::empty("pixel-1".to_string());
+        status.battery_temperature_c = Some(32.1);
+        status.screen_state = Some(AndroidScreenState::Dozing);
+        status.rotation = Some(1);
+
+        let json = serde_json::to_value(status).expect("status should serialize");
+        assert_eq!(json["batteryTemperatureC"], serde_json::json!(32.1));
+        assert_eq!(json["screenState"], serde_json::json!("dozing"));
+        assert_eq!(json["rotation"], serde_json::json!(1));
+    }
+
+    #[test]
+    fn parse_rotation_supports_common_android_dumpsys_formats() {
+        assert_eq!(parse_display_rotation("SurfaceOrientation: 1\n"), Some(1));
+        assert_eq!(
+            parse_display_rotation("mCurrentRotation=ROTATION_270\n"),
+            Some(3)
+        );
+        assert_eq!(parse_display_rotation("mCurrentOrientation=2\n"), Some(2));
+        assert_eq!(parse_display_rotation("SurfaceOrientation: 9\n"), None);
     }
 
     #[test]

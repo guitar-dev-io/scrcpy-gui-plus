@@ -199,13 +199,19 @@ mod tests {
     #[test]
     fn value_after_colon_extracts_wm_size() {
         let text = "Physical size: 1080x2340\n";
-        assert_eq!(value_after_colon(text, "Physical size"), Some("1080x2340".to_string()));
+        assert_eq!(
+            value_after_colon(text, "Physical size"),
+            Some("1080x2340".to_string())
+        );
     }
 
     #[test]
     fn value_after_colon_extracts_density() {
         let text = "Physical density: 440";
-        assert_eq!(value_after_colon(text, "Physical density"), Some("440".to_string()));
+        assert_eq!(
+            value_after_colon(text, "Physical density"),
+            Some("440".to_string())
+        );
     }
 
     #[test]

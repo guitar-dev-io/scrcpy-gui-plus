@@ -10,6 +10,7 @@ import SimulatorsPanel from '../simulators'
 import PhysicalAndroidStage from '../simulators/PhysicalAndroidStage'
 import IosWorkspaceStage from '../dashboard/IosWorkspaceStage'
 import type { IosDeviceInfo } from '../../hooks/useIosMirror'
+import type { SimScreenshotResult, SimulatorDevice } from '../../types/simDeck'
 import type { ToolbarNotifier } from '../device-control-toolbar'
 
 type DeviceSourceTab = 'simdeck' | 'android' | 'ios'
@@ -17,25 +18,34 @@ type DeviceSourceTab = 'simdeck' | 'android' | 'ios'
 interface SimulatorsPageProps {
   notify: ToolbarNotifier
   customPath?: string
+  screenshotDir?: string
   androidDevices?: string[]
   androidLabels?: Record<string, string>
   iosDevices?: IosDeviceInfo[]
+  onScreenshotCaptured?: (
+    result: SimScreenshotResult,
+    device: SimulatorDevice,
+  ) => void
   onRefreshAndroid?: () => void | Promise<void>
   onRefreshIos?: () => void | Promise<void>
   onOpenAndroid?: (serial: string) => void
   onOpenIos?: (device: IosDeviceInfo) => void
+  onIosFrame?: (udid: string, frameSrc: string | null) => void
 }
 
 export default function SimulatorsPage({
   notify,
   customPath,
+  screenshotDir,
   androidDevices = [],
   androidLabels = {},
   iosDevices = [],
+  onScreenshotCaptured,
   onRefreshAndroid,
   onRefreshIos,
   onOpenAndroid,
   onOpenIos,
+  onIosFrame,
 }: SimulatorsPageProps) {
   const [source, setSource] = useState<DeviceSourceTab>('simdeck')
   const [androidSerial, setAndroidSerial] = useState('')
@@ -132,7 +142,9 @@ export default function SimulatorsPage({
             isOpen={false}
             onClose={() => {}}
             customPath={customPath}
+            screenshotDir={screenshotDir}
             notify={notify}
+            onScreenshotCaptured={onScreenshotCaptured}
           />
         ) : source === 'android' ? (
           <div className="flex h-full min-h-0 flex-col gap-3">
@@ -177,6 +189,7 @@ export default function SimulatorsPage({
                   key={activeIos.udid}
                   device={activeIos}
                   customPath={customPath}
+                  onFrame={(frameSrc) => onIosFrame?.(activeIos.udid, frameSrc)}
                 />
                 {onOpenIos && (
                   <button

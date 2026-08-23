@@ -33,6 +33,17 @@ impl Default for LogcatState {
     }
 }
 
+impl LogcatState {
+    pub fn kill_all_blocking(&self) {
+        if let Ok(mut processes) = self.processes.lock() {
+            for (_, child) in processes.iter_mut() {
+                let _ = child.start_kill();
+            }
+            processes.clear();
+        }
+    }
+}
+
 /// Start streaming logcat for a device. If a stream is already running for the
 /// serial it is stopped and replaced. Emits `logcat-line` events shaped as
 /// `{ serial, chunk }` where `chunk` is a newline-joined batch of lines, and a
@@ -174,10 +185,7 @@ pub async fn stop_logcat(
 
 /// Flush the device logcat buffer (`adb logcat -c`).
 #[tauri::command]
-pub async fn clear_logcat(
-    serial: String,
-    custom_path: Option<String>,
-) -> serde_json::Value {
+pub async fn clear_logcat(serial: String, custom_path: Option<String>) -> serde_json::Value {
     let serial = serial.trim().to_string();
     if let Err(e) = adb::validate_serial(&serial) {
         return json!({ "success": false, "error": e.message(), "errorCode": e.code() });

@@ -14,6 +14,7 @@ interface SessionPanelProps {
 const STATE_TONE: Record<EmbeddedSessionState, string> = {
   idle: 'text-zinc-400 bg-zinc-800/60',
   starting: 'text-amber-300 bg-amber-500/15',
+  reconnecting: 'text-amber-300 bg-amber-500/15',
   connected: 'text-emerald-300 bg-emerald-500/15',
   stopping: 'text-amber-300 bg-amber-500/15',
   disconnected: 'text-zinc-400 bg-zinc-800/60',
@@ -38,7 +39,8 @@ export default function SessionPanel({
 }: SessionPanelProps) {
   const { t } = useI18n()
   const connected = state === 'connected'
-  const busy = state === 'starting' || state === 'stopping'
+  const busy =
+    state === 'starting' || state === 'reconnecting' || state === 'stopping'
 
   const [uptime, setUptime] = useState(0)
   const startedAtRef = useRef<number | null>(null)
@@ -62,7 +64,7 @@ export default function SessionPanel({
   const stateLabel =
     state === 'connected'
       ? t('workspace.connected')
-      : state === 'starting'
+      : state === 'starting' || state === 'reconnecting'
         ? t('workspace.connecting')
         : state === 'stopping'
           ? t('workspace.stopping')

@@ -25,6 +25,76 @@ export const th: DeepPartialTranslations = {
     confirm: 'ยืนยัน',
     loading: 'กำลังโหลด...',
   },
+  companion: {
+    title: 'Android Companion',
+    subtitle: 'USB หรือ LAN ส่วนตัว • แยกจาก ADB',
+    scan: 'เริ่ม USB Companion',
+    usbMode: 'USB',
+    lanMode: 'QR / LAN',
+    usbHint: 'เชื่อมต่อด้วยสาย USB ผ่าน Android Open Accessory',
+    lanHint: 'จับคู่ผ่าน Wi-Fi หรือ LAN ส่วนตัวเดียวกันด้วย QR Code',
+    scanning: 'กำลังเริ่ม...',
+    cancelScan: 'ยกเลิก',
+    cancelling: 'กำลังยกเลิก...',
+    noDevice: 'ยังไม่ได้เชื่อมต่อ Android Companion',
+    installHint:
+      'เปิดแอป Android แล้วเลือก QR / LAN เมื่ออยู่เครือข่ายส่วนตัวเดียวกัน หรือเลือก USB การใช้ USB Accessory อาจหยุด ADB/scrcpy ที่กำลังทำงาน',
+    lanQrLabel: 'QR Code สำหรับจับคู่ Android Companion ผ่าน LAN',
+    lanInstructions:
+      'ในแอป Android ให้แตะ สแกน QR จาก Desktop โค้ดนี้ใช้เชื่อมต่อซ้ำได้ภายใน 30 นาที',
+    lanSecurityNote:
+      'LAN MVP ยืนยันตัวตนแล้วแต่ยังไม่เข้ารหัส โปรดใช้เฉพาะเครือข่ายส่วนตัวที่เชื่อถือได้',
+    manualPairing: 'โค้ดจับคู่สำหรับกรอกเอง',
+    connected: 'เชื่อมต่อแล้ว',
+    disconnect: 'ยกเลิกการเชื่อมต่อ',
+    unknown: 'ไม่ทราบ',
+    ping: 'ทดสอบ Ping',
+    deviceInfo: 'ข้อมูลอุปกรณ์',
+    model: 'รุ่น',
+    appVersion: 'แอป',
+    packageName: 'แพ็กเกจ',
+    clipboard: 'คลิปบอร์ด',
+    clipboardPlaceholder: 'ข้อความที่จะส่ง...',
+    sendClipboard: 'ส่ง',
+    readClipboard: 'อ่าน',
+    clipboardSent: 'ส่งคลิปบอร์ดแล้ว',
+    clipboardReceived: 'อ่านคลิปบอร์ดแล้ว',
+    clipboardEmpty: 'คลิปบอร์ดว่าง',
+    urlPlaceholder: 'https://example.com',
+    openUrl: 'เปิด URL',
+    openUrlSuccess: 'เปิด URL แล้ว โปรดเปิดแอป Companion และเชื่อมต่ออีกครั้ง',
+    requestCompleted: 'ดำเนินการสำเร็จ',
+    screenShare: 'แชร์หน้าจอ',
+    screenStates: {
+      connecting: 'กำลังเชื่อมต่อ',
+      waiting_permission: 'รออนุญาต',
+      streaming: 'กำลังส่งภาพ',
+      reconnecting: 'กำลังเชื่อมต่อใหม่',
+      stopped: 'หยุดแล้ว',
+      error: 'ผิดพลาด',
+    },
+    screenPreview: 'ตัวอย่างหน้าจอ Android',
+    startScreen: 'เริ่มส่งหน้าจอ',
+    stopScreen: 'หยุดส่งหน้าจอ',
+    screenPermissionHint:
+      'กดเริ่มส่งหน้าจอ แล้วอนุญาตการบันทึกหน้าจอในหน้าต่างระบบ Android',
+    screenViewerHint:
+      'หลังอนุญาตแล้ว ภาพสดจะแสดงตรงนี้ใน Connection Tools และแสดงใน Dashboard ของอุปกรณ์ที่เปิดอยู่ด้วย',
+    screenLockNote:
+      'สลับแอปได้ตามปกติ แต่การล็อกโทรศัพท์อาจทำให้ Android หยุดจับภาพ ให้ปลดล็อกแล้วเริ่มแชร์ใหม่',
+    screenSecurityNote:
+      'ส่งภาพ JPEG ผ่าน LAN ส่วนตัวที่จับคู่แล้ว และโหมดนี้ดูได้อย่างเดียว',
+    screenUnsupported:
+      'อัปเดตแอป Android Companion เพื่อเปิดใช้การส่งหน้าจอผ่าน QR / LAN',
+    lanScreenMode:
+      'Companion แบบ QR / LAN แชร์หน้าจอได้หลังอนุญาตจาก Android และเป็นโหมดดูอย่างเดียว',
+    usbScreenMode:
+      'Companion แบบ USB ใช้สั่งงานอุปกรณ์ ส่วนการมิเรอร์แบบควบคุมได้ใช้ ADB + scrcpy',
+    adbFallbackMode:
+      'ถ้า Companion ส่งภาพไม่ได้ Workspace จะ fallback ไปใช้ ADB/scrcpy เมื่อเปิด USB หรือ Wireless debugging แล้ว',
+    requestFailed: 'คำขอ Companion ไม่สำเร็จ',
+    noTauri: 'การเชื่อมต่อ Companion ใช้ได้ในแอป desktop เท่านั้น',
+  },
   screenshot: {
     title: 'ภาพหน้าจอ',
     capture: 'จับภาพหน้าจอ',
@@ -40,7 +110,8 @@ export const th: DeepPartialTranslations = {
     copyImage: 'คัดลอกรูปภาพ',
     deleteEntry: 'ลบออกจากประวัติ',
     deleteFile: 'ลบไฟล์',
-    deleteFileConfirm: 'ลบ {filename} ออกจากเครื่องหรือไม่? การกระทำนี้ไม่สามารถย้อนกลับได้',
+    deleteFileConfirm:
+      'ลบ {filename} ออกจากเครื่องหรือไม่? การกระทำนี้ไม่สามารถย้อนกลับได้',
     captureSuccessTitle: 'บันทึกภาพหน้าจอแล้ว',
     captureSuccessMessage: 'บันทึกไปที่ {path}',
     captureFailedTitle: 'จับภาพหน้าจอไม่สำเร็จ',
@@ -49,6 +120,27 @@ export const th: DeepPartialTranslations = {
     actionFailedTitle: 'ดำเนินการไม่สำเร็จ',
     selectDirectoryTitle: 'เลือกโฟลเดอร์สำหรับภาพหน้าจอ',
     noDevice: 'เลือกอุปกรณ์เพื่อจับภาพ',
+    scrollCapture: 'จับภาพแบบเลื่อน',
+    scrollCaptureConfirm:
+      'ระบบจะเลื่อนหน้าจออุปกรณ์อัตโนมัติและหยุดไว้ที่ตำแหน่งสุดท้าย ต้องการดำเนินการต่อหรือไม่?',
+    scrollBadge: 'ภาพเลื่อน',
+    partialScrollBadge: 'ภาพเลื่อนบางส่วน',
+    partialCaptureTitle: 'บันทึกภาพแบบเลื่อนบางส่วนแล้ว',
+    partialCaptureMessage:
+      'ระบบยังยืนยันจุดสิ้นสุดของหน้าไม่ได้ ภาพนี้จึงอาจไม่ครบถ้วน บันทึกไว้ที่ {path}',
+    selectAllVisible: 'เลือกที่แสดงทั้งหมด',
+    selectionActions: 'การทำงานกับภาพหน้าจอที่เลือก',
+    selectedCount: 'เลือกแล้ว {count} รายการ',
+    removeSelected: 'นำที่เลือกออก',
+    deleteSelected: 'ลบไฟล์ที่เลือก',
+    clearSelection: 'ยกเลิกการเลือก',
+    deleteSelectedConfirm:
+      'ลบไฟล์ภาพหน้าจอที่เลือก {count} ไฟล์ออกจากเครื่องหรือไม่? การกระทำนี้ไม่สามารถย้อนกลับได้',
+    batchDeleteSuccessTitle: 'ลบภาพหน้าจอแล้ว',
+    batchDeleteSuccessMessage: 'ลบไฟล์ภาพหน้าจอแล้ว {count} ไฟล์',
+    batchDeletePartialMessage:
+      'มี {failed} ไฟล์ที่ลบไม่สำเร็จ รายการที่ลบสำเร็จถูกนำออกจากประวัติแล้ว',
+    deleteFailedMessage: 'ไม่สามารถลบ {filename}: {error}',
     errors: {
       adb_not_found: 'ไม่พบโปรแกรม ADB โปรดติดตั้งหรือกำหนดเส้นทาง scrcpy',
       device_offline: 'อุปกรณ์ออฟไลน์',
@@ -60,10 +152,21 @@ export const th: DeepPartialTranslations = {
       invalid_serial: 'ซีเรียลอุปกรณ์ไม่ถูกต้อง',
       invalid_output_dir: 'โฟลเดอร์ปลายทางไม่ถูกต้อง',
       corrupt_png: 'ภาพที่จับได้ว่างเปล่าหรือเสียหาย',
+      decode_failed: 'ไม่สามารถถอดรหัสภาพที่จับได้',
+      encode_failed: 'ไม่สามารถสร้างไฟล์ภาพหน้าจอแบบยาวได้',
+      not_scrollable: 'หน้าจอปัจจุบันไม่เลื่อนหรือไม่มีเนื้อหาเพิ่มเติมแล้ว',
+      no_overlap:
+        'ไม่สามารถจัดแนวภาพแต่ละช่วงได้ โปรดลองกับหน้าที่ไม่มีภาพเคลื่อนไหว',
+      dimension_changed: 'ขนาดหรือแนวหน้าจอเปลี่ยนระหว่างการจับภาพ',
+      size_limit: 'ภาพหน้าจอแบบยาวเกินขนาดที่ปลอดภัย',
       write_failed: 'ไม่สามารถเขียนไฟล์ภาพหน้าจอได้',
       no_device: 'ยังไม่ได้เลือกอุปกรณ์',
       busy: 'กำลังจับภาพอยู่แล้ว',
     },
+  },
+  autoCapture: {
+    confirmStart:
+      'ระบบจะควบคุมและเลื่อนอุปกรณ์ Android ที่เลือกโดยอัตโนมัติ โปรดอย่าแตะหรือหมุนอุปกรณ์ระหว่างการจับภาพ ต้องการดำเนินการต่อหรือไม่?',
   },
   preview: {
     title: 'พรีวิวสด',
@@ -308,7 +411,8 @@ export const th: DeepPartialTranslations = {
   appManager: {
     title: 'จัดการแอป',
     toolLabel: 'เครื่องมือโทรศัพท์ / รายการแอป',
-    subtitle: 'ตรวจสอบ เปิด หยุด ล้างข้อมูล และถอนการติดตั้งแพ็กเกจบนโทรศัพท์ที่เชื่อมต่อ',
+    subtitle:
+      'ตรวจสอบ เปิด หยุด ล้างข้อมูล และถอนการติดตั้งแพ็กเกจบนโทรศัพท์ที่เชื่อมต่อ',
     deviceReady: 'อุปกรณ์พร้อมใช้งาน',
     inventorySummary: 'สรุปรายการแอป',
     totalApps: 'ติดตั้งแล้ว',
@@ -319,7 +423,8 @@ export const th: DeepPartialTranslations = {
     packageInventory: 'รายการแพ็กเกจ',
     toolActions: 'เครื่องมือแพ็กเกจ',
     tapForDetails: 'กดลูกศรเพื่อดูรายละเอียดเวอร์ชัน',
-    noDeviceHint: 'เชื่อมต่อหรือเลือกอุปกรณ์ Android เพื่อเริ่มใช้เครื่องมือนี้',
+    noDeviceHint:
+      'เชื่อมต่อหรือเลือกอุปกรณ์ Android เพื่อเริ่มใช้เครื่องมือนี้',
     noDevice: 'เลือกอุปกรณ์เพื่อจัดการแอป',
   },
   fileManager: {
@@ -337,7 +442,8 @@ export const th: DeepPartialTranslations = {
     directoryContents: 'รายการในโฟลเดอร์',
     itemsCount: '{count} รายการ',
     link: 'ลิงก์',
-    noDeviceHint: 'เชื่อมต่อหรือเลือกอุปกรณ์ Android เพื่อเรียกดูพื้นที่จัดเก็บ',
+    noDeviceHint:
+      'เชื่อมต่อหรือเลือกอุปกรณ์ Android เพื่อเรียกดูพื้นที่จัดเก็บ',
     noDevice: 'เลือกอุปกรณ์เพื่อเรียกดูไฟล์',
   },
   uiInspector: {

@@ -1,11 +1,11 @@
 // Wrapper around SimDeck (iOS Simulator / Android Emulator control) Tauri commands.
 
 import { invoke } from '@tauri-apps/api/core'
+import type { ScreenshotResult } from '../types/screenshot'
 import type {
   SimActionResult,
   SimDeckAvailability,
   SimDeckStatus,
-  SimScreenshotResult,
   SimulatorActionId,
   SimulatorDevice,
   WebrtcAnswer,
@@ -65,11 +65,13 @@ export async function simulatorScreenshot(
   udid: string,
   bezel?: boolean,
   customPath?: string,
-): Promise<SimScreenshotResult> {
-  return invoke<SimScreenshotResult>('simulator_screenshot', {
+  outputDir?: string,
+): Promise<ScreenshotResult> {
+  return invoke<ScreenshotResult>('simulator_screenshot', {
     udid,
     bezel,
     customPath,
+    outputDir,
   })
 }
 

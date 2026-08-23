@@ -9,6 +9,7 @@ export type DeviceActionId =
     | 'volume_down'
     | 'mute'
     | 'power'
+    | 'reboot'
     | 'lock'
     | 'screen_off'
     | 'screen_on'

@@ -14,6 +14,16 @@ import {
   Loader2,
 } from 'lucide-react'
 import { useI18n } from '../i18n'
+import CompanionPanel from './companion/CompanionPanel'
+import type {
+  CompanionDevice,
+  CompanionLanOffer,
+  CompanionRequest,
+  CompanionRemotePermission,
+  CompanionRemoteStatusEvent,
+  CompanionScreenStatusEvent,
+  CompanionStatusEvent,
+} from '../types/companion'
 import type { IosDeviceInfo } from '../hooks/useIosMirror'
 
 export interface SidebarProps {
@@ -46,6 +56,34 @@ export interface SidebarProps {
   onIosRefresh?: () => void
   onIosInstall?: () => void
   onIosMirror?: (device: IosDeviceInfo) => void
+  // Android Companion (USB AOA, independent from ADB/scrcpy).
+  companionDevices?: CompanionDevice[]
+  companionScanning?: boolean
+  companionPairing?: boolean
+  companionLanOffer?: CompanionLanOffer | null
+  companionError?: string | null
+  companionStatus?: CompanionStatusEvent | null
+  companionScreenStatus?: CompanionScreenStatusEvent | null
+  companionScreenFrame?: string | null
+  companionScreenStarting?: boolean
+  companionScreenStreaming?: boolean
+  onCompanionScan?: () => Promise<unknown> | void
+  onCompanionStartLanPairing?: () => Promise<unknown> | void
+  onCompanionScreenStart?: () => Promise<unknown> | void
+  onCompanionScreenStop?: () => Promise<unknown> | void
+  onCompanionDisconnect?: () => Promise<void> | void
+  onCompanionRequest?: CompanionRequest
+  companionRemoteStatus?: CompanionRemoteStatusEvent | null
+  companionRemoteStarting?: boolean
+  companionRemoteActive?: boolean
+  companionEmbeddedConnections?: Record<string, boolean>
+  companionCustomPath?: string
+  onCompanionRemoteStart?: (
+    serial: string,
+    customPath?: string,
+    permissions?: CompanionRemotePermission[],
+  ) => Promise<unknown> | void
+  onCompanionRemoteStop?: () => Promise<unknown> | void
 }
 
 export default function Sidebar({
@@ -75,6 +113,29 @@ export default function Sidebar({
   onIosRefresh,
   onIosInstall,
   onIosMirror,
+  companionDevices = [],
+  companionScanning = false,
+  companionPairing = false,
+  companionLanOffer = null,
+  companionError = null,
+  companionStatus = null,
+  companionScreenStatus = null,
+  companionScreenFrame = null,
+  companionScreenStarting = false,
+  companionScreenStreaming = false,
+  onCompanionScan,
+  onCompanionStartLanPairing,
+  onCompanionScreenStart,
+  onCompanionScreenStop,
+  onCompanionDisconnect,
+  onCompanionRequest,
+  companionRemoteStatus = null,
+  companionRemoteStarting = false,
+  companionRemoteActive = false,
+  companionEmbeddedConnections = {},
+  companionCustomPath,
+  onCompanionRemoteStart,
+  onCompanionRemoteStop,
 }: SidebarProps) {
   const { t } = useI18n()
   const [activeTab, setActiveTab] = React.useState<'usb' | 'wireless'>('usb')
@@ -422,6 +483,34 @@ export default function Sidebar({
           )}
         </div>
       </div>
+
+      <CompanionPanel
+        devices={companionDevices}
+        isScanning={companionScanning}
+        isPairing={companionPairing}
+        lanOffer={companionLanOffer}
+        error={companionError}
+        status={companionStatus}
+        screenStatus={companionScreenStatus}
+        screenFrame={companionScreenFrame}
+        isScreenStarting={companionScreenStarting}
+        isScreenStreaming={companionScreenStreaming}
+        onScan={onCompanionScan}
+        onStartLanPairing={onCompanionStartLanPairing}
+        onStartScreen={onCompanionScreenStart}
+        onStopScreen={onCompanionScreenStop}
+        onDisconnect={onCompanionDisconnect}
+        onRequest={onCompanionRequest}
+        androidTargets={devices}
+        embeddedConnections={companionEmbeddedConnections}
+        selectedAndroidTarget={selectedDevice}
+        customPath={companionCustomPath}
+        remoteStatus={companionRemoteStatus}
+        isRemoteStarting={companionRemoteStarting}
+        isRemoteActive={companionRemoteActive}
+        onStartRemote={onCompanionRemoteStart}
+        onStopRemote={onCompanionRemoteStop}
+      />
 
       {iosSupported && (
         <div className="space-y-3 border-t border-[var(--border-subtle)] pt-3">

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import {
   ChevronLeft,
   Circle,
@@ -17,8 +17,8 @@ import type {
 import DeviceDisplay from './DeviceDisplay'
 
 interface FullscreenDeviceViewProps {
-  canvasRef: React.RefObject<HTMLCanvasElement | null>
-  containerRef: React.RefObject<HTMLDivElement | null>
+  canvasRef?: React.RefObject<HTMLCanvasElement | null>
+  containerRef?: React.RefObject<HTMLDivElement | null>
   dimensions: { width: number; height: number } | null
   state: EmbeddedSessionState
   error: string
@@ -29,6 +29,10 @@ interface FullscreenDeviceViewProps {
   recordingBusy?: boolean
   onToggleRecording?: () => void
   onExitFullscreen: () => void
+  imageSrc?: string | null
+  imageLabel?: string
+  /** Reuses a DeviceScreen-owned canvas/input surface when provided. */
+  display?: ReactNode
 }
 
 /**
@@ -45,6 +49,9 @@ export default function FullscreenDeviceView({
   fps,
   onAction,
   onScreenshot,
+  imageSrc,
+  imageLabel,
+  display,
   recording = false,
   recordingBusy = false,
   onToggleRecording,
@@ -72,14 +79,19 @@ export default function FullscreenDeviceView({
   return (
     <div className="fixed inset-0 z-[400] flex flex-col bg-black">
       <div className="flex min-h-0 min-w-0 flex-1 p-2">
-        <DeviceDisplay
-          canvasRef={canvasRef}
-          containerRef={containerRef}
-          dimensions={dimensions}
-          state={state}
-          error={error}
-          fps={fps}
-        />
+        {display ||
+          (canvasRef && containerRef ? (
+            <DeviceDisplay
+              canvasRef={canvasRef}
+              containerRef={containerRef}
+              dimensions={dimensions}
+              state={state}
+              error={error}
+              fps={fps}
+              imageSrc={imageSrc}
+              imageLabel={imageLabel}
+            />
+          ) : null)}
       </div>
 
       <div className="pointer-events-none absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-2xl border border-zinc-800 bg-black/70 p-2 backdrop-blur-md">
@@ -128,7 +140,9 @@ export default function FullscreenDeviceView({
             <button
               onClick={onToggleRecording}
               disabled={disabled || recordingBusy}
-              title={recording ? t('workspace.stopRecording') : t('workspace.record')}
+              title={
+                recording ? t('workspace.stopRecording') : t('workspace.record')
+              }
               className={`${barBtn} ${recording ? 'border-red-500/60 text-red-400' : ''}`}
             >
               {recording ? <Square size={16} /> : <Circle size={16} />}

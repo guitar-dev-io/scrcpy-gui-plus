@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import type { IJsonModel } from 'flexlayout-react'
 import {
   Camera,
+  ChevronLeft,
+  ChevronRight,
   Circle,
   CirclePower,
   Download,
   Folder,
   Image as ImageIcon,
   LayoutGrid,
+  ListChecks,
   Monitor,
   MoreHorizontal,
   RotateCw,
@@ -22,13 +25,15 @@ import { useDeviceActions } from '../../hooks/useDeviceActions'
 import { useDeviceStatus } from '../../hooks/useDeviceStatus'
 import type { DeviceActionId } from '../../types/deviceControl'
 import { connectionTypeOf } from '../../types/deviceStatus'
-import type { EmbeddedSessionCommand, EmbeddedStageMetrics } from './DashboardEmbeddedStage'
+import type {
+  DashboardCompanionFallback,
+  EmbeddedSessionCommand,
+  EmbeddedStageMetrics,
+} from './DashboardEmbeddedStage'
 import DeviceStagePanel from './DeviceStagePanel'
 import DeviceHeader from './DeviceHeader'
-import { BottomWorkspacePanel, RightWorkspacePanel } from './DashboardWorkspacePanels'
 import SessionControlPanel from './SessionControlPanel'
 import TestRunnerPanel from '../test-runner'
-import { StudioLayout } from '../studio-layout'
 import { useShellUi } from '../../contexts/ShellUiContext'
 
 interface DashboardLayoutProps {
@@ -53,7 +58,11 @@ interface DashboardLayoutProps {
   logPanel: ReactNode
   controlPanel: ReactNode
   advancedTools: ReactNode
-  notify: (title: string, message: string, kind: 'success' | 'error' | 'info' | 'warning') => void
+  notify: (
+    title: string,
+    message: string,
+    kind: 'success' | 'error' | 'info' | 'warning',
+  ) => void
   onScreenshot: () => void
   /** Captures a screenshot for a specific serial; used by the pinned secondary device. */
   onScreenshotSecondary?: (serial: string) => void
@@ -62,6 +71,7 @@ interface DashboardLayoutProps {
   embeddedSessionCommand?: EmbeddedSessionCommand
   onRequestEmbeddedSession?: (action: 'start' | 'stop') => void
   compactWorkspace?: boolean
+  companion?: DashboardCompanionFallback
 }
 
 const panel =
@@ -73,12 +83,25 @@ const focusRing =
 type DashboardLayoutPreset = 'compact' | 'wide'
 
 const DASHBOARD_LAYOUT_STORAGE_PREFIX = 'scrcpy-gui-plus:dashboard-layout:v2'
+const CONTROL_PANEL_STORAGE_KEY = 'scrcpy-gui-plus:dashboard-control-panel-open'
 
-export function dashboardLayoutPresetForWidth(width: number): DashboardLayoutPreset {
+function loadControlPanelOpen() {
+  try {
+    return window.localStorage.getItem(CONTROL_PANEL_STORAGE_KEY) !== 'false'
+  } catch {
+    return true
+  }
+}
+
+export function dashboardLayoutPresetForWidth(
+  width: number,
+): DashboardLayoutPreset {
   return width >= 1536 ? 'wide' : 'compact'
 }
 
-export function createDashboardStudioLayout(preset: DashboardLayoutPreset): IJsonModel {
+export function createDashboardStudioLayout(
+  preset: DashboardLayoutPreset,
+): IJsonModel {
   const wide = preset === 'wide'
   return {
     global: {
@@ -98,8 +121,20 @@ export function createDashboardStudioLayout(preset: DashboardLayoutPreset): IJso
         minSize: 240,
         selected: wide ? 0 : -1,
         children: [
-          { type: 'tab', id: 'test-runner-tab', name: 'Test Runner', component: 'test-runner', enableClose: false },
-          { type: 'tab', id: 'screenshots-tab', name: 'Screenshots', component: 'screenshots', enableClose: false },
+          {
+            type: 'tab',
+            id: 'test-runner-tab',
+            name: 'Test Runner',
+            component: 'test-runner',
+            enableClose: false,
+          },
+          {
+            type: 'tab',
+            id: 'screenshots-tab',
+            name: 'Screenshots',
+            component: 'screenshots',
+            enableClose: false,
+          },
         ],
       },
       {
@@ -109,7 +144,13 @@ export function createDashboardStudioLayout(preset: DashboardLayoutPreset): IJso
         minSize: 150,
         selected: 0,
         children: [
-          { type: 'tab', id: 'bottom-workspace-tab', name: 'Workspace', component: 'bottom-workspace', enableClose: false },
+          {
+            type: 'tab',
+            id: 'bottom-workspace-tab',
+            name: 'Workspace',
+            component: 'bottom-workspace',
+            enableClose: false,
+          },
         ],
       },
     ],
@@ -122,7 +163,13 @@ export function createDashboardStudioLayout(preset: DashboardLayoutPreset): IJso
           weight: wide ? 72 : 68,
           enableTabStrip: false,
           children: [
-            { type: 'tab', id: 'device-stage-tab', name: 'Device Screen', component: 'device-screen', enableClose: false },
+            {
+              type: 'tab',
+              id: 'device-stage-tab',
+              name: 'Device Screen',
+              component: 'device-screen',
+              enableClose: false,
+            },
           ],
         },
         {
@@ -132,7 +179,13 @@ export function createDashboardStudioLayout(preset: DashboardLayoutPreset): IJso
           minWidth: 250,
           enableTabStrip: false,
           children: [
-            { type: 'tab', id: 'session-control-tab', name: 'Session Control', component: 'session-control', enableClose: false },
+            {
+              type: 'tab',
+              id: 'session-control-tab',
+              name: 'Session Control',
+              component: 'session-control',
+              enableClose: false,
+            },
           ],
         },
       ],
@@ -144,9 +197,13 @@ function dashboardLayoutStorageKey(preset: DashboardLayoutPreset) {
   return `${DASHBOARD_LAYOUT_STORAGE_PREFIX}:${preset}`
 }
 
-export function loadDashboardStudioLayout(preset: DashboardLayoutPreset): IJsonModel {
+export function loadDashboardStudioLayout(
+  preset: DashboardLayoutPreset,
+): IJsonModel {
   try {
-    const stored = window.localStorage.getItem(dashboardLayoutStorageKey(preset))
+    const stored = window.localStorage.getItem(
+      dashboardLayoutStorageKey(preset),
+    )
     if (stored) {
       const parsed = JSON.parse(stored) as IJsonModel
       if (parsed?.layout?.type === 'row') return parsed
@@ -162,7 +219,10 @@ export function persistDashboardStudioLayout(
   layout: IJsonModel,
 ) {
   try {
-    window.localStorage.setItem(dashboardLayoutStorageKey(preset), JSON.stringify(layout))
+    window.localStorage.setItem(
+      dashboardLayoutStorageKey(preset),
+      JSON.stringify(layout),
+    )
   } catch {
     // Layout persistence is a progressive enhancement.
   }
@@ -194,60 +254,77 @@ export default function DashboardLayout({
   embeddedSessionCommand,
   onRequestEmbeddedSession,
   compactWorkspace = false,
+  companion,
 }: DashboardLayoutProps) {
   const {
     dashboardBottomTab: bottomTab,
     selectDashboardBottomTab: onBottomTabChange,
+    activeWorkspaceTool,
+    selectWorkspaceTool,
+    activateDeviceWorkspace,
   } = useShellUi()
   const [sessionPanelOpen, setSessionPanelOpen] = useState(false)
-  const [sessionPanelTab, setSessionPanelTab] = useState<'inspector' | 'settings'>('inspector')
+  const [sessionPanelTab, setSessionPanelTab] = useState<
+    'inspector' | 'settings'
+  >('inspector')
   const [fullscreenRequest, setFullscreenRequest] = useState(0)
-  const [wideLayout, setWideLayout] = useState(() => (
-    dashboardLayoutPresetForWidth(window.innerWidth) === 'wide'
-  ))
-  const layoutPreset: DashboardLayoutPreset = wideLayout ? 'wide' : 'compact'
-  const [studioLayout, setStudioLayout] = useState(() =>
-    loadDashboardStudioLayout(layoutPreset),
+  const [controlPanelOpen, setControlPanelOpen] = useState(loadControlPanelOpen)
+  const [activityDrawer, setActivityDrawer] = useState<
+    'test-runner' | 'screenshots' | null
+  >(null)
+  const [wideLayout, setWideLayout] = useState(
+    () => dashboardLayoutPresetForWidth(window.innerWidth) === 'wide',
   )
-  const [embeddedMetrics, setEmbeddedMetrics] = useState<EmbeddedStageMetrics | null>(null)
+  const [embeddedMetrics, setEmbeddedMetrics] =
+    useState<EmbeddedStageMetrics | null>(null)
 
   useEffect(() => {
     const media = window.matchMedia('(min-width: 1536px)')
-    const sync = () => setWideLayout(dashboardLayoutPresetForWidth(window.innerWidth) === 'wide')
+    const sync = () =>
+      setWideLayout(dashboardLayoutPresetForWidth(window.innerWidth) === 'wide')
     media.addEventListener('change', sync)
     return () => media.removeEventListener('change', sync)
   }, [])
 
   useEffect(() => {
-    setStudioLayout(loadDashboardStudioLayout(layoutPreset))
-  }, [layoutPreset])
-
-  const handleStudioLayoutChange = useCallback(
-    (nextLayout: IJsonModel) => {
-      setStudioLayout(nextLayout)
-      persistDashboardStudioLayout(layoutPreset, nextLayout)
-    },
-    [layoutPreset],
-  )
+    try {
+      window.localStorage.setItem(
+        CONTROL_PANEL_STORAGE_KEY,
+        String(controlPanelOpen),
+      )
+    } catch {
+      // Panel persistence is a progressive enhancement.
+    }
+  }, [controlPanelOpen])
 
   useEffect(() => {
-    if (!sessionPanelOpen) return
+    if (activeWorkspaceTool === 'test-runner') {
+      setActivityDrawer('test-runner')
+    }
+  }, [activeWorkspaceTool])
+
+  useEffect(() => {
+    if (!sessionPanelOpen && !activityDrawer) return
 
     const closeDrawer = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       setSessionPanelOpen(false)
+      setActivityDrawer(null)
     }
 
     window.addEventListener('keydown', closeDrawer)
     return () => window.removeEventListener('keydown', closeDrawer)
-  }, [sessionPanelOpen])
+  }, [sessionPanelOpen, activityDrawer])
 
   const openSessionPanel = (tab: 'inspector' | 'settings') => {
     setSessionPanelTab(tab)
     setSessionPanelOpen(true)
   }
 
-  const sessionPanelTabs: Array<{ id: 'inspector' | 'settings'; label: string }> = [
+  const sessionPanelTabs: Array<{
+    id: 'inspector' | 'settings'
+    label: string
+  }> = [
     { id: 'inspector', label: 'Inspector' },
     { id: 'settings', label: 'Settings' },
   ]
@@ -284,7 +361,11 @@ export default function DashboardLayout({
       )}
     </>
   )
-  const { status, loading, refresh: refreshDeviceStatus } = useDeviceStatus({
+  const {
+    status,
+    loading,
+    refresh: refreshDeviceStatus,
+  } = useDeviceStatus({
     activeDevice,
     customPath,
     autoRefresh: false,
@@ -317,7 +398,11 @@ export default function DashboardLayout({
     const result = await runAction(id)
     if (!result.success) {
       if (result.errorCode !== 'busy') {
-        notify('Device setting failed', result.error || `Unable to run ${id}`, 'error')
+        notify(
+          'Device setting failed',
+          result.error || `Unable to run ${id}`,
+          'error',
+        )
       }
       return
     }
@@ -383,13 +468,19 @@ export default function DashboardLayout({
     if (isRunning) onStop()
   }
 
-  const connectionState: 'disconnected' | 'connected' | 'running' = !activeDevice
-    ? 'disconnected'
-    : effectiveSessionRunning
-      ? 'running'
-      : 'connected'
+  const connectionState: 'disconnected' | 'connected' | 'running' =
+    !activeDevice
+      ? 'disconnected'
+      : effectiveSessionRunning
+        ? 'running'
+        : 'connected'
 
-  type QuickAction = { label: string; icon: typeof Monitor; onClick: () => void; disabled?: boolean }
+  type QuickAction = {
+    label: string
+    icon: typeof Monitor
+    onClick: () => void
+    disabled?: boolean
+  }
 
   const quickActionsByState: Record<typeof connectionState, QuickAction[]> = {
     disconnected: [
@@ -398,12 +489,26 @@ export default function DashboardLayout({
     ],
     connected: [
       { label: 'Install APK', icon: Download, onClick: onInstallApk },
-      { label: 'Shell', icon: Terminal, onClick: () => onBottomTabChange('shell') },
+      {
+        label: 'Shell',
+        icon: Terminal,
+        onClick: () => selectWorkspaceTool('shell'),
+      },
       { label: 'Files', icon: Folder, onClick: onOpenFileExplorer },
-      { label: 'Screenshot', icon: ImageIcon, onClick: onScreenshot, disabled: screenshotBusy },
+      {
+        label: 'Screenshot',
+        icon: ImageIcon,
+        onClick: onScreenshot,
+        disabled: screenshotBusy,
+      },
     ],
     running: [
-      { label: 'Screenshot', icon: ImageIcon, onClick: onScreenshot, disabled: screenshotBusy },
+      {
+        label: 'Screenshot',
+        icon: ImageIcon,
+        onClick: onScreenshot,
+        disabled: screenshotBusy,
+      },
       {
         label: isRecording ? 'Stop Rec' : 'Record',
         icon: isRecording ? Square : Circle,
@@ -416,19 +521,6 @@ export default function DashboardLayout({
   }
 
   const quickActions = quickActionsByState[connectionState]
-
-  const bottomPanelTabs: Array<{ id: 'logcat' | 'shell' | 'events' | 'test-runner'; label: string }> = wideLayout
-    ? [
-        { id: 'logcat', label: 'Logcat' },
-        { id: 'shell', label: 'Shell' },
-        { id: 'events', label: 'Events' },
-      ]
-    : [
-        { id: 'logcat', label: 'Logcat' },
-        { id: 'shell', label: 'Shell' },
-        { id: 'events', label: 'Events' },
-        { id: 'test-runner', label: 'Test Runner' },
-      ]
 
   const resolutionMatch = status?.resolution?.match(/(\d+)\D+(\d+)/)
   const headerDimensions = resolutionMatch
@@ -448,46 +540,33 @@ export default function DashboardLayout({
 
   const deviceHeaderActions = (
     <>
-      <button type="button" onClick={primarySessionAction.onClick} aria-pressed className={`flex h-8 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[9px] font-semibold text-on-primary ${focusRing}`}>
+      <button
+        type="button"
+        onClick={primarySessionAction.onClick}
+        aria-pressed
+        className={`flex h-8 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[9px] font-semibold text-on-primary ${focusRing}`}
+      >
         <PrimarySessionIcon size={12} /> {primarySessionAction.label}
       </button>
       {quickActions.map(({ label, icon: Icon, onClick, disabled }) => (
-        <button key={label} type="button" onClick={onClick} disabled={disabled} className={`flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-base)] bg-[var(--bg-input)] px-2.5 text-[9px] font-medium text-[var(--text-muted)] hover:border-primary/50 hover:text-[var(--text-base)] disabled:opacity-35 ${focusRing}`}>
+        <button
+          key={label}
+          type="button"
+          onClick={onClick}
+          disabled={disabled}
+          className={`flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-base)] bg-[var(--bg-input)] px-2.5 text-[9px] font-medium text-[var(--text-muted)] hover:border-primary/50 hover:text-[var(--text-base)] disabled:opacity-35 ${focusRing}`}
+        >
           <Icon size={12} /> {label}
         </button>
       ))}
-      <button type="button" onClick={() => openSessionPanel('settings')} className={`flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-base)] bg-[var(--bg-input)] px-2.5 text-[9px] font-medium text-[var(--text-muted)] hover:border-primary/50 hover:text-[var(--text-base)] ${focusRing}`}>
+      <button
+        type="button"
+        onClick={() => openSessionPanel('settings')}
+        className={`flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-base)] bg-[var(--bg-input)] px-2.5 text-[9px] font-medium text-[var(--text-muted)] hover:border-primary/50 hover:text-[var(--text-base)] ${focusRing}`}
+      >
         <MoreHorizontal size={12} /> More
       </button>
     </>
-  )
-
-  const bottomWorkspacePanel = (
-    <BottomWorkspacePanel
-      tabs={bottomPanelTabs}
-      activeTab={bottomTab}
-      onSelectTab={(tab) => {
-        onBottomTabChange(tab)
-      }}
-    >
-      {bottomTab === 'test-runner' && !wideLayout ? (
-        <TestRunnerPanel activeDevice={activeDevice} customPath={customPath} outputDir={outputDir} />
-      ) : (
-        logPanel
-      )}
-    </BottomWorkspacePanel>
-  )
-
-  const testRunnerWorkspace = (
-    <RightWorkspacePanel title="Test Run" status={activeDevice ? 'Ready' : 'No device'}>
-      <TestRunnerPanel activeDevice={activeDevice} customPath={customPath} outputDir={outputDir} />
-    </RightWorkspacePanel>
-  )
-
-  const screenshotsWorkspace = (
-    <div className="custom-scrollbar h-full min-h-0 overflow-auto bg-[var(--bg-sidebar)] p-2">
-      {screenshotPanel}
-    </div>
   )
 
   if (compactWorkspace) {
@@ -498,7 +577,9 @@ export default function DashboardLayout({
           deviceName={status?.model || activeDevice}
           deviceSerial={activeDevice}
           androidVersion={status?.androidVersion}
-          connection={activeDevice ? connectionTypeOf(activeDevice).toUpperCase() : ''}
+          connection={
+            activeDevice ? connectionTypeOf(activeDevice).toUpperCase() : ''
+          }
           batteryLevel={status?.batteryLevel}
           connected={runtimeConnected}
           busy={runtimeBusy}
@@ -514,7 +595,9 @@ export default function DashboardLayout({
             activeDevice={activeDevice}
             deviceName={status?.model || activeDevice}
             androidVersion={status?.androidVersion}
-            connection={activeDevice ? connectionTypeOf(activeDevice).toUpperCase() : ''}
+            connection={
+              activeDevice ? connectionTypeOf(activeDevice).toUpperCase() : ''
+            }
             batteryLevel={status?.batteryLevel}
             customPath={customPath}
             outputDir={outputDir}
@@ -531,6 +614,7 @@ export default function DashboardLayout({
             onOpenSettings={onOpenSettings}
             onMetricsChange={setEmbeddedMetrics}
             sessionCommand={embeddedSessionCommand}
+            companion={companion}
           />
         </div>
       </div>
@@ -538,91 +622,144 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="relative flex min-h-full flex-1 bg-[var(--bg-base)]">
-      <div className="custom-scrollbar min-w-0 flex-1 overflow-y-auto p-3">
+    <div className="relative flex h-full min-h-[560px] flex-1 bg-[var(--bg-base)]">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-3">
         <DeviceHeader
           standalone
           deviceName={status?.model || activeDevice}
           deviceSerial={activeDevice}
           androidVersion={status?.androidVersion}
-          connection={activeDevice ? connectionTypeOf(activeDevice).toUpperCase() : ''}
+          connection={
+            activeDevice ? connectionTypeOf(activeDevice).toUpperCase() : ''
+          }
           batteryLevel={status?.batteryLevel}
           connected={runtimeConnected}
           busy={runtimeBusy}
           dimensions={runtimeDimensions}
           fps={runtimeFps}
-          statusLabel={activeDevice ? (runtimeConnected ? 'Session active' : 'Online') : 'Offline'}
+          statusLabel={
+            activeDevice
+              ? runtimeConnected
+                ? 'Session active'
+                : 'Online'
+              : 'Offline'
+          }
           onFullscreen={() => setFullscreenRequest((request) => request + 1)}
           actions={deviceHeaderActions}
         />
-        <div className="h-[calc(100vh-152px)] min-h-[620px]">
-          <StudioLayout
-            initialLayout={createDashboardStudioLayout(layoutPreset)}
-            layout={studioLayout}
-            onLayoutChange={handleStudioLayoutChange}
-            realtimeResize={false}
-            aria-label="Resizable device workspace"
-            panels={{
-              'device-screen': (
-                <DeviceStagePanel
-                  activeDevice={activeDevice}
-                  deviceName={status?.model || activeDevice}
-                  androidVersion={status?.androidVersion}
-                  connection={activeDevice ? connectionTypeOf(activeDevice).toUpperCase() : ''}
-                  batteryLevel={status?.batteryLevel}
-                  customPath={customPath}
-                  outputDir={outputDir}
-                  fullscreenRequest={fullscreenRequest}
-                  pending={pending}
-                  screenshotBusy={screenshotBusy}
-                  isRecording={isRecording}
-                  recordingBusy={recordingBusy}
-                  notify={notify}
-                  onAction={(id) => void action(id)}
-                  onScreenshot={onScreenshot}
-                  onToggleRecording={() => void handleRecording()}
-                  onAddDevice={onAddDevice}
-                  onOpenSettings={onOpenSettings}
-                  onMetricsChange={setEmbeddedMetrics}
-                  sessionCommand={embeddedSessionCommand}
-                />
-              ),
-              'session-control': (
-                <SessionControlPanel
-                  activeDevice={activeDevice}
-                  connection={activeDevice ? connectionTypeOf(activeDevice).toUpperCase() : undefined}
-                  status={status}
-                  config={config}
-                  pending={pending}
-                  isRunning={effectiveSessionRunning}
-                  onUpdateConfig={updateConfig}
-                  onUpdateDeviceSetting={(id) => void updateDeviceDisplaySetting(id)}
-                  onOpenSettings={() => openSessionPanel('settings')}
-                  onStart={() => {
-                    if (onRequestEmbeddedSession) onRequestEmbeddedSession('start')
-                    else onStart()
-                  }}
-                  onStop={stopActiveSession}
-                />
-              ),
-              'bottom-workspace': bottomWorkspacePanel,
-              'test-runner': testRunnerWorkspace,
-              screenshots: screenshotsWorkspace,
-            }}
-          />
-        </div>
+        <div className="relative flex min-h-[560px] flex-1 gap-2 overflow-hidden">
+          <div className="min-h-0 min-w-0 flex-1">
+            <DeviceStagePanel
+              activeDevice={activeDevice}
+              deviceName={status?.model || activeDevice}
+              androidVersion={status?.androidVersion}
+              connection={activeDevice ? connectionTypeOf(activeDevice).toUpperCase() : ''}
+              batteryLevel={status?.batteryLevel}
+              customPath={customPath}
+              outputDir={outputDir}
+              fullscreenRequest={fullscreenRequest}
+              pending={pending}
+              screenshotBusy={screenshotBusy}
+              isRecording={isRecording}
+              recordingBusy={recordingBusy}
+              notify={notify}
+              onAction={(id) => void action(id)}
+              onScreenshot={onScreenshot}
+              onToggleRecording={() => void handleRecording()}
+              onAddDevice={onAddDevice}
+              onOpenSettings={onOpenSettings}
+              onMetricsChange={setEmbeddedMetrics}
+              sessionCommand={embeddedSessionCommand}
+              companion={companion}
+            />
+          </div>
 
+          {controlPanelOpen ? (
+            <aside className="relative w-[310px] min-w-[270px] shrink-0 max-[1180px]:w-[280px]" aria-label="Session controls">
+              <button type="button" onClick={() => setControlPanelOpen(false)} title="Collapse control panel" aria-label="Collapse control panel" className={`absolute -left-3 top-3 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-[var(--border-base)] bg-[var(--bg-elevated)] text-[var(--text-subtle)] shadow-lg hover:text-primary ${focusRing}`}>
+                <ChevronRight size={13} />
+              </button>
+              <SessionControlPanel
+                activeDevice={activeDevice}
+                connection={activeDevice ? connectionTypeOf(activeDevice).toUpperCase() : undefined}
+                status={status}
+                config={config}
+                pending={pending}
+                isRunning={effectiveSessionRunning}
+                onUpdateConfig={updateConfig}
+                onUpdateDeviceSetting={(id) => void updateDeviceDisplaySetting(id)}
+                onOpenSettings={() => openSessionPanel('settings')}
+                onStart={() => onRequestEmbeddedSession ? onRequestEmbeddedSession('start') : onStart()}
+                onStop={stopActiveSession}
+              />
+            </aside>
+          ) : (
+            <button type="button" onClick={() => setControlPanelOpen(true)} title="Expand control panel" aria-label="Expand control panel" className={`flex w-9 shrink-0 flex-col items-center justify-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[var(--text-subtle)] hover:border-primary/40 hover:text-primary ${focusRing}`}>
+              <ChevronLeft size={14} />
+              <span className="[writing-mode:vertical-rl] text-[8px] font-semibold uppercase tracking-widest">Controls</span>
+            </button>
+          )}
+
+          <nav aria-label="Workspace activity" className="flex w-11 shrink-0 flex-col items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-sidebar)] py-2">
+            {([['test-runner', 'Test Runner', ListChecks], ['screenshots', 'Screenshots', ImageIcon]] as const).map(([id, label, Icon]) => (
+              <button key={id} type="button" onClick={() => setActivityDrawer((current) => current === id ? null : id)} aria-pressed={activityDrawer === id} title={label} aria-label={label} className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${focusRing} ${activityDrawer === id ? 'bg-primary text-on-primary' : 'text-[var(--text-subtle)] hover:bg-primary/15 hover:text-primary'}`}>
+                <Icon size={15} />
+              </button>
+            ))}
+          </nav>
+
+          {activityDrawer && (
+            <aside className="absolute inset-y-0 right-13 z-30 flex w-[360px] max-w-[calc(100%-3.75rem)] flex-col overflow-hidden rounded-xl border border-[var(--border-base)] bg-[var(--bg-sidebar)] shadow-[-18px_0_48px_rgba(0,0,0,.42)]" aria-label={`${activityDrawer === 'test-runner' ? 'Test Runner' : 'Screenshots'} drawer`}>
+              <div className="flex h-11 shrink-0 items-center justify-between border-b border-[var(--border-subtle)] px-3">
+                <h2 className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-base)]">{activityDrawer === 'test-runner' ? 'Test Runner' : 'Screenshots'}</h2>
+                <button type="button" onClick={() => setActivityDrawer(null)} aria-label="Close activity drawer" className={`rounded-md p-1.5 text-[var(--text-subtle)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-base)] ${focusRing}`}><X size={14} /></button>
+              </div>
+              <div className="custom-scrollbar min-h-0 flex-1 overflow-auto p-2">
+                {activityDrawer === 'test-runner' ? <TestRunnerPanel activeDevice={activeDevice} customPath={customPath} outputDir={outputDir} /> : screenshotPanel}
+              </div>
+            </aside>
+          )}
+
+          {(activeWorkspaceTool === 'shell' || activeWorkspaceTool === 'logcat') && (
+            <section className="absolute inset-x-2 bottom-2 z-20 flex h-[270px] flex-col overflow-hidden rounded-xl border border-[var(--border-base)] bg-[var(--bg-sidebar)] shadow-[0_-16px_48px_rgba(0,0,0,.38)]" aria-label="Open workspace tool">
+              <div className="flex h-10 shrink-0 items-center gap-4 border-b border-[var(--border-subtle)] px-3">
+                {(['logcat', 'shell', 'events'] as const).map((tab) => <button key={tab} type="button" onClick={() => onBottomTabChange(tab)} className={`h-full border-b-2 text-[9px] font-semibold uppercase ${bottomTab === tab ? 'border-primary text-primary' : 'border-transparent text-[var(--text-subtle)]'}`}>{tab}</button>)}
+                <button type="button" onClick={activateDeviceWorkspace} aria-label="Close workspace tool" className={`ml-auto rounded-md p-1.5 text-[var(--text-subtle)] hover:bg-[var(--bg-hover)] ${focusRing}`}><X size={14} /></button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-hidden">{logPanel}</div>
+            </section>
+          )}
+        </div>
       </div>
 
       {sessionPanelOpen && (
-        <div role="dialog" aria-modal="true" aria-labelledby="session-panel-title" className="fixed inset-0 z-[var(--z-modal)] flex justify-end bg-black/50 backdrop-blur-sm" onMouseDown={() => setSessionPanelOpen(false)}>
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="session-panel-title"
+          className="fixed inset-0 z-[var(--z-modal)] flex justify-end bg-black/50 backdrop-blur-sm"
+          onMouseDown={() => setSessionPanelOpen(false)}
+        >
           <aside
             className="custom-scrollbar h-full w-full max-w-[358px] overflow-y-auto border-l border-[var(--border-base)] bg-[var(--bg-sidebar)] p-4 shadow-2xl"
             onMouseDown={(event) => event.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
-              <div id="session-panel-title" className="flex items-center gap-2 text-sm font-semibold"><SlidersHorizontal size={15} className="text-primary" /> Session Panel</div>
-              <button type="button" onClick={() => setSessionPanelOpen(false)} className={`rounded-lg p-2 text-[var(--text-muted)] hover:bg-white/5 hover:text-white ${focusRing}`} aria-label="Close session panel"><X size={16} /></button>
+              <div
+                id="session-panel-title"
+                className="flex items-center gap-2 text-sm font-semibold"
+              >
+                <SlidersHorizontal size={15} className="text-primary" /> Session
+                Panel
+              </div>
+              <button
+                type="button"
+                onClick={() => setSessionPanelOpen(false)}
+                className={`rounded-lg p-2 text-[var(--text-muted)] hover:bg-white/5 hover:text-white ${focusRing}`}
+                aria-label="Close session panel"
+              >
+                <X size={16} />
+              </button>
             </div>
             {sessionPanelContent}
           </aside>

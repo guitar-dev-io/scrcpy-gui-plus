@@ -33,6 +33,7 @@ const BITRATE_OPTIONS = [2, 4, 8, 16, 24]
 const STATE_TONE: Record<EmbeddedSessionState, string> = {
   idle: 'text-zinc-400 bg-zinc-800/60',
   starting: 'text-amber-300 bg-amber-500/15',
+  reconnecting: 'text-amber-300 bg-amber-500/15',
   connected: 'text-emerald-300 bg-emerald-500/15',
   stopping: 'text-amber-300 bg-amber-500/15',
   disconnected: 'text-zinc-400 bg-zinc-800/60',
@@ -58,7 +59,8 @@ export default function DeviceTopBar({
 }: DeviceTopBarProps) {
   const { t } = useI18n()
   const connected = state === 'connected'
-  const busy = state === 'starting' || state === 'stopping'
+  const busy =
+    state === 'starting' || state === 'reconnecting' || state === 'stopping'
   const lockDropdowns = connected || busy
 
   // Recording elapsed timer.
@@ -83,7 +85,7 @@ export default function DeviceTopBar({
   const stateLabel =
     state === 'connected'
       ? t('workspace.connected')
-      : state === 'starting'
+      : state === 'starting' || state === 'reconnecting'
         ? t('workspace.connecting')
         : state === 'stopping'
           ? t('workspace.stopping')

@@ -13,7 +13,7 @@ import { useSimDeck } from '../../hooks/useSimDeck'
 import SimulatorDevicePicker from './SimulatorDevicePicker'
 import SimulatorStage from './SimulatorStage'
 import SimulatorActionSidebar from './SimulatorActionSidebar'
-import type { SimulatorDevice } from '../../types/simDeck'
+import type { SimScreenshotResult, SimulatorDevice } from '../../types/simDeck'
 import type { ToolbarNotifier } from '../device-control-toolbar'
 
 interface SimulatorsPanelProps {
@@ -21,7 +21,12 @@ interface SimulatorsPanelProps {
   embedded?: boolean
   onClose: () => void
   customPath?: string
+  screenshotDir?: string
   notify: ToolbarNotifier
+  onScreenshotCaptured?: (
+    result: SimScreenshotResult,
+    device: SimulatorDevice,
+  ) => void
 }
 
 export default function SimulatorsPanel({
@@ -29,7 +34,9 @@ export default function SimulatorsPanel({
   embedded = false,
   onClose,
   customPath,
+  screenshotDir,
   notify,
+  onScreenshotCaptured,
 }: SimulatorsPanelProps) {
   const { t } = useI18n()
   const {
@@ -123,8 +130,9 @@ export default function SimulatorsPanel({
   }
 
   const handleScreenshot = async (device: SimulatorDevice, bezel: boolean) => {
-    const res = await takeScreenshot(device.udid, bezel)
+    const res = await takeScreenshot(device.udid, bezel, screenshotDir)
     if (res.success) {
+      onScreenshotCaptured?.(res, device)
       notify(t('simulators.screenshotDoneTitle'), res.filename || '', 'success')
     } else {
       notify(

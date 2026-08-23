@@ -1,16 +1,20 @@
 mod adb;
 mod app_manager;
+mod auto_capture;
 mod bug_report;
 mod commands;
+mod companion;
 mod custom_command;
 mod deep_link;
 mod device_control;
 mod device_status;
+mod device_tracker;
 mod embed_mirror;
 mod embed_session;
 mod file_manager;
 mod ios;
 mod logcat;
+mod macos_capture;
 mod macro_player;
 mod maestro;
 mod screenshot;
@@ -18,8 +22,11 @@ mod simdeck;
 mod system;
 mod test_session;
 mod ui_inspector;
+use auto_capture::AutoCaptureState;
 use bug_report::BugReportState;
+use companion::CompanionState;
 use device_control::RecordingState;
+use device_tracker::DeviceTrackerState;
 use embed_mirror::EmbedMirrorState;
 use embed_session::EmbedSessionState;
 use ios::IosState;
@@ -35,6 +42,17 @@ use std::os::unix::process::CommandExt;
 
 pub struct ScrcpyState {
     pub processes: Mutex<HashMap<String, Child>>,
+}
+
+impl ScrcpyState {
+    pub fn kill_all_blocking(&self) {
+        if let Ok(mut processes) = self.processes.lock() {
+            for (_, child) in processes.iter_mut() {
+                let _ = child.start_kill();
+            }
+            processes.clear();
+        }
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -95,7 +113,11 @@ pub fn run() {
 
             app.manage(BugReportState::default());
 
+            app.manage(CompanionState::default());
+
             app.manage(LogcatState::default());
+
+            app.manage(DeviceTrackerState::default());
 
             app.manage(IosState::default());
 
@@ -107,6 +129,8 @@ pub fn run() {
 
             app.manage(maestro::MaestroState::default());
 
+            app.manage(AutoCaptureState::default());
+
             // Show splashscreen instantly
             if let Some(splash_window) = app.get_webview_window("splashscreen") {
                 splash_window.show().unwrap();
@@ -116,8 +140,18 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::greet,
+            companion::companion_scan,
+            companion::companion_lan_start,
+            companion::companion_request,
+            companion::companion_screen_start,
+            companion::companion_screen_stop,
+            companion::companion_remote_start,
+            companion::companion_remote_stop,
+            companion::companion_disconnect,
             commands::check_scrcpy,
             commands::get_devices,
+            device_tracker::start_device_tracker,
+            device_tracker::stop_device_tracker,
             commands::adb_connect,
             commands::get_mdns_devices,
             commands::scan_lan_adb,
@@ -139,9 +173,18 @@ pub fn run() {
             commands::generate_pairing_qr,
             commands::poll_qr_pairing,
             screenshot::capture_screenshot,
+            screenshot::capture_scroll_screenshot,
             screenshot::capture_preview_frame,
+            screenshot::save_external_screenshot,
+            macos_capture::capture_macos_screenshot,
             screenshot::get_default_screenshot_dir,
             screenshot::delete_screenshot_file,
+            auto_capture::controller::start_auto_capture,
+            auto_capture::controller::pause_auto_capture,
+            auto_capture::controller::resume_auto_capture,
+            auto_capture::controller::stop_auto_capture,
+            auto_capture::controller::cancel_auto_capture,
+            auto_capture::controller::get_auto_capture_session,
             system::open_path,
             system::reveal_in_folder,
             system::copy_image_to_clipboard,
@@ -159,6 +202,7 @@ pub fn run() {
             test_session::set_show_touches,
             test_session::get_device_info,
             device_status::get_device_status,
+            device_status::get_device_display_geometry,
             ui_inspector::dump_ui_hierarchy,
             ui_inspector::capture_screen_base64,
             macro_player::run_macro_action,
@@ -211,13 +255,24 @@ pub fn run() {
             // Reliably tear down embedded sessions (kill scrcpy-server children)
             // when a window closes or the app exits, so no device processes or
             // adb forwards are left dangling.
-            if matches!(
-                event,
-                tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed
-            ) {
+            if window.label() == "main"
+                && matches!(
+                    event,
+                    tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed
+                )
+            {
                 let app = window.app_handle();
-                let state = app.state::<EmbedSessionState>();
-                state.kill_all_blocking();
+                app.state::<ScrcpyState>().kill_all_blocking();
+                let embed_state = app.state::<EmbedSessionState>();
+                embed_state.kill_all_blocking();
+                app.state::<EmbedMirrorState>().kill_all_blocking();
+                app.state::<RecordingState>().kill_all_blocking();
+                app.state::<LogcatState>().kill_all_blocking();
+                app.state::<DeviceTrackerState>().kill_all_blocking();
+                app.state::<IosState>().kill_all_blocking();
+                app.state::<maestro::MaestroState>().cancel_all();
+                app.state::<CompanionState>().shutdown();
+                app.state::<AutoCaptureState>().shutdown();
             }
         })
         .run(tauri::generate_context!())

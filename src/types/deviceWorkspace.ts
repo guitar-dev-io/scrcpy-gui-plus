@@ -1,14 +1,26 @@
 // Device Workspace (multi-device) types.
+import type { DeviceGroupId } from './deviceGroups'
 
-/** Built-in device group labels. Devices can be assigned to one of these. */
-export type DeviceGroup = 'ungrouped' | 'qa' | 'pos' | 'demo';
+export {
+  DEVICE_GROUPS_KEY,
+  DEVICE_GROUPS_VERSION,
+  UNGROUPED_GROUP_ID,
+  type DeviceGroupId,
+  type DeviceGroupRecord,
+  type DeviceGroupsDocument,
+} from './deviceGroups'
 
-export const DEVICE_GROUPS: DeviceGroup[] = ['ungrouped', 'qa', 'pos', 'demo'];
+/** @deprecated Use DeviceGroupId and the records returned by useDeviceGroups. */
+export type DeviceGroup = DeviceGroupId
 
-/** serial -> group assignment, persisted in localStorage. */
-export type DeviceGroupMap = Record<string, DeviceGroup>;
+/**
+ * @deprecated Temporary compatibility for the workspace selector. New group
+ * surfaces must render the configurable records returned by useDeviceGroups.
+ */
+export const DEVICE_GROUPS: DeviceGroup[] = ['ungrouped', 'qa', 'pos', 'demo']
 
-export const DEVICE_GROUPS_KEY = 'scrcpy_device_groups';
+/** @deprecated Legacy serial -> fixed-group storage shape; migration only. */
+export type DeviceGroupMap = Record<string, DeviceGroup>
 
-/** Filter shown in the workspace (a group or "all"). */
-export type WorkspaceFilter = 'all' | DeviceGroup;
+/** Filter shown in the workspace (a configured group id or "all"). */
+export type WorkspaceFilter = 'all' | DeviceGroupId

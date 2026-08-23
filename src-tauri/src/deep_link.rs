@@ -86,7 +86,9 @@ pub async fn launch_deep_link(
         return err_msg("invalid_uri", m);
     }
 
-    let pkg = package.map(|p| p.trim().to_string()).filter(|p| !p.is_empty());
+    let pkg = package
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty());
     if let Some(ref p) = pkg {
         if let Err(e) = adb::validate_package_name(p) {
             return err(&e);

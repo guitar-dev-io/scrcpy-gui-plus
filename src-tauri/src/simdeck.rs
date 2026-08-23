@@ -59,7 +59,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use std::process::Stdio;
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, Manager, State, Window};
+use tauri::{AppHandle, Emitter, State, Window};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::time::{timeout, Duration};
 
@@ -815,6 +815,7 @@ pub async fn simulator_screenshot(
     udid: String,
     bezel: Option<bool>,
     custom_path: Option<String>,
+    output_dir: Option<String>,
 ) -> Result<Value, String> {
     if let Err(e) = validate_udid(&udid) {
         return Ok(json!({ "success": false, "error": e.message(), "errorCode": e.code() }));
@@ -839,21 +840,88 @@ pub async fn simulator_screenshot(
         }
     };
 
-    let base = app_handle
-        .path()
-        .picture_dir()
-        .or_else(|_| app_handle.path().home_dir())
-        .map_err(|e| e.to_string())?;
-    let dir = crate::screenshot::resolve_screenshot_dir(None, &base)?;
+    let directory = match crate::screenshot::resolve_output_dir(&app_handle, output_dir.as_deref())
+    {
+        Ok(directory) => directory,
+        Err((code, message)) => {
+            return Ok(json!({
+                "success": false,
+                "path": "",
+                "filename": "",
+                "deviceSerial": udid.clone(),
+                "capturedAt": chrono::Local::now().to_rfc3339(),
+                "sourceKind": "simdeck",
+                "sourceId": udid.clone(),
+                "error": message,
+                "errorCode": code,
+            }))
+        }
+    };
+    if !crate::screenshot::validate_png(&bytes) {
+        return Ok(json!({
+            "success": false,
+            "path": "",
+            "filename": "",
+            "deviceSerial": udid.clone(),
+            "capturedAt": chrono::Local::now().to_rfc3339(),
+            "sourceKind": "simdeck",
+            "sourceId": udid.clone(),
+            "error": "SimDeck returned an invalid PNG image",
+            "errorCode": "corrupt_png",
+        }));
+    }
+    let (width, height) = match crate::screenshot::decode_png_frame(&bytes) {
+        Ok(frame) => frame.dimensions(),
+        Err((code, message)) => {
+            return Ok(json!({
+                "success": false,
+                "path": "",
+                "filename": "",
+                "deviceSerial": udid.clone(),
+                "capturedAt": chrono::Local::now().to_rfc3339(),
+                "sourceKind": "simdeck",
+                "sourceId": udid.clone(),
+                "error": message,
+                "errorCode": code,
+            }))
+        }
+    };
+    let captured_at = chrono::Local::now().to_rfc3339();
     let timestamp = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
     let filename = crate::screenshot::build_screenshot_filename("Simulator", &udid, &timestamp);
-    let path = dir.join(&filename);
-    std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
+    let (path, filename) =
+        match crate::screenshot::write_unique_file_atomically(&directory, &filename, &bytes) {
+            Ok(saved) => saved,
+            Err((code, message)) => {
+                return Ok(json!({
+                    "success": false,
+                    "path": "",
+                    "filename": "",
+                    "deviceSerial": udid.clone(),
+                    "capturedAt": captured_at,
+                    "sourceKind": "simdeck",
+                    "sourceId": udid.clone(),
+                    "error": message,
+                    "errorCode": code,
+                }))
+            }
+        };
 
     Ok(json!({
         "success": true,
         "path": path.to_string_lossy().to_string(),
         "filename": filename,
+        "deviceSerial": udid.clone(),
+        "deviceName": "Simulator",
+        "capturedAt": captured_at,
+        "sourceKind": "simdeck",
+        "sourceId": udid.clone(),
+        "sourceName": "SimDeck",
+        "captureKind": "screen",
+        "segmentCount": 1,
+        "width": width,
+        "height": height,
+        "complete": true,
     }))
 }
 

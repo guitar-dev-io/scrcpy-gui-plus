@@ -94,7 +94,11 @@ fn resolve_tokens(
     }
 
     // Drop a leading literal "adb" if the user included it.
-    let start = if tokens[0].eq_ignore_ascii_case("adb") { 1 } else { 0 };
+    let start = if tokens[0].eq_ignore_ascii_case("adb") {
+        1
+    } else {
+        0
+    };
     let effective = &tokens[start..];
     if effective.is_empty() {
         return Err(err("empty", "No command provided"));
@@ -148,7 +152,9 @@ pub async fn run_custom_command(
         return err("invalid_serial", "Invalid device serial");
     }
 
-    let pkg = package.map(|p| p.trim().to_string()).filter(|p| !p.is_empty());
+    let pkg = package
+        .map(|p| p.trim().to_string())
+        .filter(|p| !p.is_empty());
     let resolved = match resolve_tokens(&tokens, &serial, pkg.as_deref()) {
         Ok(r) => r,
         Err(e) => return e,
@@ -227,7 +233,12 @@ mod tests {
 
     #[test]
     fn package_placeholder_requires_package() {
-        let tokens = vec!["shell".into(), "am".into(), "start".into(), "{package}".into()];
+        let tokens = vec![
+            "shell".into(),
+            "am".into(),
+            "start".into(),
+            "{package}".into(),
+        ];
         assert!(resolve_tokens(&tokens, "ABC123", None).is_err());
         let ok = resolve_tokens(&tokens, "ABC123", Some("com.example.app"));
         assert!(ok.is_ok());

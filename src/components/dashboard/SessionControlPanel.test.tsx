@@ -52,8 +52,8 @@ describe('SessionControlPanel', () => {
     expect(screen.getByText('Pixel')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Settings' }))
-    expect(screen.getAllByRole('button', { name: 'Session Settings' })).toHaveLength(1)
-    await user.click(screen.getByRole('button', { name: 'Session Settings' }))
+    expect(screen.getAllByRole('button', { name: 'Start Session' })).toHaveLength(1)
+    await user.click(screen.getByRole('button', { name: 'Open advanced settings' }))
     expect(onOpenSettings).toHaveBeenCalledOnce()
     expect(screen.getByRole('button', { name: 'Start Session' })).toBeEnabled()
   })

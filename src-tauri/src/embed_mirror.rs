@@ -21,7 +21,7 @@
 // requires connecting the control socket and encoding control messages.
 
 use crate::adb;
-use crate::commands::{create_command, get_binary_path, parse_scrcpy_version};
+use crate::commands::{command_search_path, create_command, get_binary_path, parse_scrcpy_version};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::Deserialize;
 use serde_json::json;
@@ -79,6 +79,18 @@ pub struct EmbedMirrorState {
     sessions: Mutex<HashMap<String, EmbedSession>>,
 }
 
+impl EmbedMirrorState {
+    pub fn kill_all_blocking(&self) {
+        if let Ok(mut sessions) = self.sessions.lock() {
+            for (_, session) in sessions.iter_mut() {
+                session.stop.store(true, Ordering::Relaxed);
+                let _ = session.child.start_kill();
+            }
+            sessions.clear();
+        }
+    }
+}
+
 /// Derive the `scrcpy-server` jar path (sibling of the scrcpy executable).
 /// Returns None only when no `scrcpy-server` file can be located in any of the
 /// well-known layouts (bundled, custom folder, next to the binary, the
@@ -129,10 +141,12 @@ pub(crate) fn resolve_server_jar(custom_path: Option<String>) -> Option<String> 
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(dir) = exe_path.parent() {
             candidates.push(dir.join("scrcpy-bin").join("scrcpy-server"));
+            candidates.push(dir.join("scrcpy-bin").join("scrcpy-server.jar"));
         }
     }
     if let Ok(cwd) = std::env::current_dir() {
         candidates.push(cwd.join("scrcpy-bin").join("scrcpy-server"));
+        candidates.push(cwd.join("scrcpy-bin").join("scrcpy-server.jar"));
     }
 
     candidates
@@ -141,9 +155,11 @@ pub(crate) fn resolve_server_jar(custom_path: Option<String>) -> Option<String> 
         .map(|p| p.to_string_lossy().to_string())
 }
 
-/// Find an executable by name on the `PATH` (a tiny, dependency-free `which`).
+/// Find an executable using the same search path applied to spawned commands.
+/// This keeps GUI-launched production builds consistent with terminal debug
+/// builds, especially when scrcpy is installed by Homebrew.
 fn which_in_path(name: &str) -> Option<std::path::PathBuf> {
-    let path = std::env::var_os("PATH")?;
+    let path = command_search_path()?;
     for dir in std::env::split_paths(&path) {
         let candidate = dir.join(name);
         if candidate.is_file() {

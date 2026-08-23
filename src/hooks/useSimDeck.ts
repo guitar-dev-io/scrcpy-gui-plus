@@ -121,14 +121,26 @@ export function useSimDeck(customPath?: string) {
   )
 
   const takeScreenshot = useCallback(
-    async (udid: string, bezel?: boolean): Promise<SimScreenshotResult> => {
+    async (
+      udid: string,
+      bezel?: boolean,
+      outputDir?: string,
+    ): Promise<SimScreenshotResult> => {
       const key = `${udid}::screenshot`
       setPending((current) => ({ ...current, [key]: true }))
       try {
-        return await simulatorScreenshot(udid, bezel, customPath)
+        return await simulatorScreenshot(udid, bezel, customPath, outputDir)
       } catch (error) {
         console.error('simulator screenshot failed', error)
-        return { success: false, error: String(error) }
+        return {
+          success: false,
+          path: '',
+          filename: '',
+          deviceSerial: udid,
+          capturedAt: new Date().toISOString(),
+          error: String(error),
+          errorCode: 'capture_failed',
+        }
       } finally {
         setPending((current) => {
           const next = { ...current }

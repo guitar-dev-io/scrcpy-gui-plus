@@ -1,0 +1,25 @@
+<resources>
+    <string name="app_name">Scrcpy GUI Plus Companion</string>
+    <string name="keep_open_message">Keep this app open in the foreground while the desktop host is connected. Choose QR / LAN or USB below. For screen sharing, approve the Android capture dialog when requested.</string>
+    <string name="aoa_permission_guidance">USB mode: keep this phone unlocked, start USB Companion on the desktop, then tap Allow. Check USB only rechecks an accessory already started by the desktop.</string>
+    <string name="lan_pairing_guidance">QR / LAN mode: put both devices on the same trusted private network, generate a QR on the desktop, then scan it here. Google Play services provides the scanner; manual entry remains available.</string>
+    <string name="scan_desktop_qr">Scan desktop QR</string>
+    <string name="manual_pairing_hint">Or paste the full manual pairing code</string>
+    <string name="connect_pairing_code">Connect with pairing code</string>
+    <string name="connection_status">Connection status</string>
+    <string name="starting">Starting…</string>
+    <string name="latest_logs">Latest logs</string>
+    <string name="no_events_yet">No events yet</string>
+    <string name="check_accessory">Check USB accessory</string>
+    <string name="remote_control_title">Remote controller</string>
+    <string name="remote_control_waiting">Waiting for the desktop to approve a target</string>
+    <string name="remote_back">Back</string>
+    <string name="remote_home">Home</string>
+    <string name="remote_recents">Recents</string>
+    <string name="remote_rotate">Rotate</string>
+    <string name="remote_screen_on">Screen on</string>
+    <string name="remote_screen_off">Screen off</string>
+    <string name="remote_text_hint">Type text for the approved target</string>
+    <string name="remote_send_text">Send</string>
+    <string name="remote_send_clipboard">Send local clipboard to target</string>
+</resources>

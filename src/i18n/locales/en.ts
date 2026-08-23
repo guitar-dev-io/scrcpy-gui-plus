@@ -104,6 +104,76 @@ export const en = {
     flashPushFiles: 'Flash / Push Files',
     flashPushSubtitle: 'Drag & drop ANY FILE OR APK',
   },
+  companion: {
+    title: 'Android Companion',
+    subtitle: 'USB or private LAN • separate from ADB',
+    scan: 'Start USB Companion',
+    usbMode: 'USB',
+    lanMode: 'QR / LAN',
+    usbHint: 'Connect with a USB data cable using Android Open Accessory mode',
+    lanHint: 'Pair over the same private Wi-Fi or LAN by scanning a QR code',
+    scanning: 'Starting...',
+    cancelScan: 'Cancel',
+    cancelling: 'Cancelling...',
+    noDevice: 'No Android companion is connected',
+    installHint:
+      'Open the Android app, then choose QR / LAN on the same private network or USB. USB accessory mode may stop the current ADB/scrcpy session.',
+    lanQrLabel: 'Android Companion LAN pairing QR code',
+    lanInstructions:
+      'In the Android app, tap Scan desktop QR. This offer remains available for reconnects for thirty minutes.',
+    lanSecurityNote:
+      'LAN pairing is authenticated but not encrypted in this MVP. Use only a trusted private network.',
+    manualPairing: 'Manual pairing code',
+    connected: 'Connected',
+    disconnect: 'Disconnect',
+    unknown: 'Unknown',
+    ping: 'Ping',
+    deviceInfo: 'Device info',
+    model: 'Model',
+    appVersion: 'App',
+    packageName: 'Package',
+    clipboard: 'Clipboard',
+    clipboardPlaceholder: 'Text to send...',
+    sendClipboard: 'Send',
+    readClipboard: 'Read',
+    clipboardSent: 'Clipboard sent',
+    clipboardReceived: 'Clipboard received',
+    clipboardEmpty: 'Clipboard is empty',
+    urlPlaceholder: 'https://example.com',
+    openUrl: 'Open URL',
+    openUrlSuccess: 'URL opened. Reopen the companion app and connect again.',
+    requestCompleted: 'Request completed',
+    screenShare: 'Screen share',
+    screenStates: {
+      connecting: 'Connecting',
+      waiting_permission: 'Waiting permission',
+      streaming: 'Streaming',
+      reconnecting: 'Reconnecting',
+      stopped: 'Stopped',
+      error: 'Error',
+    },
+    screenPreview: 'Android screen preview',
+    startScreen: 'Start screen',
+    stopScreen: 'Stop screen',
+    screenPermissionHint:
+      'Click Start screen, then approve screen capture in the Android system dialog.',
+    screenViewerHint:
+      'The live preview appears here in Connection Tools after you approve Android. It also appears in an open device Dashboard.',
+    screenLockNote:
+      'Switching apps is supported. Locking the phone may stop Android screen capture; unlock it and start sharing again.',
+    screenSecurityNote:
+      'JPEG streaming uses the trusted private LAN pairing session and is view-only.',
+    screenUnsupported:
+      'Update the Android Companion app to enable QR / LAN screen streaming.',
+    lanScreenMode:
+      'QR / LAN Companion can share the screen after Android permission. This path is view-only.',
+    usbScreenMode:
+      'USB Companion handles device actions. Use ADB + scrcpy for the interactive mirror.',
+    adbFallbackMode:
+      'If Companion cannot stream, the workspace falls back to ADB/scrcpy when USB or Wireless debugging is available.',
+    requestFailed: 'Companion request failed',
+    noTauri: 'Companion connections are available in the desktop app.',
+  },
   controlPanel: {
     captureSource: 'Capture Source',
     screen: 'Screen',
@@ -369,6 +439,27 @@ export const en = {
     actionFailedTitle: 'Action Failed',
     selectDirectoryTitle: 'Select Screenshot Folder',
     noDevice: 'Select a device to capture',
+    scrollCapture: 'Scroll capture',
+    scrollCaptureConfirm:
+      'Scroll capture will automatically swipe the device and leave the screen at the final position. Continue?',
+    scrollBadge: 'Scroll',
+    partialScrollBadge: 'Partial scroll',
+    partialCaptureTitle: 'Partial Scroll Capture Saved',
+    partialCaptureMessage:
+      'The page end was not confirmed, so this image may be incomplete. Saved to {path}',
+    selectAllVisible: 'Select visible',
+    selectionActions: 'Selected screenshot actions',
+    selectedCount: '{count} selected',
+    removeSelected: 'Remove selected',
+    deleteSelected: 'Delete selected files',
+    clearSelection: 'Clear selection',
+    deleteSelectedConfirm:
+      'Delete {count} selected screenshot files from disk? This cannot be undone.',
+    batchDeleteSuccessTitle: 'Screenshots Deleted',
+    batchDeleteSuccessMessage: 'Deleted {count} screenshot files.',
+    batchDeletePartialMessage:
+      '{failed} files could not be deleted. Successful items were removed from history.',
+    deleteFailedMessage: 'Could not delete {filename}: {error}',
     errors: {
       adb_not_found:
         'ADB executable not found. Install or set the scrcpy path.',
@@ -381,10 +472,23 @@ export const en = {
       invalid_serial: 'Invalid device serial.',
       invalid_output_dir: 'The output directory is invalid.',
       corrupt_png: 'The captured image was empty or corrupted.',
+      decode_failed: 'The captured image could not be decoded.',
+      encode_failed: 'The long screenshot could not be encoded.',
+      not_scrollable:
+        'The current screen did not scroll or has no more content.',
+      no_overlap:
+        'The captured sections could not be aligned. Try a static page.',
+      dimension_changed:
+        'The screen size or orientation changed during capture.',
+      size_limit: 'The long screenshot exceeded the safe image-size limit.',
       write_failed: 'Could not write the screenshot file.',
       no_device: 'No device selected.',
       busy: 'A capture is already in progress.',
     },
+  },
+  autoCapture: {
+    confirmStart:
+      'Auto Screen Capture will control and scroll the selected Android device. Do not touch or rotate it while capture is running. Continue?',
   },
   preview: {
     title: 'Live Preview',

@@ -1,8 +1,16 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open } from '@tauri-apps/plugin-dialog'
-import { Smartphone } from 'lucide-react'
+import { ChevronLeft, Home, RotateCw, Smartphone, SquareStack } from 'lucide-react'
 import Sidebar from './components/Sidebar'
 import ControlPanel from './components/ControlPanel'
 import LogPanel from './components/LogPanel'
@@ -13,6 +21,8 @@ import Footer from './components/Footer'
 import AppNavigation from './components/app-shell/AppNavigation'
 import AppShell from './components/app-shell/AppShell'
 import DashboardLayout from './components/dashboard/DashboardLayout'
+import DashboardEmbeddedStage from './components/dashboard/DashboardEmbeddedStage'
+import CompanionWorkspaceStage from './components/dashboard/CompanionWorkspaceStage'
 import IosWorkspaceStage from './components/dashboard/IosWorkspaceStage'
 import WorkspaceTabBar from './components/workspace-tabs'
 import WorkspaceToolSurface from './components/workspace-tabs/WorkspaceToolSurface'
@@ -41,19 +51,34 @@ import CustomCommand from './components/custom-command'
 import FileManager from './components/file-manager'
 import WidgetLayout from './components/widget-layout'
 import KeymapController from './components/keymap-controller'
+import DevicesBatchActions from './components/devices/DevicesBatchActions'
 import { DEFAULT_SCRCPY_CONFIG, useScrcpy } from './hooks/useScrcpy'
+import { useDeviceSelection } from './hooks/useDeviceSelection'
+import { useCompanion } from './hooks/useCompanion'
 import { useScreenshot } from './hooks/useScreenshot'
+import { useAutoCapture } from './hooks/useAutoCapture'
 import { useRecordingLibrary } from './hooks/useRecordingLibrary'
 import { useDeviceStatus } from './hooks/useDeviceStatus'
 import { useWorkspaceShell } from './hooks/useWorkspaceShell'
 import { useEmbeddedMirror } from './hooks/useEmbeddedMirror'
+import { useAdbLiveFrame } from './hooks/useAdbLiveFrame'
+import { getAdbLiveFrameDataUrl } from './utils/adbLiveFrame'
 import { useIosMirror, type IosDeviceInfo } from './hooks/useIosMirror'
 import { getVersion } from '@tauri-apps/api/app'
 import { isTauri } from './utils/tauriEnv'
 import { createBugReport } from './services/bugReportService'
+import {
+  capturePreviewFrame,
+  type MacScreenshotTarget,
+} from './services/screenshotService'
 import { applyQualityMode } from './utils/adaptiveQuality'
 import { persistScrcpyLaunchConfig } from './utils/scrcpyLaunch'
 import { openWorkspaceModal, type WorkspaceModal } from './types/workspaceModal'
+import type { CompanionDevice } from './types/companion'
+import type { ScreenshotSourceKind } from './types/screenshot'
+import type { DeviceActionId } from './types/deviceControl'
+import { runDeviceAction } from './services/deviceActionService'
+import { runDeviceBatch } from './utils/deviceBatchRunner'
 import { useI18n } from './i18n'
 import { ShellUiProvider, useShellUi } from './contexts/ShellUiContext'
 import {
@@ -63,6 +88,10 @@ import {
   type DeviceConfigProfileMap,
   type DeviceProfileMap,
 } from './types/presetProfiles'
+import {
+  readWorkspaceRestoreState,
+  writeWorkspaceRestoreState,
+} from './types/workspaceRestore'
 
 const OtherPages = lazy(() => import('./components/pages/OtherPages'))
 const DevicesPage = lazy(() => import('./components/pages/DevicesPage'))
@@ -91,8 +120,31 @@ const TaskSchedulerPage = lazy(
   () => import('./components/pages/TaskSchedulerPage'),
 )
 
+function companionWorkspaceId(device: CompanionDevice): string {
+  return `companion:${encodeURIComponent(device.id)}`
+}
+
+type ScreenshotSourceOption = {
+  id: string
+  label: string
+  kind: ScreenshotSourceKind
+  available?: boolean
+  macosTarget?: MacScreenshotTarget
+}
+
+function isMacOsTauri(): boolean {
+  if (!isTauri() || typeof navigator === 'undefined') return false
+  const platform = navigator.platform.toLowerCase()
+  const userAgent = navigator.userAgent.toLowerCase()
+  return platform.includes('mac') || userAgent.includes('mac os x')
+}
+
 function AppContent() {
   const { t } = useI18n()
+  const restoredWorkspace = useMemo(
+    () => readWorkspaceRestoreState(window.localStorage),
+    [],
+  )
   const {
     activeRoute,
     navigate: handleNavigate,
@@ -103,6 +155,7 @@ function AppContent() {
   } = useShellUi()
   const {
     devices,
+    registeredDevices,
     logs,
     activeDevice,
     setActiveDevice,
@@ -143,6 +196,35 @@ function AppContent() {
     setIsOnboardingOpen,
     completeOnboarding,
   } = useScrcpy()
+  const registeredDeviceIds = useMemo(
+    () => registeredDevices.map((device) => device.id),
+    [registeredDevices],
+  )
+  const restoredAndroidWorkspaces = useMemo(
+    () =>
+      restoredWorkspace.openAndroidSerials.filter((serial) =>
+        registeredDeviceIds.includes(serial),
+      ),
+    [registeredDeviceIds, restoredWorkspace.openAndroidSerials],
+  )
+  const {
+    selectedDeviceIds,
+    toggleDeviceSelection,
+    selectAllDevices,
+    clearDeviceSelection,
+  } = useDeviceSelection({
+    registeredDeviceIds,
+    initialSelectedDeviceIds: restoredWorkspace.selectedDeviceIds,
+  })
+  const selectedOnlineDeviceIds = useMemo(() => {
+    const online = new Set(
+      registeredDevices
+        .filter((device) => device.adbState === 'device')
+        .map((device) => device.serial),
+    )
+    return Array.from(selectedDeviceIds).filter((serial) => online.has(serial))
+  }, [registeredDevices, selectedDeviceIds])
+  const companion = useCompanion()
   const physicalAndroidDevices = useMemo(
     () => devices.filter((serial) => !/^emulator-\d+$/.test(serial)),
     [devices],
@@ -253,6 +335,38 @@ function AppContent() {
     activeDevice,
     customPath: config.scrcpyPath,
   })
+  const adbLiveFrame = useAdbLiveFrame(activeDevice)
+  const [selectedScreenshotSourceId, setSelectedScreenshotSourceId] =
+    useState('android-adb')
+  const iosFrameCacheRef = useRef<Record<string, string>>({})
+  const [iosFrameRevision, setIosFrameRevision] = useState(0)
+  const autoCapture = useAutoCapture({
+    activeDevice,
+    customPath: config.scrcpyPath,
+    outputDirectory: screenshot.screenshotDir,
+    onCompleted: (completed) => {
+      screenshot.recordAutoCapture(completed)
+      if (!completed.result) return
+      if (completed.result.partial) {
+        notify(
+          t('screenshot.partialCaptureTitle'),
+          t('screenshot.partialCaptureMessage', {
+            path: completed.result.path,
+          }),
+          'warning',
+        )
+      } else {
+        notify(
+          t('screenshot.captureSuccessTitle'),
+          t('screenshot.captureSuccessMessage', {
+            path: completed.result.path,
+          }),
+          'success',
+        )
+      }
+    },
+  })
+  const captureBusy = screenshot.isCapturing || autoCapture.isActive
   const [quickDiagnosticBusy, setQuickDiagnosticBusy] = useState(false)
 
   const handleQuickDiagnostic = async () => {
@@ -318,17 +432,85 @@ function AppContent() {
   const [embeddedConnections, setEmbeddedConnections] = useState<
     Record<string, boolean>
   >({})
-  const [openDeviceWorkspaces, setOpenDeviceWorkspaces] = useState<string[]>([])
+  const [openCompanionWorkspaceId, setOpenCompanionWorkspaceId] = useState<
+    string | null
+  >(null)
+  const [activeCompanionWorkspaceId, setActiveCompanionWorkspaceId] = useState<
+    string | null
+  >(null)
+  const [openDeviceWorkspaces, setOpenDeviceWorkspaces] = useState<string[]>(
+    () => restoredAndroidWorkspaces,
+  )
   const [deviceWorkspaceLabels, setDeviceWorkspaceLabels] = useState<
     Record<string, string>
   >({})
-  const [multiDeviceView, setMultiDeviceView] = useState(true)
+  const [multiDeviceView, setMultiDeviceView] = useState(
+    restoredWorkspace.multiDeviceView && restoredAndroidWorkspaces.length > 1,
+  )
+  const [workspaceRestoreReady, setWorkspaceRestoreReady] = useState(
+    () =>
+      registeredDeviceIds.length > 0 ||
+      (restoredWorkspace.openAndroidSerials.length === 0 &&
+        restoredWorkspace.selectedDeviceIds.length === 0),
+  )
   const [embeddedSessionCommands, setEmbeddedSessionCommands] = useState<
     Record<string, { id: number; action: 'start' | 'stop' }>
   >({})
   const embeddedDashboardConnected = Boolean(
     activeDevice && embeddedConnections[activeDevice],
   )
+
+  const restoredActiveDeviceRef = useRef(false)
+  useEffect(() => {
+    if (restoredActiveDeviceRef.current) return
+    if (!workspaceRestoreReady) {
+      if (registeredDeviceIds.length === 0) return
+      setOpenDeviceWorkspaces(restoredAndroidWorkspaces)
+      selectAllDevices(restoredWorkspace.selectedDeviceIds)
+      setMultiDeviceView(
+        restoredWorkspace.multiDeviceView &&
+          restoredAndroidWorkspaces.length > 1,
+      )
+      setWorkspaceRestoreReady(true)
+    }
+    restoredActiveDeviceRef.current = true
+    const restoredActive = restoredWorkspace.activeAndroidSerial
+    const restoredOpen = workspaceRestoreReady
+      ? openDeviceWorkspaces
+      : restoredAndroidWorkspaces
+    if (restoredActive && restoredOpen.includes(restoredActive)) {
+      setActiveDevice(restoredActive)
+    }
+  }, [
+    openDeviceWorkspaces,
+    registeredDeviceIds.length,
+    restoredAndroidWorkspaces,
+    restoredWorkspace,
+    selectAllDevices,
+    setActiveDevice,
+    workspaceRestoreReady,
+  ])
+
+  useEffect(() => {
+    if (!workspaceRestoreReady) return
+    try {
+      writeWorkspaceRestoreState(window.localStorage, {
+        version: 1,
+        openAndroidSerials: openDeviceWorkspaces,
+        selectedDeviceIds: Array.from(selectedDeviceIds),
+        activeAndroidSerial: activeDevice || undefined,
+        multiDeviceView,
+      })
+    } catch {
+      // Logical workspace remains usable when local storage is unavailable.
+    }
+  }, [
+    activeDevice,
+    multiDeviceView,
+    openDeviceWorkspaces,
+    selectedDeviceIds,
+    workspaceRestoreReady,
+  ])
 
   const requestEmbeddedSession = (
     action: 'start' | 'stop',
@@ -347,6 +529,7 @@ function AppContent() {
     )
     setActiveDevice(serial)
     setActiveIosUdid(null)
+    setActiveCompanionWorkspaceId(null)
     activateDeviceWorkspace()
     handleNavigate('dashboard')
   }
@@ -401,7 +584,21 @@ function AppContent() {
   >({})
   const [activeIosUdid, setActiveIosUdid] = useState<string | null>(null)
   const [iosStreaming, setIosStreaming] = useState<Record<string, boolean>>({})
-  const activeAndroidWorkspaceDevice = activeIosUdid ? '' : activeDevice
+  const handleIosFrame = useCallback(
+    (udid: string, frameSrc: string | null) => {
+      if (frameSrc) {
+        if (iosFrameCacheRef.current[udid] === frameSrc) return
+        iosFrameCacheRef.current[udid] = frameSrc
+      } else {
+        if (!(udid in iosFrameCacheRef.current)) return
+        delete iosFrameCacheRef.current[udid]
+      }
+      setIosFrameRevision((current) => current + 1)
+    },
+    [],
+  )
+  const activeAndroidWorkspaceDevice =
+    activeIosUdid || activeCompanionWorkspaceId ? '' : activeDevice
 
   const openIosWorkspace = (device: IosDeviceInfo) => {
     setOpenIosWorkspaces((current) =>
@@ -409,6 +606,7 @@ function AppContent() {
     )
     setIosWorkspaceDevices((current) => ({ ...current, [device.udid]: device }))
     setActiveIosUdid(device.udid)
+    setActiveCompanionWorkspaceId(null)
     activateDeviceWorkspace()
     handleNavigate('dashboard')
   }
@@ -425,6 +623,62 @@ function AppContent() {
     const remaining = openIosWorkspaces.filter((item) => item !== udid)
     setActiveIosUdid(remaining[remaining.length - 1] ?? null)
   }
+
+  const companionDevicesByWorkspaceId = useMemo(
+    () =>
+      new Map(
+        companion.devices.map(
+          (device) => [companionWorkspaceId(device), device] as const,
+        ),
+      ),
+    [companion.devices],
+  )
+
+  const selectCompanionWorkspace = (workspaceId: string) => {
+    if (!companionDevicesByWorkspaceId.has(workspaceId)) return
+    setActiveCompanionWorkspaceId(workspaceId)
+    setActiveIosUdid(null)
+    activateDeviceWorkspace()
+    handleNavigate('dashboard')
+  }
+
+  const openCompanionWorkspace = (device: CompanionDevice) => {
+    const workspaceId = companionWorkspaceId(device)
+    setOpenCompanionWorkspaceId(workspaceId)
+    selectCompanionWorkspace(workspaceId)
+
+    const canShareScreen =
+      device.transport === 'lan-tcp' &&
+      device.capabilities.includes('start_screen_share')
+    if (
+      canShareScreen &&
+      (companion.screenState === 'stopped' || companion.screenState === 'error')
+    ) {
+      void companion.startScreen().catch(() => undefined)
+    }
+  }
+
+  const closeCompanionWorkspace = (workspaceId: string) => {
+    setOpenCompanionWorkspaceId((current) =>
+      current === workspaceId ? null : current,
+    )
+    setActiveCompanionWorkspaceId((current) =>
+      current === workspaceId ? null : current,
+    )
+  }
+
+  useEffect(() => {
+    if (
+      !openCompanionWorkspaceId ||
+      companionDevicesByWorkspaceId.has(openCompanionWorkspaceId)
+    ) {
+      return
+    }
+    setOpenCompanionWorkspaceId(null)
+    setActiveCompanionWorkspaceId((current) =>
+      current === openCompanionWorkspaceId ? null : current,
+    )
+  }, [companionDevicesByWorkspaceId, openCompanionWorkspaceId])
 
   // Detect iOS mirroring support (macOS + pymobiledevice3) and scan once on mount.
   useEffect(() => {
@@ -446,11 +700,77 @@ function AppContent() {
   const [isUiInspectorOpen, setIsUiInspectorOpen] = useState(false)
   const [isDeviceStatusOpen, setIsDeviceStatusOpen] = useState(false)
   const [workspaceModal, setWorkspaceModal] = useState<WorkspaceModal>(null)
+  const [workspaceDeviceScope, setWorkspaceDeviceScope] = useState<
+    string[] | null
+  >(null)
+  const [deviceBatchBusy, setDeviceBatchBusy] = useState(false)
+  const workspaceDevices = useMemo(
+    () =>
+      workspaceDeviceScope
+        ? workspaceDeviceScope.filter((serial) => devices.includes(serial))
+        : devices,
+    [devices, workspaceDeviceScope],
+  )
   const [isPairingOpen, setIsPairingOpen] = useState(false)
   const [isConnHealthOpen, setIsConnHealthOpen] = useState(false)
   const [isPresetsOpen, setIsPresetsOpen] = useState(false)
   const [isMacroOpen, setIsMacroOpen] = useState(false)
   const [isCustomCmdOpen, setIsCustomCmdOpen] = useState(false)
+
+  const openSelectedDeviceWorkspace = () => {
+    if (selectedOnlineDeviceIds.length === 0) return
+    setWorkspaceDeviceScope(selectedOnlineDeviceIds)
+    setWorkspaceModal('embedded')
+  }
+
+  const openSelectedDeviceBatchTools = () => {
+    if (selectedOnlineDeviceIds.length === 0) return
+    setWorkspaceDeviceScope([...selectedOnlineDeviceIds])
+    setWorkspaceModal('batch')
+  }
+
+  const closeWorkspaceModal = () => {
+    setWorkspaceModal(null)
+    setWorkspaceDeviceScope(null)
+  }
+
+  const runSelectedDeviceAction = async (
+    action: Extract<
+      DeviceActionId,
+      | 'home'
+      | 'back'
+      | 'power'
+      | 'volume_up'
+      | 'volume_down'
+      | 'mute'
+      | 'reboot'
+    >,
+    deviceIds: readonly string[] = selectedOnlineDeviceIds,
+  ) => {
+    if (deviceIds.length === 0 || deviceBatchBusy) return
+    setDeviceBatchBusy(true)
+    try {
+      const run = await runDeviceBatch(
+        deviceIds,
+        (serial) => runDeviceAction(serial, action, config.scrcpyPath),
+        { concurrency: 3 },
+      )
+      const actionFailures = run.results.filter(
+        (result) => result.status === 'success' && !result.value.success,
+      ).length
+      const failed = run.summary.failed + run.summary.cancelled + actionFailures
+      const succeeded = run.summary.total - failed
+      notify(
+        failed === 0 ? 'Device action complete' : 'Device action completed',
+        failed === 0
+          ? `${action} sent to ${run.summary.total} device(s).`
+          : `${succeeded} succeeded, ${failed} failed.`,
+        failed === 0 ? 'success' : 'warning',
+      )
+    } finally {
+      setDeviceBatchBusy(false)
+    }
+  }
   const [isFileManagerOpen, setIsFileManagerOpen] = useState(false)
   const [isWidgetLayoutOpen, setIsWidgetLayoutOpen] = useState(false)
   const [isKeymapOpen, setIsKeymapOpen] = useState(false)
@@ -469,6 +789,16 @@ function AppContent() {
       onConfirm,
       true,
       t('common.cancel'),
+    )
+  }
+
+  const confirmSelectedDeviceReboot = () => {
+    const deviceIds = [...selectedOnlineDeviceIds]
+    if (deviceIds.length === 0 || deviceBatchBusy) return
+    confirmAction(
+      'Reboot selected devices',
+      `Reboot ${deviceIds.length} online selected device${deviceIds.length === 1 ? '' : 's'}?\n\n${deviceIds.join('\n')}\n\nThe devices will be temporarily unavailable while restarting.`,
+      () => void runSelectedDeviceAction('reboot', deviceIds),
     )
   }
 
@@ -498,6 +828,7 @@ function AppContent() {
   }
 
   const handleScreenshotCapture = async (serial?: string) => {
+    if (autoCapture.isActive) return
     const target = serial || activeDevice
     if (!target) {
       showAlert(
@@ -569,6 +900,21 @@ function AppContent() {
     }
   }
 
+  const handleScreenshotDelete = async (id: string, deleteFile: boolean) => {
+    const result = await screenshot.deleteEntry(id, deleteFile)
+    const failure = result.failures[0]
+    if (failure) {
+      notify(
+        t('screenshot.actionFailedTitle'),
+        t('screenshot.deleteFailedMessage', {
+          filename: failure.filename,
+          error: failure.error,
+        }),
+        'error',
+      )
+    }
+  }
+
   // Global screenshot shortcut: Ctrl+Shift+S (Win/Linux) / Cmd+Shift+S (macOS).
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -578,7 +924,7 @@ function AppContent() {
         (e.key === 's' || e.key === 'S')
       ) {
         e.preventDefault()
-        if (activeDevice && !screenshot.isCapturing) {
+        if (activeDevice && !captureBusy) {
           handleScreenshotCapture()
         }
       }
@@ -586,7 +932,7 @@ function AppContent() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeDevice, screenshot.isCapturing])
+  }, [activeDevice, captureBusy])
 
   useEffect(() => {
     // Initial setup: fetch version and close splashscreen
@@ -850,9 +1196,33 @@ function AppContent() {
       onToggleAuto={toggleAutoConnect}
       isRefreshing={isRefreshing}
       onFilePush={handleFileBrowse}
-      onOpenWorkspace={() =>
-        setWorkspaceModal((current) => openWorkspaceModal(current, 'batch'))
-      }
+      companionDevices={companion.devices}
+      companionScanning={companion.isScanning}
+      companionPairing={companion.isPairing}
+      companionLanOffer={companion.lanOffer}
+      companionError={companion.error}
+      companionStatus={companion.status}
+      companionScreenStatus={companion.screenStatus}
+      companionScreenFrame={companion.screenFrame}
+      companionScreenStarting={companion.isScreenStarting}
+      companionScreenStreaming={companion.isScreenStreaming}
+      onCompanionScan={companion.scan}
+      onCompanionStartLanPairing={companion.startLanPairing}
+      onCompanionScreenStart={companion.startScreen}
+      onCompanionScreenStop={companion.stopScreen}
+      onCompanionDisconnect={companion.disconnect}
+      onCompanionRequest={companion.request}
+      companionRemoteStatus={companion.remoteStatus}
+      companionRemoteStarting={companion.isRemoteStarting}
+      companionRemoteActive={companion.isRemoteActive}
+      companionEmbeddedConnections={embeddedConnections}
+      companionCustomPath={config.scrcpyPath}
+      onCompanionRemoteStart={companion.startRemote}
+      onCompanionRemoteStop={companion.stopRemote}
+      onOpenWorkspace={() => {
+        setWorkspaceDeviceScope(null)
+        setWorkspaceModal((current) => openWorkspaceModal(current, 'embedded'))
+      }}
       onOpenPairing={() => setIsPairingOpen(true)}
       historyDevices={historyDevices}
       clearHistory={clearHistory}
@@ -890,7 +1260,7 @@ function AppContent() {
         }))
       }
       onScreenshot={() => handleScreenshotCapture()}
-      isCapturing={screenshot.isCapturing}
+      isCapturing={captureBusy}
       onOpenBugReport={() => setIsBugReportOpen(true)}
       onQuickDiagnostic={() => void handleQuickDiagnostic()}
       quickDiagnosticBusy={quickDiagnosticBusy}
@@ -907,9 +1277,10 @@ function AppContent() {
       onOpenFileManager={() => setIsFileManagerOpen(true)}
       onOpenWidgetLayout={() => setIsWidgetLayoutOpen(true)}
       onOpenKeymap={() => setIsKeymapOpen(true)}
-      onOpenEmbeddedWorkspace={() =>
+      onOpenEmbeddedWorkspace={() => {
+        setWorkspaceDeviceScope(null)
         setWorkspaceModal((current) => openWorkspaceModal(current, 'embedded'))
-      }
+      }}
       notify={notify}
     />
   )
@@ -938,7 +1309,7 @@ function AppContent() {
       dashboard={dashboard}
       history={screenshot.history}
       screenshotDir={screenshot.screenshotDir}
-      isCapturing={screenshot.isCapturing}
+      isCapturing={captureBusy}
       canCapture={!!activeDevice}
       shortcutLabel={
         navigator.platform.toLowerCase().includes('mac')
@@ -963,9 +1334,7 @@ function AppContent() {
           notify(t('screenshot.actionFailedTitle'), String(error), 'error')
         }
       }}
-      onDeleteEntry={(id, deleteFile) =>
-        void screenshot.deleteEntry(id, deleteFile)
-      }
+      onDeleteEntry={handleScreenshotDelete}
       onClearHistory={screenshot.clearHistory}
     />
   )
@@ -1027,16 +1396,32 @@ function AppContent() {
       device,
     ]),
   )
+  const companionWorkspaceIds =
+    openCompanionWorkspaceId &&
+    companionDevicesByWorkspaceId.has(openCompanionWorkspaceId)
+      ? [openCompanionWorkspaceId]
+      : []
   const dashboardWorkspaceIds = Array.from(
     new Set([
       ...dashboardWorkspaceSerials,
       ...openIosWorkspaces.filter((udid) => iosDevicesByUdid.has(udid)),
+      ...companionWorkspaceIds,
     ]),
   )
-  const activeWorkspaceDevice = activeIosUdid ?? activeDevice
+  const activeWorkspaceDevice =
+    activeCompanionWorkspaceId ?? activeIosUdid ?? activeDevice
+  const renderedDashboardWorkspaceIds = multiDeviceView
+    ? dashboardWorkspaceIds
+    : activeWorkspaceDevice
+      ? [activeWorkspaceDevice]
+      : []
   const iosRunningDevices = Object.entries(iosStreaming)
     .filter(([, streaming]) => streaming)
     .map(([udid]) => udid)
+  const companionRunningDevices =
+    companion.isScreenStreaming && openCompanionWorkspaceId
+      ? [openCompanionWorkspaceId]
+      : []
   const workspaceDeviceLabels = {
     ...deviceWorkspaceLabels,
     ...Object.fromEntries(
@@ -1045,11 +1430,186 @@ function AppContent() {
         device.name || device.productType,
       ]),
     ),
+    ...Object.fromEntries(
+      Array.from(companionDevicesByWorkspaceId.entries()).map(
+        ([workspaceId, device]) => [
+          workspaceId,
+          device.name || 'Android Companion',
+        ],
+      ),
+    ),
   }
   const workspaceDeviceKinds = Object.fromEntries([
     ...dashboardWorkspaceSerials.map((serial) => [serial, 'android'] as const),
     ...openIosWorkspaces.map((udid) => [udid, 'ios'] as const),
+    ...companionWorkspaceIds.map(
+      (workspaceId) => [workspaceId, 'companion'] as const,
+    ),
   ])
+
+  const screenshotCaptureSources = useMemo<ScreenshotSourceOption[]>(() => {
+    const sources: ScreenshotSourceOption[] = []
+    if (activeDevice) {
+      sources.push({
+        id: 'android-adb',
+        label: `Android ADB · ${workspaceDeviceLabels[activeDevice] || activeDevice}`,
+        kind: 'android-adb',
+      })
+    }
+    if (activeDevice && adbLiveFrame.active) {
+      sources.push({
+        id: 'embedded-scrcpy',
+        label: `Embedded scrcpy · ${workspaceDeviceLabels[activeDevice] || activeDevice}`,
+        kind: 'embedded-scrcpy',
+      })
+    }
+    if (activeIosUdid && iosFrameCacheRef.current[activeIosUdid]) {
+      const device = iosDevicesByUdid.get(activeIosUdid)
+      sources.push({
+        id: `ios:${activeIosUdid}`,
+        label: `iOS · ${device?.name || device?.productType || activeIosUdid}`,
+        kind: 'ios',
+      })
+    }
+    if (
+      activeCompanionWorkspaceId &&
+      companion.isScreenStreaming &&
+      companion.screenFrame
+    ) {
+      const device = companionDevicesByWorkspaceId.get(
+        activeCompanionWorkspaceId,
+      )
+      sources.push({
+        id: activeCompanionWorkspaceId,
+        label: `Android Companion · ${device?.name || 'device'}`,
+        kind: 'android-companion',
+      })
+    }
+    if (isMacOsTauri()) {
+      sources.push(
+        {
+          id: 'macos-display',
+          label: 'macOS · Main display',
+          kind: 'macos-display',
+          macosTarget: 'display',
+        },
+        {
+          id: 'macos-window',
+          label: 'macOS · Select window',
+          kind: 'macos-window',
+          macosTarget: 'window',
+        },
+        {
+          id: 'macos-region',
+          label: 'macOS · Select region',
+          kind: 'macos-region',
+          macosTarget: 'region',
+        },
+      )
+    }
+    return sources
+  }, [
+    activeCompanionWorkspaceId,
+    activeDevice,
+    activeIosUdid,
+    adbLiveFrame.active,
+    companion.isScreenStreaming,
+    companion.screenFrame,
+    companionDevicesByWorkspaceId,
+    deviceWorkspaceLabels,
+    iosDevicesByUdid,
+    iosFrameRevision,
+  ])
+
+  useEffect(() => {
+    if (
+      selectedScreenshotSourceId &&
+      screenshotCaptureSources.some(
+        (source) => source.id === selectedScreenshotSourceId,
+      )
+    ) {
+      return
+    }
+    setSelectedScreenshotSourceId(
+      screenshotCaptureSources[0]?.id || 'android-adb',
+    )
+  }, [screenshotCaptureSources, selectedScreenshotSourceId])
+
+  const selectedScreenshotSource = screenshotCaptureSources.find(
+    (source) => source.id === selectedScreenshotSourceId,
+  )
+
+  const handleScreenshotPageCapture = async () => {
+    const source = selectedScreenshotSource
+    if (!source || source.kind === 'android-adb') {
+      await handleScreenshotCapture()
+      return
+    }
+
+    if (
+      source.kind === 'macos-display' ||
+      source.kind === 'macos-window' ||
+      source.kind === 'macos-region'
+    ) {
+      const target = source.macosTarget
+      if (!target) return
+      const result = await screenshot.captureMac(target)
+      if (result.success) {
+        notify('Screenshot saved', result.path, 'success')
+      } else if (result.errorCode !== 'busy') {
+        notify('Screenshot failed', result.error || 'Unknown error', 'error')
+      }
+      return
+    }
+
+    let imageData: string | null = null
+    let deviceSerial = source.id
+    let deviceName = source.label
+    let sourceId = source.id
+
+    if (source.kind === 'embedded-scrcpy') {
+      deviceSerial = activeDevice
+      deviceName = workspaceDeviceLabels[activeDevice] || activeDevice
+      sourceId = activeDevice
+      imageData = getAdbLiveFrameDataUrl(activeDevice)?.dataUrl || null
+    } else if (source.kind === 'ios') {
+      const udid = source.id.slice('ios:'.length)
+      const device = iosDevicesByUdid.get(udid)
+      deviceSerial = udid
+      sourceId = udid
+      deviceName = device?.name || device?.productType || udid
+      imageData = iosFrameCacheRef.current[udid] || null
+    } else if (source.kind === 'android-companion') {
+      const device = companionDevicesByWorkspaceId.get(source.id)
+      deviceSerial = source.id
+      deviceName = device?.name || 'Android Companion'
+      imageData = companion.getScreenFrameData()
+    }
+
+    if (!imageData) {
+      notify(
+        'Screenshot failed',
+        'The selected source does not have a current frame.',
+        'warning',
+      )
+      return
+    }
+
+    const result = await screenshot.captureExternal({
+      imageData,
+      deviceSerial,
+      deviceName,
+      sourceKind: source.kind,
+      sourceId,
+      sourceName: source.label,
+      outputDir: screenshot.screenshotDir,
+    })
+    if (result.success) {
+      notify('Screenshot saved', result.path, 'success')
+    } else if (result.errorCode !== 'busy') {
+      notify('Screenshot failed', result.error || 'Unknown error', 'error')
+    }
+  }
 
   const workspaceShellPanel = (
     <LogPanel
@@ -1063,11 +1623,11 @@ function AppContent() {
     />
   )
 
-  const iosToolUnavailable = (
+  const viewOnlyToolUnavailable = (
     <div className="flex h-full min-h-64 flex-col items-center justify-center gap-2 px-6 text-center">
       <Smartphone size={24} className="text-[var(--text-subtle)]" />
       <p className="text-[11px] font-semibold text-[var(--text-muted)]">
-        Unavailable for iOS view-only sessions
+        Unavailable for view-only workspaces
       </p>
       <p className="max-w-md text-[9px] leading-relaxed text-[var(--text-subtle)]">
         Logcat, shell, files and Android automation require ADB. Select an
@@ -1086,7 +1646,9 @@ function AppContent() {
       binaryStatus={scrcpyStatus}
       activeDevice={activeAndroidWorkspaceDevice}
       customPath={config.scrcpyPath}
-      connected={activeIosUdid ? false : sessionRunning}
+      connected={
+        activeIosUdid || activeCompanionWorkspaceId ? false : sessionRunning
+      }
       isRefreshing={isRefreshing}
       onRefresh={handleRefresh}
       onOpenSettings={() => handleNavigate('settings')}
@@ -1128,6 +1690,7 @@ function AppContent() {
                 ...runningDevices,
                 ...embeddedRunningDevices,
                 ...openIosWorkspaces,
+                ...companionWorkspaceIds,
               ]),
             )}
             deviceLabels={workspaceDeviceLabels}
@@ -1137,24 +1700,40 @@ function AppContent() {
                 ...runningDevices,
                 ...embeddedRunningDevices,
                 ...iosRunningDevices,
+                ...companionRunningDevices,
               ]),
             )}
             activeDevice={activeWorkspaceDevice}
             onSelectDevice={(workspaceId) => {
-              const iosDevice = iosDevicesByUdid.get(workspaceId)
-              if (iosDevice) openIosWorkspace(iosDevice)
-              else openDeviceWorkspace(workspaceId)
+              const companionDevice =
+                companionDevicesByWorkspaceId.get(workspaceId)
+              if (companionDevice) selectCompanionWorkspace(workspaceId)
+              else {
+                const iosDevice = iosDevicesByUdid.get(workspaceId)
+                if (iosDevice) openIosWorkspace(iosDevice)
+                else openDeviceWorkspace(workspaceId)
+              }
             }}
             onCloseDevice={(workspaceId) => {
-              if (iosDevicesByUdid.has(workspaceId))
+              if (companionDevicesByWorkspaceId.has(workspaceId))
+                closeCompanionWorkspace(workspaceId)
+              else if (iosDevicesByUdid.has(workspaceId))
                 closeIosWorkspace(workspaceId)
               else closeDeviceWorkspace(workspaceId)
             }}
             onAddDevice={() => setIsPairingOpen(true)}
             multiDeviceView={multiDeviceView}
-            onToggleMultiDeviceView={() =>
+            onToggleMultiDeviceView={() => {
+              const androidWorkspaceIds = dashboardWorkspaceIds.filter(
+                (workspaceId) => devices.includes(workspaceId),
+              )
+              if (!multiDeviceView && androidWorkspaceIds.length > 1) {
+                setWorkspaceDeviceScope(androidWorkspaceIds)
+                setWorkspaceModal('embedded')
+                return
+              }
               setMultiDeviceView((current) => !current)
-            }
+            }}
             toolbar={appHeader(true)}
           />
           <div
@@ -1168,12 +1747,19 @@ function AppContent() {
                   : 'contents'
             }
           >
-            {(dashboardWorkspaceIds.length > 0
-              ? dashboardWorkspaceIds
+            {(renderedDashboardWorkspaceIds.length > 0
+              ? renderedDashboardWorkspaceIds
               : ['']
             ).map((workspaceId) => {
+              const companionDevice =
+                companionDevicesByWorkspaceId.get(workspaceId)
               const iosDevice = iosDevicesByUdid.get(workspaceId)
               const serial = workspaceId
+              const compactMultiDevice =
+                multiDeviceView && dashboardWorkspaceIds.length > 1
+              const registeredDevice = registeredDevices.find(
+                (device) => device.serial === serial,
+              )
               return (
                 <div
                   key={workspaceId || 'empty-device-workspace'}
@@ -1192,13 +1778,21 @@ function AppContent() {
                       : undefined
                   }
                 >
-                  {iosDevice ? (
+                  {companionDevice ? (
+                    <CompanionWorkspaceStage
+                      device={companionDevice}
+                      frame={companion.screenFrame}
+                      screenState={companion.screenState}
+                      screenStatus={companion.screenStatus}
+                      startScreen={companion.startScreen}
+                      stopScreen={companion.stopScreen}
+                      compact={compactMultiDevice}
+                    />
+                  ) : iosDevice ? (
                     <IosWorkspaceStage
                       device={iosDevice}
                       customPath={config.scrcpyPath}
-                      compact={
-                        multiDeviceView && dashboardWorkspaceIds.length > 1
-                      }
+                      compact={compactMultiDevice}
                       onStreamingChange={(streaming) => {
                         setIosStreaming((current) =>
                           current[iosDevice.udid] === streaming
@@ -1206,7 +1800,112 @@ function AppContent() {
                             : { ...current, [iosDevice.udid]: streaming },
                         )
                       }}
+                      onFrame={(frameSrc) =>
+                        handleIosFrame(iosDevice.udid, frameSrc)
+                      }
                     />
+                  ) : compactMultiDevice ? (
+                    <div
+                      className="h-full min-h-[430px] min-w-0"
+                      onPointerDown={(event) => {
+                        if (
+                          (event.target as HTMLElement).closest(
+                            '[aria-label="Unpin secondary device"]',
+                          )
+                        )
+                          return
+                        if (serial !== activeDevice) setActiveDevice(serial)
+                      }}
+                      onFocusCapture={(event) => {
+                        if (
+                          (event.target as HTMLElement).closest(
+                            '[aria-label="Unpin secondary device"]',
+                          )
+                        )
+                          return
+                        if (serial !== activeDevice) setActiveDevice(serial)
+                      }}
+                    >
+                      <DashboardEmbeddedStage
+                        compact
+                        deviceName={
+                          registeredDevice?.health?.model ||
+                          deviceWorkspaceLabels[serial] ||
+                          serial
+                        }
+                        deviceSerial={serial}
+                        androidVersion={
+                          registeredDevice?.health?.androidVersion
+                        }
+                        connection={
+                          registeredDevice?.connectionType.toUpperCase() ||
+                          (serial.includes(':') ? 'WIFI' : 'USB')
+                        }
+                        batteryLevel={registeredDevice?.health?.batteryLevel}
+                        customPath={config.scrcpyPath}
+                        outputDir={screenshot.screenshotDir}
+                        notify={notify}
+                        actionRail={
+                          <div className="flex flex-col gap-1.5">
+                            {(
+                              [
+                                ['back', 'Back', ChevronLeft],
+                                ['home', 'Home', Home],
+                                ['recents', 'Recents', SquareStack],
+                                ['rotate', 'Rotate', RotateCw],
+                              ] as const
+                            ).map(([action, label, Icon]) => (
+                              <button
+                                key={action}
+                                type="button"
+                                title={label}
+                                aria-label={`${label} on ${serial}`}
+                                onClick={() => {
+                                  void runDeviceAction(
+                                    serial,
+                                    action,
+                                    config.scrcpyPath,
+                                  )
+                                    .then((result) => {
+                                      if (!result.success) {
+                                        notify(
+                                          `${label} failed`,
+                                          result.error || 'Unknown error',
+                                          'error',
+                                        )
+                                      }
+                                    })
+                                    .catch((error) =>
+                                      notify(
+                                        `${label} failed`,
+                                        String(error),
+                                        'error',
+                                      ),
+                                    )
+                                }}
+                                className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-primary/15 hover:text-primary"
+                              >
+                                <Icon size={14} />
+                              </button>
+                            ))}
+                          </div>
+                        }
+                        onScreenshot={() =>
+                          void handleScreenshotCapture(serial)
+                        }
+                        screenshotBusy={captureBusy}
+                        onAddDevice={() => setIsPairingOpen(true)}
+                        onClose={() => closeDeviceWorkspace(serial)}
+                        onMetricsChange={({ connected }) => {
+                          setEmbeddedConnections((current) =>
+                            current[serial] === connected
+                              ? current
+                              : { ...current, [serial]: connected },
+                          )
+                        }}
+                        sessionCommand={embeddedSessionCommands[serial]}
+                      />
+                    </div>
                   ) : (
                     <DashboardLayout
                       devices={devices}
@@ -1231,7 +1930,7 @@ function AppContent() {
                       onScreenshotSecondary={(serial) =>
                         handleScreenshotCapture(serial)
                       }
-                      screenshotBusy={screenshot.isCapturing}
+                      screenshotBusy={captureBusy}
                       sessionBehavior={sessionBehavior}
                       screenshotPanel={renderScreenshotManager(true)}
                       logPanel={renderDashboardLogPanel(
@@ -1259,9 +1958,6 @@ function AppContent() {
                       onRequestEmbeddedSession={(action) =>
                         requestEmbeddedSession(action, serial)
                       }
-                      compactWorkspace={
-                        multiDeviceView && dashboardWorkspaceIds.length > 1
-                      }
                     />
                   )}
                 </div>
@@ -1270,8 +1966,8 @@ function AppContent() {
           </div>
           {activeWorkspaceTool && activeWorkspaceTool !== 'file-explorer' ? (
             <WorkspaceToolSurface tool={activeWorkspaceTool}>
-              {activeIosUdid ? (
-                iosToolUnavailable
+              {activeIosUdid || activeCompanionWorkspaceId ? (
+                viewOnlyToolUnavailable
               ) : activeWorkspaceTool === 'test-runner' ? (
                 <TestRunnerPanel
                   activeDevice={activeDevice}
@@ -1307,6 +2003,7 @@ function AppContent() {
                 devices={
                   <DevicesPage
                     devices={devices}
+                    registeredDevices={registeredDevices}
                     activeDevice={activeDevice}
                     runningDevices={runningDevices}
                     customPath={config.scrcpyPath}
@@ -1314,6 +2011,27 @@ function AppContent() {
                     onRefresh={handleRefresh}
                     onAddDevice={() => setIsPairingOpen(true)}
                     onSelectDevice={setActiveDevice}
+                    selectedDeviceIds={selectedDeviceIds}
+                    onToggleDeviceSelection={toggleDeviceSelection}
+                    onSelectAllDevices={selectAllDevices}
+                    onClearDeviceSelection={clearDeviceSelection}
+                    batchActions={
+                      <DevicesBatchActions
+                        selectedCount={selectedDeviceIds.size}
+                        onlineCount={selectedOnlineDeviceIds.length}
+                        busy={deviceBatchBusy}
+                        onOpenWorkspace={openSelectedDeviceWorkspace}
+                        onOpenBatchTools={openSelectedDeviceBatchTools}
+                        onHome={() => void runSelectedDeviceAction('home')}
+                        onBack={() => void runSelectedDeviceAction('back')}
+                        onPower={() => void runSelectedDeviceAction('power')}
+                        onVolumeUp={() => void runSelectedDeviceAction('volume_up')}
+                        onVolumeDown={() => void runSelectedDeviceAction('volume_down')}
+                        onMute={() => void runSelectedDeviceAction('mute')}
+                        onReboot={confirmSelectedDeviceReboot}
+                        onClear={clearDeviceSelection}
+                      />
+                    }
                     onView={(serial) => {
                       openDeviceWorkspace(serial)
                     }}
@@ -1334,6 +2052,9 @@ function AppContent() {
                       setIsDeviceStatusOpen(true)
                     }}
                     connectionTools={deviceSidebar}
+                    companionDevices={companion.devices}
+                    companionScreenState={companion.screenState}
+                    onViewCompanion={openCompanionWorkspace}
                     iosDevices={ios.devices}
                     iosReady={ios.support.supported && ios.support.found}
                     onViewIos={openIosWorkspace}
@@ -1376,9 +2097,70 @@ function AppContent() {
                   <ScreenshotsPage
                     history={screenshot.history}
                     screenshotDir={screenshot.screenshotDir}
-                    canCapture={!!activeDevice}
-                    isCapturing={screenshot.isCapturing}
-                    onCapture={() => handleScreenshotCapture()}
+                    canCapture={Boolean(selectedScreenshotSource)}
+                    isCapturing={captureBusy}
+                    captureSource={{
+                      options: screenshotCaptureSources,
+                      selectedId: selectedScreenshotSourceId,
+                      onChange: setSelectedScreenshotSourceId,
+                    }}
+                    onCapture={handleScreenshotPageCapture}
+                    onCaptureScroll={
+                      selectedScreenshotSource?.kind === 'android-adb'
+                        ? () => void autoCapture.start()
+                        : undefined
+                    }
+                    autoCapture={
+                      selectedScreenshotSource?.kind === 'android-adb'
+                        ? {
+                            activeDevice,
+                            screenshotDir: screenshot.screenshotDir,
+                            canStart:
+                              Boolean(activeDevice) && !screenshot.isCapturing,
+                            isActive: autoCapture.isActive,
+                            session: autoCapture.session,
+                            frames: autoCapture.frames,
+                            lastEvent: autoCapture.lastEvent,
+                            error: autoCapture.error,
+                            onStart: async (captureConfig) => {
+                              if (
+                                !window.confirm(t('autoCapture.confirmStart'))
+                              ) {
+                                return
+                              }
+                              await autoCapture.start(captureConfig)
+                            },
+                            onCapturePreview: async () => {
+                              if (!activeDevice)
+                                throw new Error('No device selected')
+                              return capturePreviewFrame(
+                                activeDevice,
+                                config.scrcpyPath,
+                              )
+                            },
+                            onPause: autoCapture.pause,
+                            onResume: autoCapture.resume,
+                            onStop: autoCapture.stop,
+                            onCancel: autoCapture.cancel,
+                            onChangeDirectory: handleChangeScreenshotDir,
+                            onOpenImage: (path) =>
+                              handleScreenshotAction(
+                                screenshot.openImage,
+                                path,
+                              ),
+                            onOpenFolder: (path) =>
+                              handleScreenshotAction(
+                                screenshot.openFolder,
+                                path,
+                              ),
+                            onCopyImage: (path) =>
+                              handleScreenshotAction(
+                                screenshot.copyToClipboard,
+                                path,
+                              ),
+                          }
+                        : undefined
+                    }
                     onChangeDirectory={handleChangeScreenshotDir}
                     onOpenImage={(path) =>
                       handleScreenshotAction(screenshot.openImage, path)
@@ -1402,9 +2184,31 @@ function AppContent() {
                         )
                       }
                     }}
-                    onDeleteEntry={(id, deleteFile) =>
-                      void screenshot.deleteEntry(id, deleteFile)
-                    }
+                    onDeleteEntry={handleScreenshotDelete}
+                    onDeleteEntries={async (ids, deleteFiles) => {
+                      const result = await screenshot.deleteEntries(
+                        ids,
+                        deleteFiles,
+                      )
+                      if (result.failures.length > 0) {
+                        notify(
+                          t('screenshot.actionFailedTitle'),
+                          t('screenshot.batchDeletePartialMessage', {
+                            failed: result.failures.length,
+                          }),
+                          'warning',
+                        )
+                      } else if (deleteFiles) {
+                        notify(
+                          t('screenshot.batchDeleteSuccessTitle'),
+                          t('screenshot.batchDeleteSuccessMessage', {
+                            count: result.succeededIds.length,
+                          }),
+                          'success',
+                        )
+                      }
+                      return result
+                    }}
                     onClearHistory={screenshot.clearHistory}
                   />
                 }
@@ -1434,8 +2238,8 @@ function AppContent() {
                     activeDevice={activeAndroidWorkspaceDevice}
                     customPath={config.scrcpyPath}
                     manager={
-                      activeIosUdid ? (
-                        iosToolUnavailable
+                      activeIosUdid || activeCompanionWorkspaceId ? (
+                        viewOnlyToolUnavailable
                       ) : (
                         <FileManager
                           embedded
@@ -1474,6 +2278,7 @@ function AppContent() {
                   <SimulatorsPage
                     notify={notify}
                     customPath={config.scrcpyPath}
+                    screenshotDir={screenshot.screenshotDir}
                     androidDevices={physicalAndroidDevices}
                     androidLabels={deviceWorkspaceLabels}
                     iosDevices={ios.devices}
@@ -1481,6 +2286,10 @@ function AppContent() {
                     onRefreshIos={ios.refreshDevices}
                     onOpenAndroid={openDeviceWorkspace}
                     onOpenIos={openIosWorkspace}
+                    onIosFrame={handleIosFrame}
+                    onScreenshotCaptured={(result, device) =>
+                      screenshot.recordCaptureResult(result, device.name)
+                    }
                   />
                 }
                 logcatViewer={
@@ -1492,7 +2301,11 @@ function AppContent() {
                 }
                 performance={
                   <PerformancePage
-                    connected={!activeIosUdid && sessionRunning}
+                    connected={
+                      !activeIosUdid &&
+                      !activeCompanionWorkspaceId &&
+                      sessionRunning
+                    }
                     bitrateMbps={config.bitrate}
                     adaptiveEnabled={
                       config.qualityMode === 'adaptive' ||
@@ -1541,6 +2354,8 @@ function AppContent() {
                 automation={
                   <AutomationPage
                     activeDevice={activeAndroidWorkspaceDevice}
+                    availableDeviceIds={devices}
+                    selectedDeviceIds={selectedDeviceIds}
                     customPath={config.scrcpyPath}
                     outputDir={screenshot.screenshotDir}
                     notify={notify}
@@ -1674,8 +2489,8 @@ function AppContent() {
 
       <DeviceWorkspace
         isOpen={workspaceModal === 'batch'}
-        onClose={() => setWorkspaceModal(null)}
-        devices={devices}
+        onClose={closeWorkspaceModal}
+        devices={workspaceDevices}
         runningDevices={runningDevices}
         baseConfig={config}
         customPath={config.scrcpyPath}
@@ -1684,17 +2499,29 @@ function AppContent() {
         iosDevices={ios.devices}
         iosReady={ios.support.supported && ios.support.found}
         launchDevice={runScrcpy}
+        confirmAction={confirmAction}
       />
 
       <EmbeddedDeviceWorkspace
         isOpen={workspaceModal === 'embedded'}
-        onClose={() => setWorkspaceModal(null)}
-        devices={devices}
+        onClose={closeWorkspaceModal}
+        devices={workspaceDevices}
         runningDevices={runningDevices}
         activeDevice={activeDevice}
         customPath={config.scrcpyPath}
         outputDir={screenshot.screenshotDir}
         notify={notify}
+        companion={{
+          available:
+            companion.devices[0]?.transport === 'lan-tcp' &&
+            companion.devices[0]?.capabilities.includes('start_screen_share'),
+          frame: companion.screenFrame,
+          screenState: companion.screenState,
+          width: companion.screenStatus?.width,
+          height: companion.screenStatus?.height,
+          startScreen: companion.startScreen,
+          stopScreen: companion.stopScreen,
+        }}
         onRefreshDevices={handleRefresh}
       />
 

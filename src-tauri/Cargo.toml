@@ -1,6 +1,6 @@
 [package]
 name = "scrcpy-gui-plus"
-version = "1.0.4"
+version = "1.0.5"
 authors = ["KB-kil0bit"]
 description = "A modern GUI for Scrcpy written in React and Rust"
 edition = "2021"
@@ -35,3 +35,5 @@ chrono = "0.4.43"
 base64 = "0.22"
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 rand = "0.9"
+rusb = { version = "=0.9.4", features = ["vendored"] }
+image = { version = "=0.25.8", default-features = false, features = ["png", "jpeg"] }

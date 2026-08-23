@@ -1,10 +1,10 @@
 use crate::ScrcpyState;
 use flate2::read::GzDecoder;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command as StdCommand, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -149,7 +149,90 @@ pub fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
-pub(crate) fn get_binary_path(binary_name: &str, custom_folder: Option<String>) -> String {
+fn android_sdk_roots_from(
+    android_home: Option<std::ffi::OsString>,
+    android_sdk_root: Option<std::ffi::OsString>,
+    conventional_roots: impl IntoIterator<Item = PathBuf>,
+) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+
+    for value in [android_home, android_sdk_root].into_iter().flatten() {
+        if !value.is_empty() {
+            let path = PathBuf::from(value);
+            if !roots.contains(&path) {
+                roots.push(path);
+            }
+        }
+    }
+
+    for path in conventional_roots {
+        if !roots.contains(&path) {
+            roots.push(path);
+        }
+    }
+
+    roots
+}
+
+fn conventional_android_sdk_roots(
+    target_os: &str,
+    home: Option<std::ffi::OsString>,
+    local_app_data: Option<std::ffi::OsString>,
+) -> Vec<PathBuf> {
+    match target_os {
+        "macos" => home
+            .filter(|value| !value.is_empty())
+            .map(|value| PathBuf::from(value).join("Library/Android/sdk"))
+            .into_iter()
+            .collect(),
+        "linux" => home
+            .filter(|value| !value.is_empty())
+            .map(|value| PathBuf::from(value).join("Android/Sdk"))
+            .into_iter()
+            .collect(),
+        "windows" => local_app_data
+            .filter(|value| !value.is_empty())
+            .map(|value| PathBuf::from(value).join("Android/Sdk"))
+            .into_iter()
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn android_sdk_roots() -> Vec<PathBuf> {
+    android_sdk_roots_from(
+        std::env::var_os("ANDROID_HOME"),
+        std::env::var_os("ANDROID_SDK_ROOT"),
+        conventional_android_sdk_roots(
+            std::env::consts::OS,
+            std::env::var_os("HOME"),
+            std::env::var_os("LOCALAPPDATA"),
+        ),
+    )
+}
+
+fn is_runnable_binary(path: &Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        path.metadata()
+            .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false)
+    }
+
+    #[cfg(not(unix))]
+    true
+}
+
+fn get_binary_path_with_sdk_roots(
+    binary_name: &str,
+    custom_folder: Option<String>,
+    sdk_roots: &[PathBuf],
+) -> String {
     let exe_ext = std::env::consts::EXE_EXTENSION;
     let binary_filename = if exe_ext.is_empty() {
         binary_name.to_string()
@@ -185,8 +268,24 @@ pub(crate) fn get_binary_path(binary_name: &str, custom_folder: Option<String>) 
         }
     }
 
-    // 4. Return simple name to rely on system PATH
+    // 4. ADB is commonly installed by Android Studio without being exposed to
+    // GUI apps via PATH. Probe configured SDK roots and the conventional SDK
+    // location for the current platform before falling back to PATH.
+    if binary_name == "adb" {
+        for root in sdk_roots {
+            let sdk_adb = root.join("platform-tools").join(&binary_filename);
+            if is_runnable_binary(&sdk_adb) {
+                return sdk_adb.to_string_lossy().to_string();
+            }
+        }
+    }
+
+    // 5. Return simple name to rely on system PATH
     binary_name.to_string()
+}
+
+pub(crate) fn get_binary_path(binary_name: &str, custom_folder: Option<String>) -> String {
+    get_binary_path_with_sdk_roots(binary_name, custom_folder, &android_sdk_roots())
 }
 
 fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> std::io::Result<()> {
@@ -248,17 +347,22 @@ fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> std::io::Result
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-#[cfg(not(target_os = "windows"))]
-fn gui_command_path() -> Option<std::ffi::OsString> {
-    let mut paths = vec![
+pub(crate) fn command_search_path() -> Option<std::ffi::OsString> {
+    let mut paths = Vec::new();
+    #[cfg(not(target_os = "windows"))]
+    paths.extend([
         std::path::PathBuf::from("/opt/homebrew/bin"),
         std::path::PathBuf::from("/usr/local/bin"),
         std::path::PathBuf::from("/home/linuxbrew/.linuxbrew/bin"),
-    ];
+    ]);
     if let Some(current) = std::env::var_os("PATH") {
         paths.extend(std::env::split_paths(&current));
     }
-    std::env::join_paths(paths).ok()
+    if paths.is_empty() {
+        None
+    } else {
+        std::env::join_paths(paths).ok()
+    }
 }
 
 pub(crate) fn create_command<S: AsRef<std::ffi::OsStr>>(program: S) -> TokioCommand {
@@ -269,7 +373,7 @@ pub(crate) fn create_command<S: AsRef<std::ffi::OsStr>>(program: S) -> TokioComm
         // Homebrew and other user-installed CLIs. Keep the inherited entries,
         // but make the standard package-manager locations discoverable for
         // tools such as simdeck, npm, adb, and scrcpy.
-        if let Some(path) = gui_command_path() {
+        if let Some(path) = command_search_path() {
             cmd.env("PATH", path);
         }
     }
@@ -317,6 +421,59 @@ pub async fn check_scrcpy(custom_path: Option<String>) -> serde_json::Value {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiscoveredAdbDevice {
+    serial: String,
+    adb_state: String,
+    connection_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    detail: Option<String>,
+}
+
+fn adb_connection_type(serial: &str) -> &'static str {
+    if serial.contains(':') {
+        "wifi"
+    } else {
+        "usb"
+    }
+}
+
+fn parse_adb_devices_output(output: &str) -> Vec<DiscoveredAdbDevice> {
+    let mut records = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for line in output.lines().skip(1) {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 2 {
+            continue;
+        }
+
+        let serial = parts[0].trim();
+        if serial.is_empty()
+            || serial.contains("._tcp")
+            || serial.contains("._udp")
+            || !seen.insert(serial.to_string())
+        {
+            continue;
+        }
+
+        let detail = if parts.len() > 2 {
+            Some(parts[2..].join(" "))
+        } else {
+            None
+        };
+        records.push(DiscoveredAdbDevice {
+            serial: serial.to_string(),
+            adb_state: parts[1].to_string(),
+            connection_type: adb_connection_type(serial).to_string(),
+            detail,
+        });
+    }
+
+    records
+}
+
 #[tauri::command]
 pub async fn get_devices(custom_path: Option<String>) -> serde_json::Value {
     let adb_path = get_binary_path("adb", custom_path);
@@ -327,15 +484,34 @@ pub async fn get_devices(custom_path: Option<String>) -> serde_json::Value {
         Ok(o) => {
             if o.status.success() {
                 let out_str = String::from_utf8_lossy(&o.stdout);
-                let devices: Vec<String> = out_str
-                    .lines()
-                    .skip(1) // Skip "List of devices attached"
-                    .filter(|l| l.contains("\tdevice"))
-                    .map(|l| l.split('\t').next().unwrap_or("").trim().to_string())
-                    .filter(|s| !s.is_empty() && !s.contains("._tcp") && !s.contains("._udp"))
+                let device_records = parse_adb_devices_output(&out_str);
+                let devices: Vec<String> = device_records
+                    .iter()
+                    .filter(|record| record.adb_state == "device")
+                    .map(|record| record.serial.clone())
                     .collect();
+                let mut diagnostics = Vec::new();
 
-                json!({ "error": false, "devices": devices })
+                for record in &device_records {
+                    if record.adb_state != "device" {
+                        let detail = record
+                            .detail
+                            .as_ref()
+                            .map(|value| format!(" ({value})"))
+                            .unwrap_or_default();
+                        diagnostics.push(format!(
+                            "ADB detected {} with status {}{}. Unlock the phone, enable USB debugging, and accept the RSA prompt; for offline, reconnect the cable or restart ADB.",
+                            record.serial, record.adb_state, detail
+                        ));
+                    }
+                }
+
+                json!({
+                    "error": false,
+                    "devices": devices,
+                    "deviceRecords": device_records,
+                    "diagnostics": diagnostics
+                })
             } else {
                 json!({ "error": true, "message": "ADB returned error" })
             }
@@ -418,9 +594,7 @@ pub async fn scan_lan_adb(window: Window) -> serde_json::Value {
 
     let local_ip = match get_local_ipv4() {
         Some(ip) => ip,
-        None => {
-            return json!({ "error": true, "message": "Could not determine local IP address" })
-        }
+        None => return json!({ "error": true, "message": "Could not determine local IP address" }),
     };
     let octets = local_ip.octets();
 
@@ -1993,11 +2167,153 @@ pub async fn poll_qr_pairing(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEST_DIR_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    struct TestDir(PathBuf);
+
+    impl TestDir {
+        fn new(label: &str) -> Self {
+            let sequence = TEST_DIR_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "scrcpy-gui-plus-{label}-{}-{sequence}",
+                std::process::id()
+            ));
+            std::fs::create_dir_all(&path).expect("create test directory");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn create_test_binary(path: &Path) {
+        std::fs::create_dir_all(path.parent().expect("binary parent"))
+            .expect("create binary parent");
+        std::fs::write(path, b"test binary").expect("create test binary");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
+                .expect("make test binary executable");
+        }
+    }
+
+    fn test_binary_name(name: &str) -> String {
+        match std::env::consts::EXE_EXTENSION {
+            "" => name.to_string(),
+            extension => format!("{name}.{extension}"),
+        }
+    }
+
+    #[test]
+    fn binary_resolver_prefers_custom_folder_over_android_sdk() {
+        let temp = TestDir::new("custom-before-sdk");
+        let custom = temp.0.join("custom");
+        let sdk = temp.0.join("sdk");
+        let adb_name = test_binary_name("adb");
+        let custom_adb = custom.join(&adb_name);
+        create_test_binary(&custom_adb);
+        create_test_binary(&sdk.join("platform-tools").join(&adb_name));
+
+        let resolved = get_binary_path_with_sdk_roots(
+            "adb",
+            Some(custom.to_string_lossy().into_owned()),
+            &[sdk],
+        );
+
+        assert_eq!(resolved, custom_adb.to_string_lossy());
+    }
+
+    #[test]
+    fn binary_resolver_uses_configured_android_sdk_order_for_adb_only() {
+        let temp = TestDir::new("sdk-order");
+        let android_home = temp.0.join("android-home");
+        let android_sdk_root = temp.0.join("android-sdk-root");
+        let adb_name = test_binary_name("adb");
+        let first_adb = android_home.join("platform-tools").join(&adb_name);
+        create_test_binary(&first_adb);
+        create_test_binary(&android_sdk_root.join("platform-tools").join(&adb_name));
+
+        let sdk_scrcpy = android_home
+            .join("platform-tools")
+            .join(test_binary_name("scrcpy"));
+        create_test_binary(&sdk_scrcpy);
+
+        let sdk_roots = [android_home, android_sdk_root];
+        assert_eq!(
+            get_binary_path_with_sdk_roots("adb", None, &sdk_roots),
+            first_adb.to_string_lossy()
+        );
+        assert_ne!(
+            get_binary_path_with_sdk_roots("scrcpy", None, &sdk_roots),
+            sdk_scrcpy.to_string_lossy()
+        );
+    }
+
+    #[test]
+    fn android_sdk_roots_keep_environment_precedence_and_deduplicate_defaults() {
+        let temp = TestDir::new("sdk-root-precedence");
+        let android_home = temp.0.join("android-home");
+        let android_sdk_root = temp.0.join("android-sdk-root");
+        let conventional = temp.0.join("conventional");
+
+        let roots = android_sdk_roots_from(
+            Some(android_home.clone().into_os_string()),
+            Some(android_sdk_root.clone().into_os_string()),
+            [android_home.clone(), conventional.clone()],
+        );
+
+        assert_eq!(roots, vec![android_home, android_sdk_root, conventional]);
+    }
+
+    #[test]
+    fn conventional_android_sdk_roots_cover_supported_desktop_platforms() {
+        let temp = TestDir::new("sdk-root-conventional");
+        let home = temp.0.join("home");
+        let local_app_data = temp.0.join("LocalAppData");
+
+        assert_eq!(
+            conventional_android_sdk_roots("macos", Some(home.clone().into_os_string()), None),
+            vec![home.join("Library/Android/sdk")]
+        );
+        assert_eq!(
+            conventional_android_sdk_roots("linux", Some(home.clone().into_os_string()), None),
+            vec![home.join("Android/Sdk")]
+        );
+        assert_eq!(
+            conventional_android_sdk_roots(
+                "windows",
+                None,
+                Some(local_app_data.clone().into_os_string()),
+            ),
+            vec![local_app_data.join("Android/Sdk")]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn binary_resolver_skips_non_executable_sdk_adb() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = TestDir::new("sdk-non-executable");
+        let sdk = temp.0.join("sdk");
+        let sdk_adb = sdk.join("platform-tools").join(test_binary_name("adb"));
+        create_test_binary(&sdk_adb);
+        std::fs::set_permissions(&sdk_adb, std::fs::Permissions::from_mode(0o644))
+            .expect("make test adb non-executable");
+
+        assert_eq!(get_binary_path_with_sdk_roots("adb", None, &[sdk]), "adb");
+    }
 
     #[cfg(not(target_os = "windows"))]
     #[test]
-    fn gui_command_path_includes_package_manager_bins() {
-        let path = gui_command_path().expect("command PATH");
+    fn command_search_path_includes_package_manager_bins() {
+        let path = command_search_path().expect("command PATH");
         let entries: Vec<_> = std::env::split_paths(&path).collect();
         assert!(entries
             .iter()
@@ -2296,6 +2612,25 @@ mod tests {
             Some("3.3.1".to_string())
         );
         assert_eq!(parse_scrcpy_version("no version here"), None);
+    }
+
+    #[test]
+    fn parses_structured_adb_device_states_and_deduplicates_serials() {
+        let output = "List of devices attached\n\
+USB123\tdevice product:pixel model:Pixel_8\n\
+192.168.1.4:5555\toffline\n\
+WAITING\tunauthorized usb:1-1\n\
+USB123\tdevice product:duplicate\n";
+        let records = parse_adb_devices_output(output);
+
+        assert_eq!(records.len(), 3);
+        assert_eq!(records[0].serial, "USB123");
+        assert_eq!(records[0].adb_state, "device");
+        assert_eq!(records[0].connection_type, "usb");
+        assert_eq!(records[1].connection_type, "wifi");
+        assert_eq!(records[1].adb_state, "offline");
+        assert_eq!(records[2].adb_state, "unauthorized");
+        assert_eq!(records[2].detail.as_deref(), Some("usb:1-1"));
     }
 }
 
@@ -2603,15 +2938,13 @@ pub async fn get_scrcpy_bin_dir() -> Result<String, String> {
     }
 }
 
-pub fn get_local_scrcpy_version(custom_path: Option<String>) -> Option<String> {
+pub async fn get_local_scrcpy_version(custom_path: Option<String>) -> Option<String> {
     let exe_path = get_binary_path("scrcpy", custom_path);
-    let mut cmd = std::process::Command::new(&exe_path);
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
-    let output = cmd.arg("--version").output().ok()?;
+    let output = create_command(&exe_path)
+        .arg("--version")
+        .output()
+        .await
+        .ok()?;
     if output.status.success() {
         let out_str = String::from_utf8_lossy(&output.stdout);
         for line in out_str.lines() {
@@ -2712,7 +3045,7 @@ fn compare_versions(local: &str, remote: &str) -> bool {
 
 #[tauri::command]
 pub async fn check_scrcpy_update(custom_path: Option<String>) -> serde_json::Value {
-    let local_version = match get_local_scrcpy_version(custom_path.clone()) {
+    let local_version = match get_local_scrcpy_version(custom_path.clone()).await {
         Some(v) => v,
         None => {
             return json!({ "update_available": false, "local_version": null, "latest_version": null, "message": "Scrcpy not installed or not working" })

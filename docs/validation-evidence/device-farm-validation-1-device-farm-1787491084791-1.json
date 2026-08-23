@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "runId": "device-farm-1787491084791-1",
+  "scenario": 1,
+  "status": "passed",
+  "serialsRedacted": true,
+  "startedAt": "2026-08-23T13:18:04.791Z",
+  "completedAt": "2026-08-23T13:18:19.881Z",
+  "durationMs": 15090,
+  "observationWindowMs": 15000,
+  "summary": {
+    "targetCount": 1,
+    "connectedCount": 1,
+    "renderedFrameCount": 1,
+    "devicesWithPositiveFps": 1
+  },
+  "failures": [],
+  "devices": [
+    {
+      "target": "device-01",
+      "connected": true,
+      "dimensions": {
+        "width": 872,
+        "height": 1920
+      },
+      "hasRenderedFrame": true,
+      "lastFps": 10,
+      "averageFps": 14.38,
+      "minFps": 10,
+      "maxFps": 36,
+      "firstConnectedAfterMs": 4,
+      "firstFrameAfterMs": 4
+    }
+  ]
+}

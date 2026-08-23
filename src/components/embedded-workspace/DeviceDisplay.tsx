@@ -9,12 +9,16 @@ interface DeviceDisplayProps {
   state: EmbeddedSessionState
   error: string
   fps: number
+  imageSrc?: string | null
+  imageLabel?: string
   /**
    * When true, omits the default rounded border/chrome so the display can be
    * embedded inside a custom frame (e.g. a phone bezel) without a double
    * border. Defaults to false to preserve existing callers' look.
    */
   bare?: boolean
+  onRetry?: () => void
+  onStop?: () => void
 }
 
 /**
@@ -29,15 +33,23 @@ export default function DeviceDisplay({
   state,
   error,
   fps,
+  imageSrc,
+  imageLabel = 'Companion',
   bare = false,
+  onRetry,
+  onStop,
 }: DeviceDisplayProps) {
   const { t } = useI18n()
   const connected = state === 'connected'
+  const hasImage = Boolean(imageSrc)
+  const displayConnected = connected || hasImage
 
-  const overlayKind: OverlayKind | null = connected
+  const overlayKind: OverlayKind | null = displayConnected
     ? null
     : state === 'starting'
       ? 'starting'
+      : state === 'reconnecting'
+        ? 'reconnecting'
       : state === 'error'
         ? 'error'
         : state === 'disconnected'
@@ -55,7 +67,7 @@ export default function DeviceDisplay({
         userSelect: 'none',
         WebkitUserSelect: 'none',
         touchAction: 'none',
-        cursor: connected ? 'crosshair' : 'default',
+        cursor: displayConnected ? 'crosshair' : 'default',
       }}
     >
       {/* Absolutely positioned so the (native-resolution) bitmap never dictates
@@ -69,13 +81,28 @@ export default function DeviceDisplay({
         style={{ WebkitUserSelect: 'none' }}
       />
 
-      {overlayKind && (
-        <DeviceStatusOverlay kind={overlayKind} message={error} />
+      {imageSrc && (
+        <img
+          src={imageSrc}
+          alt={`${imageLabel} screen`}
+          className="absolute inset-0 h-full w-full object-contain"
+          draggable={false}
+        />
       )}
 
-      {connected && dimensions && (
-        <span className="absolute left-2 top-2 z-20 rounded-md border border-zinc-800 bg-black/60 px-2 py-1 text-[8px] font-bold tracking-wider text-zinc-300">
-          {dimensions.width}x{dimensions.height} · {fps} {t('workspace.fps')}
+      {overlayKind && (
+        <DeviceStatusOverlay
+          kind={overlayKind}
+          message={error}
+          onRetry={onRetry}
+          onStop={onStop}
+        />
+      )}
+
+      {displayConnected && dimensions && (
+        <span className="absolute left-2 top-2 z-20 rounded-md border border-zinc-800 bg-black/60 px-2 py-1 text-[8px] font-bold tracking-wider text-zinc-300 tabular-nums">
+          {dimensions.width}x{dimensions.height} ·{' '}
+          {hasImage ? imageLabel : `${fps} ${t('workspace.fps')}`}
         </span>
       )}
 

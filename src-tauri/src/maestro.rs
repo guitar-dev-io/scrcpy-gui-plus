@@ -37,6 +37,18 @@ pub struct MaestroState {
 }
 
 impl MaestroState {
+    pub fn cancel_all(&self) {
+        if let Ok(mut active_runs) = self.active_runs.lock() {
+            for (_, active_run) in active_runs.iter_mut() {
+                if let Some(sender) = active_run.cancel.take() {
+                    let _ = sender.send(());
+                }
+                active_run.cancel_requested = true;
+            }
+            active_runs.clear();
+        }
+    }
+
     fn register(&self, run_id: &str) -> Result<(u64, oneshot::Receiver<()>), String> {
         let (cancel, receiver) = oneshot::channel();
         let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);

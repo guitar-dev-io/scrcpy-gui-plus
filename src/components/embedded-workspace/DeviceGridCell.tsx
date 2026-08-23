@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Play,
   Square,
@@ -13,19 +13,22 @@ import {
   Maximize2,
   Minimize2,
   Circle,
+  Focus,
 } from 'lucide-react'
 import { useI18n } from '../../i18n'
-import {
-  useEmbeddedSession,
-  type DeviceAction,
-} from '../../hooks/useEmbeddedSession'
-import { useDeviceInput } from '../../hooks/useDeviceInput'
 import { useDeviceActions } from '../../hooks/useDeviceActions'
 import {
   settingsToOptions,
   type EmbeddedWorkspaceSettings,
 } from '../../hooks/useEmbeddedWorkspaceSettings'
-import DeviceDisplay from './DeviceDisplay'
+import DeviceScreen, {
+  type DeviceScreenController,
+  type DeviceScreenMetrics,
+} from './DeviceScreen'
+import type {
+  DeviceAction,
+  EmbeddedSessionState,
+} from '../../hooks/useEmbeddedSession'
 
 type NotifyKind = 'success' | 'error' | 'info' | 'warning'
 type Notify = (title: string, message: string, kind: NotifyKind) => void
@@ -37,15 +40,23 @@ interface DeviceGridCellProps {
   notify: Notify
   settings: EmbeddedWorkspaceSettings
   startSignal: number
+  startDelayMs?: number
   stopSignal: number
   autoStart: boolean
   /** Cell height in px (from the grid layout config). */
   cellHeight: number
+  /** Visually emphasize this cell without replacing its live session. */
+  focused?: boolean
+  onFocusRequest?: () => void
+  onStateChange?: (serial: string, state: EmbeddedSessionState) => void
+  onMetricsChange?: (serial: string, metrics: DeviceScreenMetrics) => void
+  onManualStartRequest?: (serial: string) => void
 }
 
 const STATE_TONE: Record<string, string> = {
   idle: 'bg-zinc-600',
   starting: 'bg-amber-400 animate-pulse',
+  reconnecting: 'bg-amber-400 animate-pulse',
   connected: 'bg-emerald-400',
   stopping: 'bg-amber-400 animate-pulse',
   disconnected: 'bg-zinc-600',
@@ -57,19 +68,47 @@ const STATE_TONE: Record<string, string> = {
  * compact header (name/status/start-stop/expand) and control strip. Can be
  * expanded to a fullscreen overlay while keeping the same live session.
  */
-export default function DeviceGridCell({
+export default function DeviceGridCell(props: DeviceGridCellProps) {
+  const handleMetricsChange = useCallback(
+    (metrics: DeviceScreenMetrics) =>
+      props.onMetricsChange?.(props.serial, metrics),
+    [props.onMetricsChange, props.serial],
+  )
+
+  return (
+    <DeviceScreen
+      serial={props.serial}
+      customPath={props.customPath}
+      options={settingsToOptions(props.settings)}
+      autoStart={props.autoStart}
+      onMetricsChange={handleMetricsChange}
+    >
+      {(screen) => <DeviceGridCellContent {...props} screen={screen} />}
+    </DeviceScreen>
+  )
+}
+
+interface DeviceGridCellContentProps extends DeviceGridCellProps {
+  screen: DeviceScreenController
+}
+
+function DeviceGridCellContent({
   serial,
   customPath,
   outputDir,
   notify,
-  settings,
   startSignal,
+  startDelayMs = 0,
   stopSignal,
-  autoStart,
   cellHeight,
-}: DeviceGridCellProps) {
+  focused = false,
+  onFocusRequest,
+  onStateChange,
+  onMetricsChange: _onMetricsChange,
+  onManualStartRequest,
+  screen,
+}: DeviceGridCellContentProps) {
   const { t } = useI18n()
-  const containerRef = useRef<HTMLDivElement | null>(null)
   const [expanded, setExpanded] = useState(false)
 
   // Recording elapsed timer.
@@ -77,58 +116,40 @@ export default function DeviceGridCell({
   const recStartRef = useRef<number | null>(null)
 
   const {
-    canvasRef,
     state,
-    dimensions,
-    error,
     fps,
     start,
     stop,
-    sendTouch,
-    sendKey,
-    sendText,
     sendAction,
     screenshot,
-  } = useEmbeddedSession({
-    serial,
-    customPath,
-    options: settingsToOptions(settings),
-  })
-
-  const connected = state === 'connected'
-  const busy = state === 'starting' || state === 'stopping'
-
-  useDeviceInput({
-    canvasRef,
-    containerRef,
-    dimensions,
-    enabled: connected,
-    onTouch: sendTouch,
-    onText: sendText,
-    onKey: sendKey,
-    onAction: sendAction,
-  })
-
-  const autoStartedRef = useRef(false)
-  useEffect(() => {
-    if (autoStart && !autoStartedRef.current) {
-      autoStartedRef.current = true
-      void start()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    connected,
+    busy,
+    renderDisplay,
+  } = screen
 
   const lastStartRef = useRef(startSignal)
   const lastStopRef = useRef(stopSignal)
+  const stateRef = useRef(state)
+  useEffect(() => {
+    stateRef.current = state
+    onStateChange?.(serial, state)
+  }, [onStateChange, serial, state])
   useEffect(() => {
     if (startSignal !== lastStartRef.current) {
       lastStartRef.current = startSignal
-      if (state === 'idle' || state === 'disconnected' || state === 'error') {
-        void start()
-      }
+      const timer = window.setTimeout(() => {
+        if (
+          stateRef.current === 'idle' ||
+          stateRef.current === 'disconnected' ||
+          stateRef.current === 'error'
+        ) {
+          void start()
+        }
+      }, startDelayMs)
+      return () => window.clearTimeout(timer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startSignal])
+  }, [startDelayMs, startSignal, stopSignal])
   useEffect(() => {
     if (stopSignal !== lastStopRef.current) {
       lastStopRef.current = stopSignal
@@ -255,7 +276,9 @@ export default function DeviceGridCell({
       </button>
     ) : (
       <button
-        onClick={() => void start()}
+        onClick={() =>
+          onManualStartRequest ? onManualStartRequest(serial) : void start()
+        }
         title={t('workspace.start')}
         className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary text-on-primary hover:brightness-110"
       >
@@ -264,7 +287,13 @@ export default function DeviceGridCell({
     )
 
   const header = (
-    <div className="flex items-center gap-2 border-b border-zinc-800/60 px-2.5 py-1.5">
+    <div
+      className="flex cursor-pointer items-center gap-2 border-b border-zinc-800/60 px-2.5 py-1.5"
+      onClick={(event) => {
+        if (!(event.target as HTMLElement).closest('button')) onFocusRequest?.()
+      }}
+      title={`${focused ? 'Clear focus' : 'Focus'} ${serial}`}
+    >
       <span className={`h-2 w-2 shrink-0 rounded-full ${STATE_TONE[state]}`} />
       {isWireless ? (
         <Wifi size={11} className="shrink-0 text-zinc-500" />
@@ -305,6 +334,19 @@ export default function DeviceGridCell({
         )}
       </button>
       <button
+        onClick={onFocusRequest}
+        aria-label={`${focused ? 'Clear focus' : 'Focus'} ${serial}`}
+        aria-pressed={focused}
+        title={`${focused ? 'Clear focus' : 'Focus'} ${serial}`}
+        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border transition-all ${
+          focused
+            ? 'border-primary/60 bg-primary/15 text-primary'
+            : 'border-zinc-800 bg-zinc-950/50 text-zinc-300 hover:border-primary/50 hover:text-primary'
+        }`}
+      >
+        <Focus size={12} />
+      </button>
+      <button
         onClick={() => setExpanded((v) => !v)}
         title={
           expanded ? t('workspace.exitFullscreen') : t('workspace.fullscreen')
@@ -321,14 +363,7 @@ export default function DeviceGridCell({
     return (
       <div className="fixed inset-0 z-[200] flex flex-col bg-zinc-950">
         {header}
-        <DeviceDisplay
-          canvasRef={canvasRef}
-          containerRef={containerRef}
-          dimensions={dimensions}
-          state={state}
-          error={error}
-          fps={fps}
-        />
+        {renderDisplay()}
         <div className="flex items-center justify-center gap-1.5 border-t border-zinc-800/60 px-2 py-2">
           {controls}
         </div>
@@ -338,18 +373,15 @@ export default function DeviceGridCell({
 
   return (
     <div
-      className="flex flex-col overflow-hidden rounded-xl border border-zinc-800 bg-black/40"
+      className={`flex flex-col overflow-hidden rounded-xl border bg-black/40 transition-[height,border-color,box-shadow] duration-200 ${
+        focused
+          ? 'border-primary/60 shadow-lg shadow-primary/10'
+          : 'border-zinc-800'
+      }`}
       style={{ height: cellHeight }}
     >
       {header}
-      <DeviceDisplay
-        canvasRef={canvasRef}
-        containerRef={containerRef}
-        dimensions={dimensions}
-        state={state}
-        error={error}
-        fps={fps}
-      />
+      {renderDisplay()}
       <div className="flex items-center justify-center gap-1.5 border-t border-zinc-800/60 px-2 py-1.5">
         {controls}
       </div>

@@ -1,6 +1,8 @@
 // Device status types shared across the DeviceStatus UI, Device Workspace,
 // hook and service layer. Mirrors the Rust `DeviceStatus` model (camelCase).
 
+export type AndroidScreenState = 'on' | 'off' | 'dozing';
+
 export interface DeviceStatus {
     success: boolean;
     serial?: string;
@@ -13,9 +15,13 @@ export interface DeviceStatus {
     bootloader?: string;
     uptimeSeconds?: number;
     resolution?: string;
+    /** Android display rotation: 0, 90, 180, or 270 degrees encoded as 0..3. */
+    rotation?: 0 | 1 | 2 | 3;
     density?: string;
     batteryLevel?: number;
+    batteryTemperatureC?: number;
     charging?: boolean;
+    screenState?: AndroidScreenState;
     ipAddress?: string;
     storageTotalKb?: number;
     storageUsedKb?: number;
@@ -24,6 +30,15 @@ export interface DeviceStatus {
     memAvailableKb?: number;
     autoRotate?: boolean;
     screenTimeoutMs?: number;
+    error?: string;
+    errorCode?: string;
+}
+
+export interface DeviceDisplayGeometryResult {
+    success: boolean;
+    serial: string;
+    resolution?: string;
+    rotation?: 0 | 1 | 2 | 3;
     error?: string;
     errorCode?: string;
 }

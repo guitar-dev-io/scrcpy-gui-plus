@@ -1,5 +1,7 @@
 // Mirrors the Rust SimDeck models (camelCase) in src-tauri/src/simdeck.rs.
 
+import type { ScreenshotResult } from './screenshot'
+
 export type SimulatorPlatform = 'ios' | 'android'
 
 export interface SimulatorDevice {
@@ -46,13 +48,7 @@ export interface SimActionResult {
   errorCode?: string
 }
 
-export interface SimScreenshotResult {
-  success: boolean
-  path?: string
-  filename?: string
-  error?: string
-  errorCode?: string
-}
+export type SimScreenshotResult = ScreenshotResult
 
 /** Actions forwarded to SimDeck's unified `/action` endpoint. */
 export type SimulatorInteractiveAction =

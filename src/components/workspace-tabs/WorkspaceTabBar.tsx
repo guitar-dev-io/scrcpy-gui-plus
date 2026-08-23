@@ -18,7 +18,7 @@ interface WorkspaceTabBarProps {
   /** Device workspaces that should remain open, independently of native scrcpy windows. */
   deviceWorkspaces?: string[]
   deviceLabels?: Readonly<Record<string, string>>
-  deviceKinds?: Readonly<Record<string, 'android' | 'ios'>>
+  deviceKinds?: Readonly<Record<string, 'android' | 'ios' | 'companion'>>
   runningDevices: string[]
   activeDevice: string
   onSelectDevice: (serial: string) => void
@@ -96,6 +96,18 @@ export default function WorkspaceTabBar({
           const active = activeToolTab === undefined && serial === activeDevice
           const label = deviceLabels?.[serial] || serial
           const kind = deviceKinds?.[serial] ?? 'android'
+          const closeLabel =
+            kind === 'ios'
+              ? `Close iOS workspace for ${serial}`
+              : kind === 'companion'
+                ? `Close Companion workspace for ${serial}`
+                : `Stop session on ${serial}`
+          const closeTitle =
+            kind === 'ios'
+              ? 'Close iOS workspace'
+              : kind === 'companion'
+                ? 'Close Companion workspace'
+                : 'Stop session'
           return (
             <div
               key={serial}
@@ -116,20 +128,23 @@ export default function WorkspaceTabBar({
               >
                 <Smartphone size={12} className="shrink-0" />
                 <span className="max-w-35 truncate">{label}</span>
-                {kind === 'ios' && (
+                {kind !== 'android' && (
                   <span className="rounded bg-white/7 px-1 py-0.5 text-[7px] font-semibold uppercase text-[var(--text-subtle)]">
-                    iOS
+                    {kind === 'ios' ? 'iOS' : 'Companion'}
                   </span>
                 )}
                 {runningDevices.includes(serial) && (
-                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" aria-label="Session running" />
+                  <span
+                    className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400"
+                    aria-label="Session running"
+                  />
                 )}
               </button>
               <button
                 type="button"
                 onClick={() => onCloseDevice(serial)}
-                aria-label={kind === 'ios' ? `Close iOS workspace for ${serial}` : `Stop session on ${serial}`}
-                title={kind === 'ios' ? 'Close iOS workspace' : 'Stop session'}
+                aria-label={closeLabel}
+                title={closeTitle}
                 className="mr-1.5 flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--text-subtle)] opacity-60 hover:bg-[var(--bg-hover)] hover:text-[var(--text-base)] group-hover:opacity-100 focus:opacity-100"
               >
                 <X size={11} />
@@ -177,13 +192,14 @@ export default function WorkspaceTabBar({
             No open workspaces
           </span>
         )}
-
       </div>
       {devices.length > 1 && onToggleMultiDeviceView && (
         <button
           type="button"
           onClick={onToggleMultiDeviceView}
-          aria-label={multiDeviceView ? 'Show focused device' : 'Show all devices'}
+          aria-label={
+            multiDeviceView ? 'Show focused device' : 'Show all devices'
+          }
           aria-pressed={multiDeviceView}
           title={multiDeviceView ? 'Focused device view' : 'Multi-device grid'}
           className={`ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${multiDeviceView ? 'bg-primary/15 text-primary' : 'text-[var(--text-subtle)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-base)]'}`}
@@ -225,12 +241,12 @@ export default function WorkspaceTabBar({
             {toolTabs.map(({ id, label, icon: Icon }) => {
               const open = openToolTabs.includes(id)
               return (
-                  <button
-                    key={id}
-                    type="button"
-                    role="menuitem"
-                    aria-label={`${label}${open ? ' (open)' : ''}`}
-                    onClick={() => selectTool(id)}
+                <button
+                  key={id}
+                  type="button"
+                  role="menuitem"
+                  aria-label={`${label}${open ? ' (open)' : ''}`}
+                  onClick={() => selectTool(id)}
                   className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[10px] text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-base)]"
                 >
                   <Icon size={12} />

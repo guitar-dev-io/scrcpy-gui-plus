@@ -224,6 +224,12 @@ pub async fn fm_pull(
         .next()
         .unwrap_or("file")
         .to_string();
+    if let Err(error) = std::fs::create_dir_all(&local_dir) {
+        return fs_err(
+            "create_local_dir_failed",
+            format!("Failed to create local destination: {error}"),
+        );
+    }
     let local_path = std::path::Path::new(&local_dir).join(&filename);
     let local_str = local_path.to_string_lossy().to_string();
 
@@ -395,7 +401,10 @@ pub async fn fm_rename(
                 return fs_err("not_found", "Path not found".to_string());
             }
             if lower.contains("file exists") || lower.contains("not overwritten") {
-                return fs_err("already_exists", "An item with that name already exists".to_string());
+                return fs_err(
+                    "already_exists",
+                    "An item with that name already exists".to_string(),
+                );
             }
             FsResult {
                 success: true,
@@ -427,7 +436,9 @@ pub async fn fm_preview_file(
     if let Err(m) = validate_remote_path(&remote_path) {
         return fs_err("invalid_path", m);
     }
-    let size_limit = max_bytes.unwrap_or(MAX_PREVIEW_BYTES).min(HARD_MAX_PULL_BYTES);
+    let size_limit = max_bytes
+        .unwrap_or(MAX_PREVIEW_BYTES)
+        .min(HARD_MAX_PULL_BYTES);
 
     // Check the remote size before starting `adb pull`. Previewing a large
     // image should never begin a full-device transfer just because a row was

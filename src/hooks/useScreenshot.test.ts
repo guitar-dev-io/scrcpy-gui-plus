@@ -17,6 +17,10 @@ vi.mock('@tauri-apps/api/core', () => ({
 
 import { useScreenshot } from './useScreenshot'
 import { SCREENSHOT_HISTORY_LIMIT } from '../types/screenshot'
+import {
+  defaultAutoCaptureConfig,
+  type AutoCaptureSession,
+} from '../types/autoCapture'
 import { captureScreenshot } from '../services/screenshotService'
 
 const HISTORY_KEY = 'scrcpy_screenshot_history'
@@ -98,5 +102,53 @@ describe('useScreenshot', () => {
     })
     expect(res.success).toBe(false)
     expect(res.errorCode).toBe('no_device')
+  })
+
+  it('records an auto-capture result once with its stitched segment count', () => {
+    const config = defaultAutoCaptureConfig('dev', '/shots')
+    const completed: AutoCaptureSession = {
+      id: 'auto-session-1',
+      deviceId: 'dev',
+      status: 'COMPLETED',
+      createdAt: '2026-08-14T10:00:00.000Z',
+      updatedAt: '2026-08-14T10:00:05.000Z',
+      startedAt: '2026-08-14T10:00:00.000Z',
+      completedAt: '2026-08-14T10:00:05.000Z',
+      captureCount: 6,
+      currentProgress: 1,
+      paused: false,
+      direction: config.direction,
+      scrollMode: config.scrollMode,
+      scrollSettings: config.scrollSettings,
+      stability: config.stability,
+      output: config.output,
+      termination: { reason: 'CONTENT_END', complete: true },
+      result: {
+        path: '/shots/auto-session-1.png',
+        filename: 'auto-session-1.png',
+        width: 1080,
+        height: 4200,
+        captureCount: 4,
+        complete: true,
+        partial: false,
+        captureSource: 'ADB_SCREENCAP_PNG',
+      },
+    }
+    const { result } = renderHook(() =>
+      useScreenshot({ activeDevice: 'dev', customPath: undefined }),
+    )
+
+    act(() => {
+      result.current.recordAutoCapture(completed)
+      result.current.recordAutoCapture(completed)
+    })
+
+    expect(result.current.history).toHaveLength(1)
+    expect(result.current.history[0]).toMatchObject({
+      id: 'auto-auto-session-1-auto-session-1.png',
+      segmentCount: 4,
+      captureKind: 'scroll',
+      terminationReason: 'content_end',
+    })
   })
 })

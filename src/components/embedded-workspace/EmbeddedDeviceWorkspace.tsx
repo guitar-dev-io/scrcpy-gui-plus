@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   X,
   MonitorSmartphone,
@@ -10,11 +10,7 @@ import {
   Square,
 } from 'lucide-react'
 import { useI18n } from '../../i18n'
-import {
-  useEmbeddedSession,
-  type DeviceAction,
-} from '../../hooks/useEmbeddedSession'
-import { useDeviceInput } from '../../hooks/useDeviceInput'
+import type { DeviceAction } from '../../hooks/useEmbeddedSession'
 import { useDeviceInfo } from '../../hooks/useDeviceInfo'
 import { useDeviceActions } from '../../hooks/useDeviceActions'
 import {
@@ -23,7 +19,7 @@ import {
   type EmbeddedWorkspaceSettings,
 } from '../../hooks/useEmbeddedWorkspaceSettings'
 import DeviceTopBar from './DeviceTopBar'
-import DeviceDisplay from './DeviceDisplay'
+import DeviceScreen, { type DeviceScreenController } from './DeviceScreen'
 import DeviceControlRail from './DeviceControlRail'
 import DeviceInfoPanel from './DeviceInfoPanel'
 import SessionPanel from './SessionPanel'
@@ -38,6 +34,16 @@ const VIEW_STORAGE_KEY = 'scrcpy_embed_workspace_view'
 type NotifyKind = 'success' | 'error' | 'info' | 'warning'
 type Notify = (title: string, message: string, kind: NotifyKind) => void
 
+export interface WorkspaceCompanionFallback {
+  available: boolean
+  frame: string | null
+  screenState: string
+  width?: number
+  height?: number
+  startScreen: () => Promise<void>
+  stopScreen: () => Promise<void>
+}
+
 interface EmbeddedDeviceWorkspaceProps {
   isOpen: boolean
   onClose: () => void
@@ -48,6 +54,7 @@ interface EmbeddedDeviceWorkspaceProps {
   outputDir?: string
   notify: Notify
   onRefreshDevices?: () => void
+  companion?: WorkspaceCompanionFallback
 }
 
 interface WorkspaceSessionProps {
@@ -60,6 +67,7 @@ interface WorkspaceSessionProps {
   fullscreen: boolean
   onToggleFullscreen: () => void
   onExitFullscreen: () => void
+  companion?: WorkspaceCompanionFallback
 }
 
 /**
@@ -70,6 +78,35 @@ interface WorkspaceSessionProps {
 function WorkspaceSession({
   serial,
   customPath,
+  settings,
+  ...chromeProps
+}: WorkspaceSessionProps) {
+  return (
+    <DeviceScreen
+      serial={serial}
+      customPath={customPath}
+      options={settingsToOptions(settings)}
+    >
+      {(controller) => (
+        <WorkspaceSessionChrome
+          {...chromeProps}
+          serial={serial}
+          customPath={customPath}
+          settings={settings}
+          controller={controller}
+        />
+      )}
+    </DeviceScreen>
+  )
+}
+
+interface WorkspaceSessionChromeProps extends WorkspaceSessionProps {
+  controller: DeviceScreenController
+}
+
+function WorkspaceSessionChrome({
+  serial,
+  customPath,
   outputDir,
   notify,
   settings,
@@ -77,46 +114,51 @@ function WorkspaceSession({
   fullscreen,
   onToggleFullscreen,
   onExitFullscreen,
-}: WorkspaceSessionProps) {
+  companion,
+  controller,
+}: WorkspaceSessionChromeProps) {
   const { t } = useI18n()
-  const containerRef = useRef<HTMLDivElement | null>(null)
+  const [companionMode, setCompanionMode] = useState(false)
+  const [companionBusy, setCompanionBusy] = useState(false)
+  const connected = controller.connected
+  const displayDimensions = companionMode
+    ? companion?.width && companion?.height
+      ? { width: companion.width, height: companion.height }
+      : controller.dimensions
+    : controller.dimensions
 
-  const {
-    canvasRef,
-    state,
-    dimensions,
-    error,
-    fps,
-    start,
-    stop,
-    sendTouch,
-    sendKey,
-    sendText,
-    sendAction,
-    screenshot,
-  } = useEmbeddedSession({
-    serial,
-    customPath,
-    options: settingsToOptions(settings),
-  })
+  const startCompanionFallback = async () => {
+    if (!companion?.available || companionBusy) return
+    setCompanionBusy(true)
+    try {
+      await controller.stop()
+      setCompanionMode(true)
+      await companion.startScreen()
+    } catch (error) {
+      setCompanionMode(false)
+      notify(t('workspace.errorTitle'), String(error), 'error')
+    } finally {
+      setCompanionBusy(false)
+    }
+  }
 
-  const connected = state === 'connected'
+  const stopCompanionFallback = async () => {
+    if (!companion || companionBusy) return
+    setCompanionBusy(true)
+    try {
+      await companion.stopScreen()
+    } catch (error) {
+      notify(t('workspace.errorTitle'), String(error), 'error')
+    } finally {
+      setCompanionMode(false)
+      setCompanionBusy(false)
+    }
+  }
 
   const { info, loading, refresh } = useDeviceInfo({
     serial,
     customPath,
     enabled: connected,
-  })
-
-  useDeviceInput({
-    canvasRef,
-    containerRef,
-    dimensions,
-    enabled: connected,
-    onTouch: sendTouch,
-    onText: sendText,
-    onKey: sendKey,
-    onAction: sendAction,
   })
 
   // Screen recording (reuses the device-side screenrecord pipeline -> mp4).
@@ -153,10 +195,11 @@ function WorkspaceSession({
     }
   }
 
-  const handleAction = (action: DeviceAction) => void sendAction(action)
+  const handleAction = (action: DeviceAction) =>
+    void controller.sendAction(action)
 
   const handleScreenshot = async () => {
-    const result = await screenshot(outputDir, info?.model || serial)
+    const result = await controller.screenshot(outputDir, info?.model || serial)
     if (!result) return
     if (result.success) {
       notify(t('workspace.screenshot'), result.path, 'success')
@@ -172,15 +215,21 @@ function WorkspaceSession({
   if (fullscreen) {
     return (
       <FullscreenDeviceView
-        canvasRef={canvasRef}
-        containerRef={containerRef}
-        dimensions={dimensions}
-        state={state}
-        error={error}
-        fps={fps}
+        dimensions={displayDimensions}
+        state={controller.state}
+        error={controller.error}
+        fps={controller.fps}
         onAction={handleAction}
         onScreenshot={() => void handleScreenshot()}
+        recording={isRecording}
+        recordingBusy={recordingBusy}
+        onToggleRecording={() => void handleToggleRecord()}
         onExitFullscreen={onExitFullscreen}
+        display={controller.renderDisplay({
+          dimensions: displayDimensions,
+          imageSrc: companionMode ? companion?.frame : null,
+          imageLabel: 'Android Companion',
+        })}
       />
     )
   }
@@ -191,7 +240,7 @@ function WorkspaceSession({
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <DeviceTopBar
           deviceName={serial}
-          state={state}
+          state={controller.state}
           settings={settings}
           fullscreen={fullscreen}
           recording={isRecording}
@@ -201,21 +250,36 @@ function WorkspaceSession({
           onToggleRecord={() => void handleToggleRecord()}
           onChangeSetting={onChangeSetting}
         />
-        <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden p-4">
-          <DeviceDisplay
-            canvasRef={canvasRef}
-            containerRef={containerRef}
-            dimensions={dimensions}
-            state={state}
-            error={error}
-            fps={fps}
-          />
+        <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden p-4">
+          {controller.renderDisplay({
+            dimensions: displayDimensions,
+            imageSrc: companionMode ? companion?.frame : null,
+            imageLabel: 'Android Companion',
+          })}
+          {companion?.available && !companionMode && !connected && (
+            <button
+              onClick={() => void startCompanionFallback()}
+              disabled={companionBusy}
+              className="absolute bottom-6 left-1/2 z-30 -translate-x-1/2 rounded-lg border border-primary/50 bg-primary/15 px-4 py-2 text-[9px] font-black uppercase tracking-widest text-primary backdrop-blur transition hover:bg-primary/25 disabled:opacity-50"
+            >
+              {companionBusy ? 'Starting Companion…' : 'Use Android Companion'}
+            </button>
+          )}
+          {companionMode && (
+            <button
+              onClick={() => void stopCompanionFallback()}
+              disabled={companionBusy}
+              className="absolute bottom-6 left-1/2 z-30 -translate-x-1/2 rounded-lg border border-red-500/50 bg-red-500/15 px-4 py-2 text-[9px] font-black uppercase tracking-widest text-red-300 backdrop-blur transition hover:bg-red-500/25 disabled:opacity-50"
+            >
+              {companionBusy ? 'Stopping…' : 'Stop Companion'}
+            </button>
+          )}
         </div>
         <DeviceBottomBar
           serial={serial}
           customPath={customPath}
           connected={connected}
-          onSendText={(text) => void sendText(text)}
+          onSendText={(text) => void controller.sendText(text)}
         />
       </div>
 
@@ -225,7 +289,7 @@ function WorkspaceSession({
           serial={serial}
           info={info}
           loading={loading}
-          liveResolution={dimensions}
+          liveResolution={controller.dimensions}
           onRefresh={() => void refresh()}
         />
         <DeviceControlRail
@@ -234,11 +298,11 @@ function WorkspaceSession({
           disabled={!connected}
         />
         <SessionPanel
-          state={state}
-          fps={fps}
+          state={controller.state}
+          fps={controller.fps}
           canStart={!!serial}
-          onStart={() => void start()}
-          onStop={() => void stop()}
+          onStart={() => void controller.start()}
+          onStop={() => void controller.stop()}
         />
       </div>
     </>
@@ -313,6 +377,7 @@ export default function EmbeddedDeviceWorkspace({
   outputDir,
   notify,
   onRefreshDevices,
+  companion,
 }: EmbeddedDeviceWorkspaceProps) {
   const { t } = useI18n()
   const { settings, update } = useEmbeddedWorkspaceSettings()
@@ -320,6 +385,7 @@ export default function EmbeddedDeviceWorkspace({
     () => activeDevice || devices[0] || '',
   )
   const [fullscreen, setFullscreen] = useState(false)
+  const wasOpenRef = useRef(false)
   const [viewMode, setViewMode] = useState<'single' | 'grid'>(() => {
     try {
       const s = localStorage.getItem(VIEW_STORAGE_KEY)
@@ -338,6 +404,14 @@ export default function EmbeddedDeviceWorkspace({
       // ignore
     }
   }
+
+  useEffect(() => {
+    if (isOpen && !wasOpenRef.current && devices.length > 1) {
+      setViewMode('grid')
+      setFullscreen(false)
+    }
+    wasOpenRef.current = isOpen
+  }, [devices.length, isOpen])
 
   if (!isOpen) return null
 
@@ -469,6 +543,7 @@ export default function EmbeddedDeviceWorkspace({
                 fullscreen={fullscreen}
                 onToggleFullscreen={() => setFullscreen((v) => !v)}
                 onExitFullscreen={() => setFullscreen(false)}
+                companion={companion}
               />
             )}
           </div>

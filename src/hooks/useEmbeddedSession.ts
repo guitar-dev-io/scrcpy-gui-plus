@@ -7,6 +7,7 @@ import {
   publishAdbLiveFrame,
   setAdbLiveFrameActive,
 } from '../utils/adbLiveFrame'
+import { deviceRecoveryManager } from '../services/deviceRecoveryService'
 
 /** Consecutive `VideoDecoder` errors tolerated before ending the session. */
 const MAX_DECODER_ERRORS = 3
@@ -27,6 +28,7 @@ export interface EmbeddedSessionOptions {
 export type EmbeddedSessionState =
   | 'idle'
   | 'starting'
+  | 'reconnecting'
   | 'connected'
   | 'stopping'
   | 'disconnected'
@@ -113,12 +115,16 @@ export function useEmbeddedSession({
   const [codec, setCodec] = useState<string>('')
   const [error, setError] = useState<string>('')
   const [fps, setFps] = useState<number>(0)
+  const [fpsSampleSequence, setFpsSampleSequence] = useState(0)
+  const [hasRenderedFrame, setHasRenderedFrame] = useState(false)
+  const [recoveryAttempt, setRecoveryAttempt] = useState(0)
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null)
   const decoderRef = useRef<VideoDecoder | null>(null)
   const codecConfiguredRef = useRef(false)
   const sawKeyFrameRef = useRef(false)
+  const decoderPrimingRef = useRef(true)
   const pendingConfigRef = useRef<Uint8Array | null>(null)
   const lastConfigRef = useRef<VideoDecoderConfig | null>(null)
   // Raw SPS/PPS bytes, kept for the life of the session (unlike
@@ -137,11 +143,15 @@ export function useEmbeddedSession({
   const subscriberIdRef = useRef<string | null>(null)
   const ownsSessionRef = useRef(true)
   const stateRef = useRef<EmbeddedSessionState>('idle')
+  const lifecycleGenerationRef = useRef(0)
   const unlistenRef = useRef<UnlistenFn[]>([])
   const serialRef = useRef(serial)
   const liveFrameSerialRef = useRef<string | null>(null)
   const customPathRef = useRef(customPath)
   const optionsRef = useRef(options)
+  const desiredRunningRef = useRef(false)
+  const startRef = useRef<() => Promise<boolean>>(async () => false)
+  const recoverRef = useRef<(targetSerial: string) => void>(() => undefined)
 
   const fpsCounterRef = useRef(0)
   const fpsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -193,11 +203,14 @@ export function useEmbeddedSession({
       ctx = canvas.getContext('2d')
       ctxRef.current = ctx
     }
-    if (ctx) ctx.drawImage(frame, 0, 0)
+    if (ctx) {
+      ctx.drawImage(frame, 0, 0)
+      if (!drewFirstRef.current) setHasRenderedFrame(true)
+    }
     frame.close()
     fpsCounterRef.current += 1
     decoderErrorCountRef.current = 0
-    if (!drewFirstRef.current) {
+    if (!drewFirstRef.current && ctx) {
       drewFirstRef.current = true
       emitWorkspaceLog(
         `first frame decoded and painted (${canvas.width}x${canvas.height})`,
@@ -233,6 +246,7 @@ export function useEmbeddedSession({
     ctxRef.current = null
     codecConfiguredRef.current = false
     sawKeyFrameRef.current = false
+    decoderPrimingRef.current = true
     pendingConfigRef.current = null
     lastConfigRef.current = null
     lastConfigBytesRef.current = null
@@ -255,6 +269,7 @@ export function useEmbeddedSession({
       dec.reset()
       dec.configure(cfg)
       sawKeyFrameRef.current = false
+      decoderPrimingRef.current = true
       // The encoder only emits SPS/PPS once (stream start / rotation) — a
       // fresh decoder instance has no cached parameter sets, so the next key
       // frame must have them prepended again, exactly like the decoder-error
@@ -290,12 +305,14 @@ export function useEmbeddedSession({
           lastConfigRef.current = config
           lastCodecStringRef.current = codecString
           sawKeyFrameRef.current = false
+          decoderPrimingRef.current = true
           emitWorkspaceLog(`decoder reconfigured (${codecString})`)
         } catch (e) {
           emitWorkspaceLog(`decoder reconfigure failed: ${String(e)}`)
           codecConfiguredRef.current = false
           decoderRef.current = null
           sawKeyFrameRef.current = false
+          decoderPrimingRef.current = true
         }
         return
       }
@@ -340,6 +357,7 @@ export function useEmbeddedSession({
               `recreating decoder after error (attempt ${decoderErrorCountRef.current}/${MAX_DECODER_ERRORS}), waiting for next key frame`,
             )
             sawKeyFrameRef.current = false
+            decoderPrimingRef.current = true
             pendingConfigRef.current = lastConfigBytesRef.current
             // Use the most recently seen codec string, not the one this
             // (now-dead) decoder instance was originally created with — a
@@ -395,10 +413,27 @@ export function useEmbeddedSession({
       // A decoder can only start on a key frame — drop deltas until then.
       if (!sawKeyFrameRef.current && !frame.keyFrame) return
 
-      // Latency control: if the decode queue is backing up, resync instead of
-      // just dropping the current delta frame (never drop config or key
+      if (
+        decoderPrimingRef.current &&
+        drewFirstRef.current &&
+        decoder.decodeQueueSize <= 3
+      ) {
+        decoderPrimingRef.current = false
+      }
+
+      // Latency control: if the live decode queue is backing up, resync instead
+      // of just dropping the current delta frame (never drop config or key
       // frames) — see resyncDecoder for why a bare drop corrupts the picture.
-      if (!frame.keyFrame && decoder.decodeQueueSize > 3) {
+      // A late subscriber is synchronously primed with a cached config + full
+      // GOP. Its queue is expected to exceed this threshold before WebCodecs
+      // can paint the first key frame; resetting in that bootstrap window
+      // discards the valid GOP and can leave the tile blank until the encoder's
+      // next periodic key frame.
+      if (
+        !decoderPrimingRef.current &&
+        !frame.keyFrame &&
+        decoder.decodeQueueSize > 3
+      ) {
         resyncDecoder()
         return
       }
@@ -459,6 +494,10 @@ export function useEmbeddedSession({
   }, [])
 
   const stop = useCallback(async () => {
+    desiredRunningRef.current = false
+    deviceRecoveryManager.cancel(serialRef.current, 'User stopped the screen')
+    setRecoveryAttempt(0)
+    lifecycleGenerationRef.current += 1
     const id = sessionIdRef.current
     const subscriberId = subscriberIdRef.current
     const ownsSession = ownsSessionRef.current
@@ -468,6 +507,7 @@ export function useEmbeddedSession({
     cleanupListener()
     teardownDecoder()
     stopFpsTimer()
+    setHasRenderedFrame(false)
     if (id) {
       if (!ownsSession && subscriberId) {
         await invoke('detach_embedded_session', {
@@ -488,21 +528,29 @@ export function useEmbeddedSession({
     setSessionState('disconnected')
   }, [cleanupListener, teardownDecoder, stopFpsTimer, setSessionState])
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (): Promise<boolean> => {
+    desiredRunningRef.current = true
     if (stateRef.current === 'starting' || stateRef.current === 'connected') {
-      return
+      return stateRef.current === 'connected'
     }
     const targetSerial = serialRef.current
     if (!targetSerial) {
       setError('No device selected')
       setSessionState('error')
-      return
+      return false
     }
     if (typeof VideoDecoder === 'undefined') {
       setError('WebCodecs (VideoDecoder) is not available in this webview')
       setSessionState('error')
-      return
+      return false
     }
+    const lifecycleGeneration = lifecycleGenerationRef.current + 1
+    lifecycleGenerationRef.current = lifecycleGeneration
+    const targetCustomPath = customPathRef.current
+    const targetOptions = optionsRef.current
+    const isCurrentLifecycle = () =>
+      lifecycleGenerationRef.current === lifecycleGeneration &&
+      serialRef.current === targetSerial
 
     setError('')
     setDimensions(null)
@@ -511,6 +559,7 @@ export function useEmbeddedSession({
     pendingConfigRef.current = null
     gotFirstPacketRef.current = false
     drewFirstRef.current = false
+    setHasRenderedFrame(false)
     setSessionState('starting')
     liveFrameSerialRef.current = targetSerial
     emitWorkspaceLog(`starting session for ${targetSerial}`)
@@ -519,6 +568,7 @@ export function useEmbeddedSession({
     const unlisten = await listen<EmbedSessionStatus>(
       'embed-session-status',
       (event) => {
+        if (!isCurrentLifecycle()) return
         const payload = event.payload
         const id = sessionIdRef.current
         const matches = id
@@ -526,17 +576,33 @@ export function useEmbeddedSession({
           : payload.serial === serialRef.current
         if (!matches) return
         if (payload.state === 'disconnected' || payload.state === 'error') {
+          const shouldRecover =
+            desiredRunningRef.current && ownsSessionRef.current
+          cleanupListener()
           teardownDecoder()
           stopFpsTimer()
-          setSessionState(payload.state)
-          if (payload.state === 'error') {
-            setError((prev) => prev || 'The session ended unexpectedly')
+          sessionIdRef.current = null
+          subscriberIdRef.current = null
+          ownsSessionRef.current = true
+          setSessionId(null)
+          if (!shouldRecover) {
+            setSessionState(payload.state)
+            if (payload.state === 'error') {
+              setError((prev) => prev || 'The session ended unexpectedly')
+            }
+            return
           }
+
+          recoverRef.current(targetSerial)
         } else if (payload.state === 'connected') {
           setSessionState('connected')
         }
       },
     )
+    if (!isCurrentLifecycle()) {
+      unlisten()
+      return false
+    }
     unlistenRef.current.push(unlisten)
 
     // Device dimensions arrive as a session packet shortly after connect (and
@@ -547,6 +613,7 @@ export function useEmbeddedSession({
       width: number
       height: number
     }>('embed-session-dims', (event) => {
+      if (!isCurrentLifecycle()) return
       const p = event.payload
       const id = sessionIdRef.current
       const matches = id ? p.sessionId === id : p.serial === serialRef.current
@@ -556,6 +623,10 @@ export function useEmbeddedSession({
         emitWorkspaceLog(`device dimensions: ${p.width}x${p.height}`)
       }
     })
+    if (!isCurrentLifecycle()) {
+      unlistenDims()
+      return false
+    }
     unlistenRef.current.push(unlistenDims)
 
     const channel = new Channel<ArrayBuffer>()
@@ -568,17 +639,33 @@ export function useEmbeddedSession({
         'start_embedded_session',
         {
           serial: targetSerial,
-          customPath: customPathRef.current,
-          options: optionsRef.current,
+          customPath: targetCustomPath,
+          options: targetOptions,
           onVideo: channel,
         },
       )
+      if (!isCurrentLifecycle()) {
+        if (result.success && result.sessionId) {
+          if (result.ownsSession === false && result.subscriberId) {
+            void invoke('detach_embedded_session', {
+              sessionId: result.sessionId,
+              subscriberId: result.subscriberId,
+            }).catch(() => undefined)
+          } else {
+            void invoke('stop_embedded_session', {
+              sessionId: result.sessionId,
+              customPath: targetCustomPath,
+            }).catch(() => undefined)
+          }
+        }
+        return false
+      }
       if (!result.success) {
         setError(result.message || 'Failed to start the session')
         cleanupListener()
         teardownDecoder()
         setSessionState('error')
-        return
+        return false
       }
       if (result.sessionId) {
         sessionIdRef.current = result.sessionId
@@ -596,15 +683,19 @@ export function useEmbeddedSession({
       if (fpsIntervalRef.current) clearInterval(fpsIntervalRef.current)
       fpsIntervalRef.current = setInterval(() => {
         setFps(fpsCounterRef.current)
+        setFpsSampleSequence((sequence) => sequence + 1)
         fpsCounterRef.current = 0
       }, 1000)
 
       setSessionState('connected')
+      return true
     } catch (e) {
+      if (!isCurrentLifecycle()) return false
       setError(String(e))
       cleanupListener()
       teardownDecoder()
       setSessionState('error')
+      return false
     }
   }, [
     handleFrameBytes,
@@ -614,6 +705,76 @@ export function useEmbeddedSession({
     stopFpsTimer,
     setSessionState,
   ])
+
+  startRef.current = start
+
+  const recover = useCallback(
+    (targetSerial: string) => {
+      if (!desiredRunningRef.current || serialRef.current !== targetSerial) {
+        return
+      }
+      setSessionState('reconnecting')
+      void deviceRecoveryManager
+        .recover(targetSerial, async ({ attempt, signal }) => {
+          if (signal.aborted || !desiredRunningRef.current) {
+            throw signal.reason ?? new Error('Screen recovery cancelled')
+          }
+          setRecoveryAttempt(attempt)
+          setSessionState('reconnecting')
+          emitWorkspaceLog(
+            `reconnecting screen for ${targetSerial} (attempt ${attempt}/3)`,
+          )
+          const recovered = await startRef.current()
+          if (!recovered) {
+            setSessionState('reconnecting')
+            throw new Error(
+              `Screen recovery attempt ${attempt} did not connect`,
+            )
+          }
+        })
+        .then((outcome) => {
+          if (!desiredRunningRef.current) return
+          if (outcome.status === 'failed') {
+            setError('Screen recovery failed after 3 attempts')
+            setSessionState('error')
+          } else if (outcome.status === 'recovered') {
+            setRecoveryAttempt(0)
+          }
+        })
+    },
+    [setSessionState],
+  )
+
+  recoverRef.current = recover
+
+  // A failed bounded run keeps the user's intent, but does not spin forever.
+  // When discovery observes the same serial online again, begin a fresh
+  // bounded run. Intentional stop/unmount clears desiredRunningRef first.
+  useEffect(() => {
+    const handleDeviceOnline = (event: Event) => {
+      const onlineEvent = event as CustomEvent<{ serial?: string }>
+      const onlineSerial = onlineEvent.detail?.serial
+      if (
+        onlineSerial !== serialRef.current ||
+        !desiredRunningRef.current ||
+        stateRef.current === 'connected' ||
+        stateRef.current === 'starting'
+      ) {
+        return
+      }
+      recoverRef.current(onlineSerial)
+    }
+    window.addEventListener(
+      'mobile-device-studio:device-online',
+      handleDeviceOnline,
+    )
+    return () => {
+      window.removeEventListener(
+        'mobile-device-studio:device-online',
+        handleDeviceOnline,
+      )
+    }
+  }, [])
 
   const isLive = useCallback(
     () => stateRef.current === 'connected' && !!sessionIdRef.current,
@@ -715,6 +876,9 @@ export function useEmbeddedSession({
   // backend server is always stopped from the frontend side.
   useEffect(() => {
     return () => {
+      desiredRunningRef.current = false
+      deviceRecoveryManager.cancel(serialRef.current, 'Screen owner unmounted')
+      lifecycleGenerationRef.current += 1
       cleanupListener()
       teardownDecoder()
       stopFpsTimer()
@@ -750,6 +914,9 @@ export function useEmbeddedSession({
     codec,
     error,
     fps,
+    fpsSampleSequence,
+    hasRenderedFrame,
+    recoveryAttempt,
     start,
     stop,
     sendTouch,

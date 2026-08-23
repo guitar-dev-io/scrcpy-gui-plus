@@ -79,10 +79,14 @@ export default function DeviceHeader({
         <div className="flex items-center gap-1.5">
           <dt className="sr-only">Resolution</dt>
           <Maximize2 size={11} />
-          <dd>{connected && dimensions ? `${dimensions.width} × ${dimensions.height}` : '—'}</dd>
+          <dd className="tabular-nums">
+            {connected && dimensions
+              ? `${dimensions.width} × ${dimensions.height}`
+              : '—'}
+          </dd>
         </div>
         {connected && (
-          <div className="flex items-center gap-1.5">
+          <div className="flex min-w-[6ch] items-center gap-1.5 tabular-nums">
             <dt className="sr-only">Frame rate</dt>
             <dd>{fps} FPS</dd>
           </div>

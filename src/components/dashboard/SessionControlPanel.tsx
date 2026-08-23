@@ -205,19 +205,14 @@ export default function SessionControlPanel({
         {activeTab === 'settings' && (
           <div className="space-y-3">
             <p className="text-[10px] leading-relaxed text-[var(--text-subtle)]">Advanced launch, input, codec and window options are available in Session Settings.</p>
-            <button type="button" onClick={onOpenSettings} className={`flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-[var(--border-base)] text-[10px] text-[var(--text-muted)] hover:border-primary/50 hover:text-primary ${focusRing}`}>
-              <Settings size={13} /> Session Settings
+            <button type="button" onClick={onOpenSettings} className={`flex items-center gap-1.5 text-[10px] font-medium text-primary hover:underline ${focusRing}`}>
+              <Settings size={12} /> Open advanced settings
             </button>
           </div>
         )}
 
         <div className="mt-4 border-t border-[var(--border-subtle)] pt-4">
-          {activeTab !== 'settings' && (
-            <button type="button" onClick={onOpenSettings} className={`flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-[var(--border-base)] text-[10px] text-[var(--text-muted)] hover:border-primary/50 hover:text-primary ${focusRing}`}>
-              <Settings size={12} /> Session Settings
-            </button>
-          )}
-          <button type="button" onClick={isRunning ? onStop : onStart} disabled={!activeDevice} className={`flex h-9 w-full items-center justify-center gap-2 rounded-lg text-[10px] font-semibold disabled:opacity-35 ${activeTab === 'settings' ? '' : 'mt-2'} ${focusRing} ${isRunning ? 'border border-red-500/35 bg-red-500/15 text-red-400' : 'bg-primary text-on-primary hover:bg-[var(--primary-hover)]'}`}>
+          <button type="button" onClick={isRunning ? onStop : onStart} disabled={!activeDevice} className={`flex h-10 w-full items-center justify-center gap-2 rounded-lg text-[10px] font-semibold disabled:opacity-35 ${focusRing} ${isRunning ? 'border border-red-500/35 bg-red-500/15 text-red-400' : 'bg-primary text-on-primary hover:bg-[var(--primary-hover)]'}`}>
             <CirclePower size={13} /> {isRunning ? 'Stop Session' : 'Start Session'}
           </button>
         </div>

@@ -24,6 +24,7 @@ function renderNavigation(
 
 describe('AppNavigation', () => {
   beforeEach(() => {
+    window.localStorage.clear()
     useDeviceStatusMock.mockReturnValue({
       status: null,
       loading: false,
@@ -49,6 +50,18 @@ describe('AppNavigation', () => {
     expect(screen.getByRole('navigation', { name: 'Primary navigation' })).toHaveAttribute('data-collapsed', 'true')
     expect(screen.getByRole('button', { name: 'Dashboard' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Expand sidebar' })).toBeInTheDocument()
+  })
+
+  it('collapses navigation groups and remembers their state', () => {
+    const firstRender = renderNavigation(<AppNavigation />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tools' }))
+    expect(screen.queryByRole('button', { name: 'Shell Terminal' })).not.toBeInTheDocument()
+
+    firstRender.unmount()
+    renderNavigation(<AppNavigation />)
+    expect(screen.getByRole('button', { name: 'Tools' })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('button', { name: 'Shell Terminal' })).not.toBeInTheDocument()
   })
 
   it('shows verified device metadata and exposes the real session action', () => {

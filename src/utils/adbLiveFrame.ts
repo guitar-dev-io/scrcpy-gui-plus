@@ -26,6 +26,36 @@ export function getAdbLiveFrameState(serial: string): AdbLiveFrameState {
   return states.get(serial) ?? idleState()
 }
 
+export interface AdbLiveFrameCapture {
+  dataUrl: string
+  width: number
+  height: number
+}
+
+/**
+ * Return a transient PNG snapshot of the latest decoded embedded frame.
+ * The backing canvas is never persisted and callers should use the data URL
+ * only for the duration of a capture request.
+ */
+export function getAdbLiveFrameDataUrl(
+  serial: string,
+): AdbLiveFrameCapture | null {
+  const state = getAdbLiveFrameState(serial)
+  const canvas = latestFrames.get(serial)
+  if (!state.active || !canvas || canvas.width <= 0 || canvas.height <= 0) {
+    return null
+  }
+  try {
+    return {
+      dataUrl: canvas.toDataURL('image/png'),
+      width: canvas.width,
+      height: canvas.height,
+    }
+  } catch {
+    return null
+  }
+}
+
 function emit(serial: string, state: AdbLiveFrameState) {
   states.set(serial, state)
   listeners.get(serial)?.forEach((listener) => listener(state))

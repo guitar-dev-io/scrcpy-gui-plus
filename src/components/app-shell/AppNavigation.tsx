@@ -21,6 +21,7 @@ import {
   Wifi,
   type LucideIcon,
 } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useDeviceStatus } from '../../hooks/useDeviceStatus'
 import { connectionTypeOf } from '../../types/deviceStatus'
 import {
@@ -67,6 +68,18 @@ const shellTerminalItem = {
   icon: SquareTerminal,
 }
 
+type CollapsibleGroup = 'testing' | 'tools' | 'system'
+const NAV_GROUPS_STORAGE_KEY = 'scrcpy-gui-plus:navigation-groups'
+
+function loadOpenGroups(): Record<CollapsibleGroup, boolean> {
+  const defaults = { testing: true, tools: true, system: true }
+  try {
+    return { ...defaults, ...JSON.parse(window.localStorage.getItem(NAV_GROUPS_STORAGE_KEY) || '{}') }
+  } catch {
+    return defaults
+  }
+}
+
 export default function AppNavigation({
   actions = {},
   routes = APP_ROUTES,
@@ -85,6 +98,28 @@ export default function AppNavigation({
   const testingRoutes = routes.filter((route) => route.group === 'testing')
   const toolRoutes = routes.filter((route) => route.group === 'tools')
   const systemRoutes = routes.filter((route) => route.group === 'system')
+  const [openGroups, setOpenGroups] = useState(loadOpenGroups)
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(NAV_GROUPS_STORAGE_KEY, JSON.stringify(openGroups))
+    } catch {
+      // Navigation remains fully usable when storage is unavailable.
+    }
+  }, [openGroups])
+  const toggleGroup = (group: CollapsibleGroup) => {
+    setOpenGroups((current) => ({ ...current, [group]: !current[group] }))
+  }
+  const groupHeader = (group: CollapsibleGroup, label: string) => collapsed ? null : (
+    <button
+      type="button"
+      onClick={() => toggleGroup(group)}
+      aria-expanded={openGroups[group]}
+      className="mb-1.5 flex w-full items-center justify-between rounded px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--text-subtle)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-muted)] max-[1180px]:hidden"
+    >
+      {label}
+      <ChevronRight size={11} className={`transition-transform ${openGroups[group] ? 'rotate-90' : ''}`} />
+    </button>
+  )
   const { status: deviceStatus, loading: deviceStatusLoading } = useDeviceStatus({
     activeDevice,
     customPath,
@@ -172,22 +207,14 @@ export default function AppNavigation({
 
         {testingRoutes.length > 0 && (
           <section aria-label="Testing navigation">
-            {!collapsed && (
-              <p className="mb-1.5 px-3 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--text-subtle)] max-[1180px]:hidden">
-                Testing
-              </p>
-            )}
-            <div className="space-y-0.5">{testingRoutes.map(renderRouteButton)}</div>
+            {groupHeader('testing', 'Testing')}
+            {(collapsed || openGroups.testing) && <div className="space-y-0.5">{testingRoutes.map(renderRouteButton)}</div>}
           </section>
         )}
 
         <section aria-label="Tools navigation">
-          {!collapsed && (
-            <p className="mb-1.5 px-3 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--text-subtle)] max-[1180px]:hidden">
-              Tools
-            </p>
-          )}
-          <div className="space-y-0.5">
+          {groupHeader('tools', 'Tools')}
+          {(collapsed || openGroups.tools) && <div className="space-y-0.5">
             {toolRoutes[0] && renderRouteButton(toolRoutes[0])}
             <button
               type="button"
@@ -200,16 +227,12 @@ export default function AppNavigation({
               {renderLabel(shellTerminalItem.label)}
             </button>
             {toolRoutes.slice(1).map(renderRouteButton)}
-          </div>
+          </div>}
         </section>
 
         <section aria-label="System navigation">
-          {!collapsed && (
-            <p className="mb-1.5 px-3 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--text-subtle)] max-[1180px]:hidden">
-              System
-            </p>
-          )}
-          <div className="space-y-0.5">{systemRoutes.map(renderRouteButton)}</div>
+          {groupHeader('system', 'System')}
+          {(collapsed || openGroups.system) && <div className="space-y-0.5">{systemRoutes.map(renderRouteButton)}</div>}
         </section>
       </div>
 

@@ -44,15 +44,6 @@ impl UiDumpResult {
         }
     }
 
-    fn err(err: &AdbError) -> Self {
-        UiDumpResult {
-            success: false,
-            xml: None,
-            error: Some(err.message()),
-            error_code: Some(err.code().to_string()),
-        }
-    }
-
     fn err_msg(code: &str, msg: String) -> Self {
         UiDumpResult {
             success: false,
@@ -130,61 +121,65 @@ fn looks_like_hierarchy(xml: &str) -> bool {
     trimmed.starts_with("<?xml") || trimmed.starts_with("<hierarchy")
 }
 
-/// Dump the current on-screen view hierarchy as raw XML.
-#[tauri::command]
-pub async fn dump_ui_hierarchy(serial: String, custom_path: Option<String>) -> UiDumpResult {
-    let serial = serial.trim().to_string();
-    if let Err(e) = adb::validate_serial(&serial) {
-        return UiDumpResult::err(&e);
-    }
+/// Internal raw-XML service shared by the Inspector and auto capture. It
+/// preserves the existing validated argv-based ADB path and friendly dump
+/// errors without coupling backend consumers to the Tauri response DTO.
+pub(crate) async fn dump_ui_hierarchy_xml(
+    serial: &str,
+    custom_path: Option<String>,
+) -> Result<String, (String, String)> {
+    let serial = serial.trim();
+    adb::validate_serial(serial).map_err(|error| (error.code().to_string(), error.message()))?;
 
     // Step 1: trigger the dump. uiautomator writes the XML to a file on the
     // device and prints the destination path to stdout.
-    let dump_out = match adb::run_adb_text(
-        Some(&serial),
+    let dump_out = adb::run_adb_text(
+        Some(serial),
         &["shell", "uiautomator", "dump", DEFAULT_DUMP_PATH],
         custom_path.clone(),
         DUMP_TIMEOUT_SECS,
     )
     .await
-    {
-        Ok(o) => o,
-        Err(e) => return UiDumpResult::err(&e),
-    };
+    .map_err(|error| (error.code().to_string(), error.message()))?;
 
     if dump_failed(&dump_out) {
-        return UiDumpResult::err_msg(
-            "dump_failed",
+        return Err((
+            "dump_failed".to_string(),
             "uiautomator could not capture the screen (it may be animating, \
              secure, or showing a media surface). Try again after the screen \
              settles."
                 .to_string(),
-        );
+        ));
     }
 
     let dump_path = parse_dump_path(&dump_out);
 
     // Step 2: read the XML back from the device.
-    let xml = match adb::run_adb_text(
-        Some(&serial),
+    let xml = adb::run_adb_text(
+        Some(serial),
         &["shell", "cat", &dump_path],
-        custom_path.clone(),
+        custom_path,
         DUMP_TIMEOUT_SECS,
     )
     .await
-    {
-        Ok(o) => o,
-        Err(e) => return UiDumpResult::err(&e),
-    };
+    .map_err(|error| (error.code().to_string(), error.message()))?;
 
     if !looks_like_hierarchy(&xml) {
-        return UiDumpResult::err_msg(
-            "dump_failed",
+        return Err((
+            "dump_failed".to_string(),
             "The UI dump did not return a valid hierarchy. Try again.".to_string(),
-        );
+        ));
     }
+    Ok(xml)
+}
 
-    UiDumpResult::ok(xml)
+/// Dump the current on-screen view hierarchy as raw XML.
+#[tauri::command]
+pub async fn dump_ui_hierarchy(serial: String, custom_path: Option<String>) -> UiDumpResult {
+    match dump_ui_hierarchy_xml(&serial, custom_path).await {
+        Ok(xml) => UiDumpResult::ok(xml),
+        Err((code, message)) => UiDumpResult::err_msg(&code, message),
+    }
 }
 
 /// Capture the current screen and return it as a base64 PNG data URL.
@@ -253,8 +248,12 @@ mod tests {
     #[test]
     fn dump_failed_detects_known_errors() {
         assert!(dump_failed("ERROR: could not get idle state."));
-        assert!(dump_failed("ERROR: null root node returned by UiTestAutomationBridge."));
-        assert!(!dump_failed("UI hierchary dumped to: /sdcard/window_dump.xml"));
+        assert!(dump_failed(
+            "ERROR: null root node returned by UiTestAutomationBridge."
+        ));
+        assert!(!dump_failed(
+            "UI hierchary dumped to: /sdcard/window_dump.xml"
+        ));
     }
 
     #[test]
@@ -262,7 +261,9 @@ mod tests {
         assert!(looks_like_hierarchy(
             "<?xml version='1.0' encoding='UTF-8'?><hierarchy/>"
         ));
-        assert!(looks_like_hierarchy("  <hierarchy rotation=\"0\"></hierarchy>"));
+        assert!(looks_like_hierarchy(
+            "  <hierarchy rotation=\"0\"></hierarchy>"
+        ));
         assert!(!looks_like_hierarchy("ERROR: could not dump"));
         assert!(!looks_like_hierarchy(""));
     }

@@ -6,6 +6,16 @@ import { useI18n } from '../i18n'
 import { useSessionHistory } from './useSessionHistory'
 import { applyQualityMode, type QualityMode } from '../utils/adaptiveQuality'
 import { persistScrcpyLaunchConfig } from '../utils/scrcpyLaunch'
+import { useDeviceRegistry } from './useDeviceRegistry'
+import {
+  discoveryRecordsFromResponse,
+  onlineRecordsFromSerials,
+} from '../types/deviceRegistry'
+import {
+  deviceTrackerRefreshInterval,
+  isCurrentDeviceTrackerEvent,
+  type AdbDeviceTrackerEvent,
+} from '../types/deviceTracker'
 
 export interface RenderDriverOption {
   id: string
@@ -66,12 +76,30 @@ export interface ScrcpyConfig {
 }
 
 export const DEFAULT_SCRCPY_CONFIG: ScrcpyConfig = {
-  device: '', sessionMode: 'mirror', bitrate: 8, fps: undefined,
-  stayAwake: false, turnOff: false, audioEnabled: true, audioCodec: 'auto',
-  alwaysOnTop: false, res: '0', recordPath: '', vdWidth: 1920,
-  vdHeight: 1080, vdDpi: 420, aspectRatioLock: true, hidKeyboard: false,
-  hidMouse: false, flexDisplay: false, cameraTorch: false, cameraZoom: 1.0,
-  backgroundColor: '', keepActive: false, vsync: true, qualityMode: 'manual',
+  device: '',
+  sessionMode: 'mirror',
+  bitrate: 8,
+  fps: undefined,
+  stayAwake: false,
+  turnOff: false,
+  audioEnabled: true,
+  audioCodec: 'auto',
+  alwaysOnTop: false,
+  res: '0',
+  recordPath: '',
+  vdWidth: 1920,
+  vdHeight: 1080,
+  vdDpi: 420,
+  aspectRatioLock: true,
+  hidKeyboard: false,
+  hidMouse: false,
+  flexDisplay: false,
+  cameraTorch: false,
+  cameraZoom: 1.0,
+  backgroundColor: '',
+  keepActive: false,
+  vsync: true,
+  qualityMode: 'manual',
 }
 
 export function useScrcpy() {
@@ -117,8 +145,19 @@ export function useScrcpy() {
       }
     },
   )
-  const [config, setConfig] = useState<ScrcpyConfig>({ ...DEFAULT_SCRCPY_CONFIG })
+  const [config, setConfig] = useState<ScrcpyConfig>({
+    ...DEFAULT_SCRCPY_CONFIG,
+  })
+  const {
+    registry: deviceRegistry,
+    registeredDevices,
+    applyDiscovery,
+    refreshHealth: refreshDeviceHealth,
+  } = useDeviceRegistry({ customPath: config.scrcpyPath })
   const prevDevicesRef = useRef<string[]>([])
+  const refreshDevicesRef = useRef<
+    (customPath?: string, silent?: boolean, force?: boolean) => Promise<void>
+  >(async () => undefined)
   const pendingSessionConfigsRef = useRef<Record<string, ScrcpyConfig>>({})
   const latestConfigRef = useRef(config)
   latestConfigRef.current = config
@@ -281,65 +320,6 @@ export function useScrcpy() {
     }
   }, [t, sessionHistory.startSession, sessionHistory.endSession])
 
-  // Auto-scan USB devices every 3 seconds when auto-connect is enabled.
-  // This detects newly plugged-in USB devices without requiring a manual refresh.
-  // Runs silently in the background without affecting the isRefreshing UI state.
-  useEffect(() => {
-    if (!isTauri() || !isAutoConnect) return
-    let polling = true
-    const poll = async () => {
-      if (!polling) return
-      try {
-        const res: any = await invoke('get_devices', {
-          customPath: config.scrcpyPath || undefined,
-        })
-        if (!polling) return
-        if (!res.error) {
-          const newDevices = res.devices as string[]
-          const prevDevices = prevDevicesRef.current
-
-          // Only update state if there's a change
-          const added = newDevices.filter((d) => !prevDevices.includes(d))
-          const removed = prevDevices.filter((d) => !newDevices.includes(d))
-
-          if (added.length > 0 || removed.length > 0) {
-            added.forEach((device) => {
-              setLogs((prev) => [
-                ...prev.slice(-100),
-                t('logs.newDeviceDiscovered', { device }),
-              ])
-            })
-            removed.forEach((device) => {
-              setLogs((prev) => [
-                ...prev.slice(-100),
-                t('logs.deviceDisconnected', { device }),
-              ])
-            })
-            setDevices(newDevices)
-            prevDevicesRef.current = newDevices
-
-            if (newDevices.length > 0) {
-              setActiveDevice((current) => {
-                if (!current || !newDevices.includes(current)) {
-                  return newDevices[0]
-                }
-                return current
-              })
-            }
-          }
-        }
-      } catch {
-        // Silent failure for background polling
-      }
-    }
-    const id = setInterval(poll, 3000)
-    return () => {
-      polling = false
-      clearInterval(id)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAutoConnect, config.scrcpyPath, t])
-
   const [historyDevices, setHistoryDevices] = useState<string[]>([])
 
   // Load history on mount
@@ -382,20 +362,51 @@ export function useScrcpy() {
 
       if (!res.error) {
         const newDevices = res.devices as string[]
+        const structuredRecords = discoveryRecordsFromResponse(
+          res.deviceRecords,
+        )
+        const discovery = applyDiscovery(
+          structuredRecords.length > 0
+            ? structuredRecords
+            : onlineRecordsFromSerials(newDevices),
+        )
+        const diagnostics = Array.isArray(res.diagnostics)
+          ? (res.diagnostics as string[])
+          : []
         const prevDevices = prevDevicesRef.current
         const pendingDiscoveryMessage = t('logs.discoveryPending')
 
-        setLogs((prev) => prev.filter((line) => line !== pendingDiscoveryMessage))
+        diagnostics.forEach((diagnostic) => {
+          setLogs((prev) => {
+            const message = `[ADB] ${diagnostic}`
+            return prev.includes(message)
+              ? prev
+              : [...prev.slice(-100), message]
+          })
+        })
+
+        setLogs((prev) =>
+          prev.filter((line) => line !== pendingDiscoveryMessage),
+        )
 
         // Identify connections/disconnections
         const added = newDevices.filter((d) => !prevDevices.includes(d))
         const removed = prevDevices.filter((d) => !newDevices.includes(d))
+
+        if (discovery.addedOnline.length > 0) {
+          void refreshDeviceHealth(discovery.addedOnline)
+        }
 
         added.forEach((device) => {
           setLogs((prev) => [
             ...prev.slice(-100),
             t('logs.newDeviceDiscovered', { device }),
           ])
+          window.dispatchEvent(
+            new CustomEvent('mobile-device-studio:device-online', {
+              detail: { serial: device },
+            }),
+          )
         })
 
         removed.forEach((device) => {
@@ -419,9 +430,12 @@ export function useScrcpy() {
           setActiveDevice(newDevices[0])
         }
       } else {
-        const error = typeof res.error === 'string' && res.error.trim() && res.error !== 'true'
-          ? t('logs.discoveryError', { error: res.error })
-          : t('logs.discoveryPending')
+        const error =
+          typeof res.error === 'string' &&
+          res.error.trim() &&
+          res.error !== 'true'
+            ? t('logs.discoveryError', { error: res.error })
+            : t('logs.discoveryPending')
         setLogs((prev) => [
           ...prev.filter((line) => line !== error).slice(-100),
           error,
@@ -438,9 +452,102 @@ export function useScrcpy() {
     }
   }
 
+  refreshDevicesRef.current = refreshDevices
+
+  // Prefer ADB's long-running native tracker. A low-frequency safety refresh
+  // guards against a missed event; if the tracker cannot start or exits, the
+  // same timer automatically falls back to the previous 3-second cadence.
+  useEffect(() => {
+    if (!isTauri() || !isAutoConnect) return
+
+    let disposed = false
+    let trackerActive = false
+    let trackerId: number | undefined
+    let unlisten: (() => void) | undefined
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined
+    let lastRefreshAt = 0
+
+    const refresh = () => {
+      if (disposed) return
+      lastRefreshAt = Date.now()
+      void refreshDevicesRef.current(config.scrcpyPath || undefined, true, true)
+    }
+    const scheduleRefresh = () => {
+      if (refreshTimer) clearTimeout(refreshTimer)
+      refreshTimer = setTimeout(refresh, 100)
+    }
+
+    const setup = async () => {
+      try {
+        unlisten = await listen<AdbDeviceTrackerEvent>(
+          'adb-device-tracker',
+          (event) => {
+            if (!isCurrentDeviceTrackerEvent(event.payload, trackerId)) return
+            if (event.payload.state === 'changed') {
+              trackerActive = true
+              scheduleRefresh()
+            } else if (event.payload.state === 'stopped') {
+              trackerActive = false
+              scheduleRefresh()
+            } else if (event.payload.message) {
+              const message = `[ADB tracker] ${event.payload.message}`
+              setLogs((previous) =>
+                previous.includes(message)
+                  ? previous
+                  : [...previous.slice(-100), message],
+              )
+            }
+          },
+        )
+        if (disposed) {
+          unlisten()
+          return
+        }
+
+        const result = await invoke<{
+          success: boolean
+          trackerId?: number
+        }>('start_device_tracker', {
+          customPath: config.scrcpyPath || undefined,
+        })
+        if (result.success && typeof result.trackerId === 'number') {
+          trackerId = result.trackerId
+          trackerActive = true
+        }
+        if (disposed && trackerId !== undefined) {
+          void invoke('stop_device_tracker', { trackerId })
+          return
+        }
+        refresh()
+      } catch {
+        trackerActive = false
+        refresh()
+      }
+    }
+
+    void setup()
+    const fallbackTimer = window.setInterval(() => {
+      const intervalMs = deviceTrackerRefreshInterval(trackerActive)
+      if (Date.now() - lastRefreshAt >= intervalMs) refresh()
+    }, 1_000)
+
+    return () => {
+      disposed = true
+      window.clearInterval(fallbackTimer)
+      if (refreshTimer) clearTimeout(refreshTimer)
+      unlisten?.()
+      if (trackerId !== undefined) {
+        void invoke('stop_device_tracker', { trackerId })
+      }
+    }
+  }, [isAutoConnect, config.scrcpyPath])
+
   const runScrcpy = async (launchConfig: ScrcpyConfig) => {
     const resolvedConfig = applyQualityMode(launchConfig)
-    if (resolvedConfig.device === activeDevice && resolvedConfig !== launchConfig) {
+    if (
+      resolvedConfig.device === activeDevice &&
+      resolvedConfig !== launchConfig
+    ) {
       setConfig((previous) => ({
         ...previous,
         bitrate: resolvedConfig.bitrate,
@@ -874,6 +981,9 @@ export function useScrcpy() {
 
   return {
     devices,
+    deviceRegistry,
+    registeredDevices,
+    refreshDeviceHealth,
     logs,
     setLogs,
     clearLogs,

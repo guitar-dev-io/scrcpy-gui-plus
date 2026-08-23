@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   Circle,
   Minus,
@@ -8,15 +8,23 @@ import {
   Square,
   Wifi,
 } from 'lucide-react'
-import { useEmbeddedSession } from '../../hooks/useEmbeddedSession'
-import { useDeviceInput } from '../../hooks/useDeviceInput'
 import {
   useEmbeddedWorkspaceSettings,
   settingsToOptions,
 } from '../../hooks/useEmbeddedWorkspaceSettings'
-import DeviceDisplay from '../embedded-workspace/DeviceDisplay'
+import { useDeviceScreen } from '../embedded-workspace/DeviceScreen'
 import FullscreenDeviceView from '../embedded-workspace/FullscreenDeviceView'
 import DeviceHeader from './DeviceHeader'
+
+export interface DashboardCompanionFallback {
+  available: boolean
+  frame: string | null
+  screenState: string
+  width?: number
+  height?: number
+  startScreen: () => Promise<void>
+  stopScreen: () => Promise<void>
+}
 
 type NotifyKind = 'success' | 'error' | 'info' | 'warning'
 type Notify = (title: string, message: string, kind: NotifyKind) => void
@@ -45,6 +53,7 @@ interface DashboardEmbeddedStageProps {
   fullscreenRequest?: number
   onMetricsChange?: (metrics: EmbeddedStageMetrics) => void
   sessionCommand?: EmbeddedSessionCommand
+  companion?: DashboardCompanionFallback
 }
 
 export interface EmbeddedSessionCommand {
@@ -65,7 +74,6 @@ const focusRing =
 const ZOOM_MIN = 50
 const ZOOM_MAX = 200
 const ZOOM_STEP = 25
-const BASE_PHONE_HEIGHT = 500
 
 /**
  * Dashboard-styled shell around the embedded workspace streaming engine
@@ -96,13 +104,11 @@ export default function DashboardEmbeddedStage({
   fullscreenRequest = 0,
   onMetricsChange,
   sessionCommand,
+  companion,
 }: DashboardEmbeddedStageProps) {
-  const containerRef = useRef<HTMLDivElement | null>(null)
   const { settings } = useEmbeddedWorkspaceSettings()
   const [zoom, setZoom] = useState(100)
   const [fullscreen, setFullscreen] = useState(false)
-  const basePhoneHeight = compact ? 300 : BASE_PHONE_HEIGHT
-  const handledSessionCommandRef = useRef(0)
   const sessionOptions = useMemo(() => {
     const preferred = settingsToOptions(settings)
     if (!compact) return preferred
@@ -117,48 +123,50 @@ export default function DashboardEmbeddedStage({
   }, [compact, settings])
 
   const {
-    canvasRef,
     state,
     dimensions,
     error,
     fps,
     start,
     stop,
-    sendTouch,
-    sendKey,
-    sendText,
     sendAction,
     screenshot,
-  } = useEmbeddedSession({
+    renderDisplay,
+  } = useDeviceScreen({
     serial: deviceSerial,
     customPath,
     options: sessionOptions,
+    command: sessionCommand,
+    onMetricsChange,
   })
+
+  const companionActive =
+    companion?.available &&
+    companion.screenState !== 'stopped' &&
+    companion.screenState !== 'error'
+  const [companionMode, setCompanionMode] = useState(false)
 
   const connected = state === 'connected'
   const busy = state === 'starting' || state === 'stopping'
+  const displayConnected = connected || companionMode
+  const displayDimensions = companionMode
+    ? companion?.width && companion?.height
+      ? { width: companion.width, height: companion.height }
+      : dimensions
+    : dimensions
 
   useEffect(() => {
-    onMetricsChange?.({ connected, busy, dimensions, fps })
-  }, [busy, connected, dimensions, fps, onMetricsChange])
-
-  useDeviceInput({
-    canvasRef,
-    containerRef,
-    dimensions,
-    enabled: connected,
-    onTouch: sendTouch,
-    onText: sendText,
-    onKey: sendKey,
-    onAction: sendAction,
-  })
-
-  // Stop any live session when the selected device is cleared;
-  // useEmbeddedSession already tears down on serial change.
-  useEffect(() => {
-    if (!deviceSerial) void stop()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deviceSerial])
+    if (companionActive) {
+      setCompanionMode(true)
+      if (state === 'starting' || state === 'connected') void stop()
+    } else if (
+      companionMode &&
+      companion?.screenState !== 'reconnecting' &&
+      companion?.screenState !== 'streaming'
+    ) {
+      setCompanionMode(false)
+    }
+  }, [companionActive, companionMode, companion?.screenState, state, stop])
 
   useEffect(() => {
     if (fullscreenRequest > 0) setFullscreen(true)
@@ -171,25 +179,43 @@ export default function DashboardEmbeddedStage({
   // doesn't reset its exposed `state` back to 'idle', so gating on `state`
   // here would miss the transition when switching between two devices.
   useEffect(() => {
-    if (!deviceSerial) return
+    if (!deviceSerial || companionActive) return
     void start()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deviceSerial])
+  }, [deviceSerial, companionActive])
 
+  // Companion is a view-only LAN path. If its permission, network socket, or
+  // Android vendor policy stops the stream, fall back to the ADB/scrcpy path
+  // already available for the selected device instead of leaving the stage
+  // blank. This also makes USB Companion useful alongside the main mirror:
+  // USB handles companion actions while ADB carries the interactive mirror.
   useEffect(() => {
-    if (!sessionCommand || sessionCommand.id <= handledSessionCommandRef.current) return
-    handledSessionCommandRef.current = sessionCommand.id
-    if (sessionCommand.action === 'stop') {
-      void stop()
-    } else if (deviceSerial) {
-      void start()
+    if (!deviceSerial || companionActive || connected || state === 'starting') {
+      return
     }
-  }, [deviceSerial, sessionCommand, start, stop])
+    if (
+      companion?.screenState !== 'error' &&
+      companion?.screenState !== 'stopped'
+    ) {
+      return
+    }
+    void start()
+  }, [
+    companion?.screenState,
+    companionActive,
+    connected,
+    deviceSerial,
+    start,
+    state,
+  ])
 
   const handleToggle = async () => {
-    if (connected || state === 'starting') {
+    if (companionMode) {
+      await companion?.stopScreen()
+      setCompanionMode(false)
+    } else if (connected || state === 'starting') {
       await stop()
-    } else {
+    } else if (!companionActive) {
       await start()
     }
   }
@@ -213,8 +239,6 @@ export default function DashboardEmbeddedStage({
   if (fullscreen) {
     return (
       <FullscreenDeviceView
-        canvasRef={canvasRef}
-        containerRef={containerRef}
         dimensions={dimensions}
         state={state}
         error={error}
@@ -225,13 +249,20 @@ export default function DashboardEmbeddedStage({
         recordingBusy={recordingBusy}
         onToggleRecording={onToggleRecording}
         onExitFullscreen={() => setFullscreen(false)}
+        imageSrc={companionMode ? companion?.frame : null}
+        imageLabel="Android Companion"
+        display={renderDisplay({
+          dimensions: displayDimensions,
+          imageSrc: companionMode ? companion?.frame : null,
+          imageLabel: 'Android Companion',
+        })}
       />
     )
   }
 
   return (
     <section
-      className={`flex min-w-0 flex-col overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] shadow-sm ${compact ? 'min-h-80' : 'min-h-[560px]'}`}
+      className={`relative flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] shadow-sm ${compact ? 'min-h-80' : 'min-h-[560px]'}`}
     >
       {showHeader && (
         <DeviceHeader
@@ -240,7 +271,7 @@ export default function DashboardEmbeddedStage({
           androidVersion={androidVersion}
           connection={connection}
           batteryLevel={batteryLevel}
-          connected={connected}
+          connected={displayConnected}
           busy={busy}
           dimensions={dimensions}
           fps={fps}
@@ -249,7 +280,9 @@ export default function DashboardEmbeddedStage({
         />
       )}
 
-      <div className={`relative flex min-w-0 flex-1 items-stretch overflow-hidden bg-[var(--bg-base)] ${compact ? 'min-h-64' : 'min-h-[460px]'}`}>
+      <div
+        className={`relative flex min-h-0 min-w-0 flex-1 items-stretch overflow-hidden bg-[radial-gradient(circle_at_50%_45%,rgba(var(--primary-rgb),.08),transparent_44%),var(--bg-base)] ${compact ? 'min-h-64' : 'min-h-[460px]'}`}
+      >
         <aside
           aria-label="Device controls"
           className="z-10 flex w-12 shrink-0 flex-col items-center justify-center border-r border-(--border-subtle) bg-[var(--bg-elevated)]/72 p-1.5"
@@ -257,22 +290,22 @@ export default function DashboardEmbeddedStage({
           {actionRail}
         </aside>
 
-        <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-auto p-2 sm:p-3">
+        <div className="flex h-full min-h-0 min-w-0 flex-1 items-center justify-center overflow-auto px-3 pb-16 pt-3 sm:px-5 sm:pb-17 sm:pt-4">
           <div
-            className="relative aspect-[9/19] max-h-full max-w-full shrink-0 overflow-hidden rounded-[25px] border-[3px] border-[#3b414d] bg-[#05070b] p-[3px] shadow-[0_12px_32px_rgba(0,0,0,.38)]"
-            style={{ height: `${Math.round((basePhoneHeight * zoom) / 100)}px` }}
+            className="relative aspect-[9/19] max-w-full shrink-0 overflow-hidden rounded-[25px] border-[3px] border-[#3b414d] bg-[#05070b] p-[3px] shadow-[0_18px_48px_rgba(0,0,0,.46)]"
+            style={{
+              height: `${zoom}%`,
+              maxHeight: zoom <= 100 ? '100%' : 'none',
+            }}
           >
             <div className="flex h-full w-full overflow-hidden rounded-[22px] bg-[radial-gradient(circle_at_50%_22%,rgba(var(--primary-rgb),.22),transparent_38%),linear-gradient(165deg,#151c2c,#090c13_62%)]">
               {deviceSerial ? (
-                <DeviceDisplay
-                  canvasRef={canvasRef}
-                  containerRef={containerRef}
-                  dimensions={dimensions}
-                  state={state}
-                  error={error}
-                  fps={fps}
-                  bare
-                />
+                renderDisplay({
+                  dimensions: displayDimensions,
+                  imageSrc: companionMode ? companion?.frame : null,
+                  imageLabel: 'Android Companion',
+                  bare: true,
+                })
               ) : (
                 <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
                   <Smartphone size={26} className="text-zinc-600" />
@@ -300,7 +333,7 @@ export default function DashboardEmbeddedStage({
           </div>
         </div>
 
-        <div className="flex w-11 shrink-0 flex-col items-center justify-end gap-1 border-l border-(--border-subtle) bg-[var(--bg-elevated)]/72 pb-2 text-[9px] text-[var(--text-subtle)]">
+        <div className="flex w-10 shrink-0 flex-col items-center justify-end gap-1 border-l border-(--border-subtle) bg-[var(--bg-elevated)]/72 pb-3 text-[9px] text-[var(--text-subtle)]">
           <button
             type="button"
             onClick={resetZoom}
@@ -332,25 +365,24 @@ export default function DashboardEmbeddedStage({
         </div>
       </div>
 
-      <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-3 border-t border-[var(--border-subtle)] bg-[var(--bg-elevated)]/75 px-4 py-2">
+      <div className="pointer-events-none absolute inset-x-14 bottom-3 z-20 flex justify-center px-3">
+        <div className="pointer-events-auto flex min-h-10 max-w-full flex-wrap items-center justify-center gap-1.5 rounded-xl border border-[var(--border-base)] bg-[var(--bg-elevated)]/92 p-1.5 shadow-[0_12px_32px_rgba(0,0,0,.42)] backdrop-blur-xl">
         <span
-          className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-emerald-400' : 'bg-[var(--text-subtle)]'}`}
+          className={`h-1.5 w-1.5 rounded-full ${displayConnected ? 'bg-emerald-400' : 'bg-[var(--text-subtle)]'}`}
         />
         <span className="text-[9px] font-medium text-[var(--text-muted)]">
-          {connected ? 'Live embedded stream' : 'Embedded workspace'}
+          {companionMode
+            ? 'Android Companion stream'
+            : displayConnected
+              ? 'Live embedded stream'
+              : 'Embedded workspace'}
         </span>
-        <span className="text-[8px] text-[var(--text-subtle)]">
-          {deviceSerial
-            ? 'Touch and keyboard input are forwarded to the device'
-            : 'Connect a device to begin'}
-        </span>
-
         <button
           type="button"
           onClick={onScreenshot}
           disabled={!deviceSerial || screenshotBusy}
           title="Capture screenshot"
-          className={`ml-auto flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-base)] px-2.5 text-[8px] font-medium text-[var(--text-muted)] transition-colors hover:border-primary/50 hover:text-primary disabled:cursor-not-allowed disabled:opacity-35 ${focusRing}`}
+          className={`ml-1 flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-base)] px-2.5 text-[8px] font-medium text-[var(--text-muted)] transition-colors hover:border-primary/50 hover:text-primary disabled:cursor-not-allowed disabled:opacity-35 ${focusRing}`}
         >
           Screenshot
         </button>
@@ -383,6 +415,7 @@ export default function DashboardEmbeddedStage({
           {connected ? <Square size={11} /> : <Play size={11} />}
           {connected ? 'Stop' : 'Start'}
         </button>
+        </div>
       </div>
     </section>
   )

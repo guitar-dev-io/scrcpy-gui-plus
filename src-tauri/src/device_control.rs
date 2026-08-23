@@ -20,6 +20,17 @@ pub struct RecordingState {
     pub recordings: Mutex<HashMap<String, RecordingHandle>>,
 }
 
+impl RecordingState {
+    pub fn kill_all_blocking(&self) {
+        if let Ok(mut recordings) = self.recordings.lock() {
+            for (_, handle) in recordings.iter_mut() {
+                let _ = handle.child.start_kill();
+            }
+            recordings.clear();
+        }
+    }
+}
+
 pub struct RecordingHandle {
     pub child: Child,
     pub remote_path: String,
@@ -51,6 +62,7 @@ fn action_args(action: &str) -> Option<Vec<&'static str>> {
         "volume_down" => vec!["shell", "input", "keyevent", "KEYCODE_VOLUME_DOWN"],
         "mute" => vec!["shell", "input", "keyevent", "KEYCODE_VOLUME_MUTE"],
         "power" => vec!["shell", "input", "keyevent", "KEYCODE_POWER"],
+        "reboot" => vec!["reboot"],
         "lock" => vec!["shell", "input", "keyevent", "KEYCODE_SLEEP"],
         "screen_off" => vec!["shell", "input", "keyevent", "KEYCODE_SLEEP"],
         "screen_on" => vec!["shell", "input", "keyevent", "KEYCODE_WAKEUP"],
@@ -459,6 +471,7 @@ mod tests {
             "volume_down",
             "mute",
             "power",
+            "reboot",
             "lock",
             "screen_off",
             "screen_on",
@@ -481,7 +494,6 @@ mod tests {
     #[test]
     fn allowlist_rejects_unknown_actions() {
         assert!(!is_allowed_action(""));
-        assert!(!is_allowed_action("reboot"));
         assert!(!is_allowed_action("shell rm -rf /"));
         assert!(!is_allowed_action("input keyevent 26; reboot"));
         assert!(!is_allowed_action("BACK"));
@@ -495,6 +507,7 @@ mod tests {
             "recents",
             "volume_up",
             "power",
+            "reboot",
             "expand_notifications",
         ] {
             let args = action_args(a).unwrap();
@@ -505,6 +518,27 @@ mod tests {
                 assert!(!arg.contains(' '));
             }
         }
+    }
+
+    #[test]
+    fn hardware_action_args_use_serial_safe_fixed_adb_arguments() {
+        assert_eq!(
+            action_args("power"),
+            Some(vec!["shell", "input", "keyevent", "KEYCODE_POWER"])
+        );
+        assert_eq!(
+            action_args("volume_up"),
+            Some(vec!["shell", "input", "keyevent", "KEYCODE_VOLUME_UP"])
+        );
+        assert_eq!(
+            action_args("volume_down"),
+            Some(vec!["shell", "input", "keyevent", "KEYCODE_VOLUME_DOWN"])
+        );
+        assert_eq!(
+            action_args("mute"),
+            Some(vec!["shell", "input", "keyevent", "KEYCODE_VOLUME_MUTE"])
+        );
+        assert_eq!(action_args("reboot"), Some(vec!["reboot"]));
     }
 
     #[test]

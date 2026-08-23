@@ -37,4 +37,35 @@ describe('useDeviceWorkspace launch orchestration', () => {
     expect(launchDevice).toHaveBeenCalledWith({ ...baseConfig, device: 'device-1' })
     expect(invoke).not.toHaveBeenCalledWith('run_scrcpy', expect.anything())
   })
+
+  it('manages a master and independently pauses, resumes, and removes sync targets', () => {
+    const { result } = renderHook(() =>
+      useDeviceWorkspace({
+        devices: ['master', 'target-a', 'target-b'],
+        outputDir: '',
+        baseConfig: {
+          device: '',
+          sessionMode: 'mirror',
+        },
+        enabled: false,
+        launchDevice: vi.fn().mockResolvedValue(undefined),
+      }),
+    )
+
+    act(() => result.current.setSyncMaster('master'))
+    act(() => expect(result.current.startSync()).toBe(true))
+    expect(result.current.syncRunning).toBe(true)
+    expect(result.current.broadcastTargets).toEqual(['target-a', 'target-b'])
+
+    act(() => result.current.pauseSyncTarget('target-a'))
+    expect(result.current.broadcastTargets).toEqual(['target-b'])
+    act(() => result.current.resumeSyncTarget('target-a'))
+    expect(result.current.broadcastTargets).toEqual(['target-a', 'target-b'])
+
+    act(() => result.current.removeSyncTarget('target-b'))
+    expect(result.current.broadcastTargets).toEqual(['target-a'])
+    act(() => result.current.stopSync())
+    expect(result.current.syncRunning).toBe(false)
+    expect(result.current.syncMembers.size).toBe(0)
+  })
 })

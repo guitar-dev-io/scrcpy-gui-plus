@@ -44,10 +44,11 @@ const PACKET_FLAG_CONFIG: u64 = 1 << 62;
 const PACKET_FLAG_KEY_FRAME: u64 = 1 << 61;
 const PACKET_PTS_MASK: u64 = (1 << 61) - 1;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::ipc::{Channel, InvokeResponseBody};
@@ -73,6 +74,7 @@ pub(crate) mod control {
     pub const TYPE_INJECT_KEYCODE: u8 = 0;
     pub const TYPE_INJECT_TEXT: u8 = 1;
     pub const TYPE_INJECT_TOUCH_EVENT: u8 = 2;
+    pub const TYPE_SET_CLIPBOARD: u8 = 9;
 
     /// Android `MotionEvent` actions used for touch injection.
     pub const ACTION_DOWN: u8 = 0;
@@ -91,6 +93,7 @@ pub(crate) mod control {
 
     /// scrcpy caps a single injected text message at this many UTF-8 bytes.
     pub const INJECT_TEXT_MAX_LEN: usize = 300;
+    pub const SET_CLIPBOARD_MAX_LEN: usize = 256 * 1024;
 
     /// Map a workspace touch action name to the Android `MotionEvent` action.
     pub fn touch_action_code(action: &str) -> Option<u8> {
@@ -169,6 +172,27 @@ pub(crate) mod control {
         b.extend_from_slice(bytes);
         b
     }
+
+    /// Serialize a set-clipboard control message for the target Android device.
+    /// Sequence `0` means no acknowledgement is requested; `paste=false`
+    /// updates the clipboard without also injecting a paste key event.
+    pub fn encode_set_clipboard(text: &str) -> Vec<u8> {
+        let mut bytes = text.as_bytes();
+        if bytes.len() > SET_CLIPBOARD_MAX_LEN {
+            let mut end = SET_CLIPBOARD_MAX_LEN;
+            while end > 0 && (bytes[end] & 0xC0) == 0x80 {
+                end -= 1;
+            }
+            bytes = &bytes[..end];
+        }
+        let mut b = Vec::with_capacity(14 + bytes.len());
+        b.push(TYPE_SET_CLIPBOARD);
+        b.extend_from_slice(&0u64.to_be_bytes());
+        b.push(0); // paste=false
+        b.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
+        b.extend_from_slice(bytes);
+        b
+    }
 }
 
 /// Explicit session lifecycle state, kept in sync with the frontend.
@@ -210,11 +234,37 @@ struct EmbedSession {
     state: Arc<Mutex<SessionState>>,
     video: Arc<Mutex<VideoHub>>,
     codec: String,
+    frontend_owner_subscriber: Option<String>,
+    remote_lease_generation: Option<u64>,
+    /// Auto-capture session id currently borrowing this control connection.
+    /// Kept separate from the companion generation so either consumer can
+    /// release its own lease without tearing down the other's session.
+    auto_capture_lease_id: Option<String>,
+    custom_path: Option<String>,
+}
+
+enum VideoSink {
+    Tauri(Channel<InvokeResponseBody>),
+    Remote(SyncSender<Vec<u8>>),
 }
 
 struct VideoSubscriber {
     id: String,
-    channel: Channel<InvokeResponseBody>,
+    sink: VideoSink,
+}
+
+impl VideoSubscriber {
+    fn send(&self, message: Vec<u8>) -> bool {
+        match &self.sink {
+            VideoSink::Tauri(channel) => channel.send(InvokeResponseBody::Raw(message)).is_ok(),
+            // A remote viewer must never apply backpressure to the scrcpy
+            // reader. A full queue means the viewer is too slow to stay live.
+            VideoSink::Remote(sender) => match sender.try_send(message) {
+                Ok(()) => true,
+                Err(TrySendError::Full(_)) | Err(TrySendError::Disconnected(_)) => false,
+            },
+        }
+    }
 }
 
 /// Fan-out state for the single encoded stream owned by a device session.
@@ -233,18 +283,24 @@ struct VideoHub {
 }
 
 impl VideoHub {
-    fn new(subscriber_id: String, channel: Channel<InvokeResponseBody>) -> Self {
+    fn empty() -> Self {
         Self {
-            subscribers: vec![VideoSubscriber {
-                id: subscriber_id,
-                channel,
-            }],
+            subscribers: Vec::new(),
             latest_config: None,
             current_gop: Vec::new(),
             current_gop_bytes: 0,
             width: 0,
             height: 0,
         }
+    }
+
+    fn new(subscriber_id: String, channel: Channel<InvokeResponseBody>) -> Self {
+        let mut hub = Self::empty();
+        hub.subscribers.push(VideoSubscriber {
+            id: subscriber_id,
+            sink: VideoSink::Tauri(channel),
+        });
+        hub
     }
 
     fn cache_frame(&mut self, message: &[u8], is_config: bool, is_key: bool) {
@@ -274,13 +330,21 @@ impl VideoHub {
 
     fn broadcast(&mut self, message: Vec<u8>, is_config: bool, is_key: bool) -> usize {
         self.cache_frame(&message, is_config, is_key);
-        self.subscribers.retain(|subscriber| {
-            subscriber
-                .channel
-                .send(InvokeResponseBody::Raw(message.clone()))
-                .is_ok()
-        });
+        self.broadcast_uncached(message)
+    }
+
+    fn broadcast_uncached(&mut self, message: Vec<u8>) -> usize {
+        self.subscribers
+            .retain(|subscriber| subscriber.send(message.clone()));
         self.subscribers.len()
+    }
+
+    fn broadcast_remote_only(&mut self, message: Vec<u8>) {
+        self.subscribers
+            .retain(|subscriber| match &subscriber.sink {
+                VideoSink::Tauri(_) => true,
+                VideoSink::Remote(_) => subscriber.send(message.clone()),
+            });
     }
 
     fn attach(
@@ -302,9 +366,36 @@ impl VideoHub {
         }
         self.subscribers.push(VideoSubscriber {
             id: subscriber_id,
-            channel,
+            sink: VideoSink::Tauri(channel),
         });
         Ok(())
+    }
+
+    fn attach_remote(&mut self, subscriber_id: String) -> Result<Receiver<Vec<u8>>, String> {
+        // Enough room for decoder configuration plus a normal GOP, while still
+        // bounded. If priming cannot fit, fail instead of starting permanently
+        // behind the live stream.
+        let (sender, receiver) = sync_channel(128);
+        if self.width > 0 && self.height > 0 {
+            sender
+                .try_send(dimension_message(self.width, self.height))
+                .map_err(|_| "Could not prime remote video dimensions".to_string())?;
+        }
+        if let Some(config) = &self.latest_config {
+            sender
+                .try_send(config.clone())
+                .map_err(|_| "Could not prime remote video configuration".to_string())?;
+        }
+        for frame in &self.current_gop {
+            sender
+                .try_send(frame.clone())
+                .map_err(|_| "The cached video GOP is too large for a remote viewer".to_string())?;
+        }
+        self.subscribers.push(VideoSubscriber {
+            id: subscriber_id,
+            sink: VideoSink::Remote(sender),
+        });
+        Ok(receiver)
     }
 
     fn detach(&mut self, subscriber_id: &str) -> bool {
@@ -313,14 +404,56 @@ impl VideoHub {
             .retain(|subscriber| subscriber.id != subscriber_id);
         self.subscribers.len() != before
     }
+
+    fn tauri_subscriber_count(&self) -> usize {
+        self.subscribers
+            .iter()
+            .filter(|subscriber| matches!(subscriber.sink, VideoSink::Tauri(_)))
+            .count()
+    }
 }
 
 #[derive(Default)]
 pub struct EmbedSessionState {
     sessions: Mutex<HashMap<String, EmbedSession>>,
+    start_guards: Mutex<HashMap<String, Arc<AsyncMutex<()>>>>,
+}
+
+struct SerialStartPermit<'a> {
+    state: &'a EmbedSessionState,
+    serial: String,
+    guard: Option<tokio::sync::OwnedMutexGuard<()>>,
+}
+
+impl Drop for SerialStartPermit<'_> {
+    fn drop(&mut self) {
+        self.guard.take();
+        if let Ok(mut guards) = self.state.start_guards.lock() {
+            let can_remove = guards
+                .get(&self.serial)
+                .is_some_and(|guard| Arc::strong_count(guard) == 1);
+            if can_remove {
+                guards.remove(&self.serial);
+            }
+        }
+    }
 }
 
 impl EmbedSessionState {
+    async fn lock_serial_start(&self, serial: &str) -> SerialStartPermit<'_> {
+        let guard = {
+            let mut guards = self.start_guards.lock().unwrap();
+            guards
+                .entry(serial.to_string())
+                .or_insert_with(|| Arc::new(AsyncMutex::new(())))
+                .clone()
+        };
+        SerialStartPermit {
+            state: self,
+            serial: serial.to_string(),
+            guard: Some(guard.lock_owned().await),
+        }
+    }
     /// Best-effort synchronous teardown for app/window shutdown. Kills every
     /// scrcpy-server child and flags its reader loop to stop. adb forwards are
     /// released by adb when the child dies.
@@ -333,6 +466,242 @@ impl EmbedSessionState {
             sessions.clear();
         }
     }
+
+    pub(crate) fn remote_video_subscribe(
+        &self,
+        serial: &str,
+        subscriber_id: String,
+    ) -> Result<(String, Receiver<Vec<u8>>), String> {
+        let sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| "Embedded session state is unavailable")?;
+        let (session_id, session) = sessions
+            .iter()
+            .find(|(_, session)| session.serial == serial)
+            .ok_or_else(|| {
+                "Start the target's embedded workspace before enabling remote video".to_string()
+            })?;
+        if session.codec != "h264" {
+            return Err(
+                "Mobile remote video currently requires an H.264 embedded session".to_string(),
+            );
+        }
+        let receiver = session
+            .video
+            .lock()
+            .map_err(|_| "The embedded video stream is unavailable".to_string())?
+            .attach_remote(subscriber_id)?;
+        Ok((session_id.clone(), receiver))
+    }
+
+    pub(crate) fn remote_video_detach(&self, session_id: &str, subscriber_id: &str) {
+        if let Ok(sessions) = self.sessions.lock() {
+            if let Some(session) = sessions.get(session_id) {
+                if let Ok(mut video) = session.video.lock() {
+                    video.detach(subscriber_id);
+                }
+            }
+        }
+    }
+
+    pub(crate) fn remote_control_for_serial(
+        &self,
+        serial: &str,
+    ) -> Result<Arc<AsyncMutex<TcpStream>>, String> {
+        let sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| "Embedded session state is unavailable")?;
+        let session = sessions
+            .values()
+            .find(|session| session.serial == serial)
+            .ok_or_else(|| {
+                "Start the target's embedded workspace before using low-latency input".to_string()
+            })?;
+        let connected = session
+            .state
+            .lock()
+            .map(|state| *state == SessionState::Connected)
+            .unwrap_or(false);
+        if !connected {
+            return Err("The target embedded session is not connected".to_string());
+        }
+        Ok(session.control.clone())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum SerialSwipeOutcome {
+    Sent,
+    NoUsableSession,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum SerialSwipeError {
+    StateUnavailable(String),
+    InvalidGeometry(String),
+    WriteFailed(String),
+}
+
+/// Send one complete swipe over an already-connected embedded scrcpy control
+/// socket. Native ADB screenshot coordinates are scaled into the current
+/// scrcpy video coordinate space before the first control packet is written.
+/// `NoUsableSession` is the only outcome for which callers may safely fall
+/// back to `adb shell input swipe`; write failures may represent a partially
+/// delivered gesture and must not be retried through another path.
+pub(crate) async fn swipe_existing_session(
+    state: &EmbedSessionState,
+    serial: &str,
+    width: u32,
+    height: u32,
+    start_x: i32,
+    start_y: i32,
+    end_x: i32,
+    end_y: i32,
+    duration_ms: u64,
+) -> Result<SerialSwipeOutcome, SerialSwipeError> {
+    adb::validate_serial(serial).map_err(|error| {
+        SerialSwipeError::InvalidGeometry(format!("invalid device serial: {}", error.message()))
+    })?;
+    let (native_start_x, native_start_y) =
+        validate_touch(f64::from(start_x), f64::from(start_y), width, height)
+            .map_err(SerialSwipeError::InvalidGeometry)?;
+    let (native_end_x, native_end_y) =
+        validate_touch(f64::from(end_x), f64::from(end_y), width, height)
+            .map_err(SerialSwipeError::InvalidGeometry)?;
+
+    let (control, stream_width, stream_height) = {
+        let sessions = state.sessions.lock().map_err(|_| {
+            SerialSwipeError::StateUnavailable(
+                "embedded session registry lock was poisoned".to_string(),
+            )
+        })?;
+        let session = sessions.values().find(|session| {
+            session.serial == serial
+                && session
+                    .state
+                    .lock()
+                    .map(|value| *value == SessionState::Connected)
+                    .unwrap_or(false)
+        });
+        let Some(session) = session else {
+            return Ok(SerialSwipeOutcome::NoUsableSession);
+        };
+        let (stream_width, stream_height) = session
+            .video
+            .lock()
+            .map(|video| (video.width, video.height))
+            .map_err(|_| {
+                SerialSwipeError::StateUnavailable(
+                    "embedded video dimensions lock was poisoned".to_string(),
+                )
+            })?;
+        if stream_width == 0
+            || stream_height == 0
+            || stream_width > u16::MAX as u32
+            || stream_height > u16::MAX as u32
+        {
+            return Ok(SerialSwipeOutcome::NoUsableSession);
+        }
+        (session.control.clone(), stream_width, stream_height)
+    };
+
+    let scale_axis = |value: i32, native_extent: u32, stream_extent: u32| -> i32 {
+        if native_extent <= 1 || stream_extent <= 1 {
+            return 0;
+        }
+        let numerator = u64::from(value.max(0) as u32)
+            .saturating_mul(u64::from(stream_extent.saturating_sub(1)))
+            .saturating_add(u64::from(native_extent.saturating_sub(1)) / 2);
+        (numerator / u64::from(native_extent.saturating_sub(1))).min(i32::MAX as u64) as i32
+    };
+    let start_x = scale_axis(native_start_x, width, stream_width);
+    let start_y = scale_axis(native_start_y, height, stream_height);
+    let end_x = scale_axis(native_end_x, width, stream_width);
+    let end_y = scale_axis(native_end_y, height, stream_height);
+    let (start_x, start_y) = validate_touch(
+        f64::from(start_x),
+        f64::from(start_y),
+        stream_width,
+        stream_height,
+    )
+    .map_err(SerialSwipeError::InvalidGeometry)?;
+    let (end_x, end_y) = validate_touch(
+        f64::from(end_x),
+        f64::from(end_y),
+        stream_width,
+        stream_height,
+    )
+    .map_err(SerialSwipeError::InvalidGeometry)?;
+
+    let mut writer = control.lock().await;
+    let write = |result: std::io::Result<()>| {
+        result.map_err(|error| {
+            SerialSwipeError::WriteFailed(format!("scrcpy control write failed: {error}"))
+        })
+    };
+    write(
+        writer
+            .write_all(&control::encode_touch(
+                control::ACTION_DOWN,
+                0,
+                start_x,
+                start_y,
+                stream_width as u16,
+                stream_height as u16,
+                1.0,
+            ))
+            .await,
+    )?;
+
+    let steps = (duration_ms / 50).clamp(2, 12) as i64;
+    let step_delay = Duration::from_millis((duration_ms / steps as u64).max(1));
+    for step in 1..=steps {
+        tokio::time::sleep(step_delay).await;
+        let x = i64::from(start_x) + (i64::from(end_x) - i64::from(start_x)) * step / steps;
+        let y = i64::from(start_y) + (i64::from(end_y) - i64::from(start_y)) * step / steps;
+        let action = if step == steps {
+            control::ACTION_UP
+        } else {
+            control::ACTION_MOVE
+        };
+        let pressure = if action == control::ACTION_UP {
+            0.0
+        } else {
+            1.0
+        };
+        write(
+            writer
+                .write_all(&control::encode_touch(
+                    action,
+                    0,
+                    x as i32,
+                    y as i32,
+                    stream_width as u16,
+                    stream_height as u16,
+                    pressure,
+                ))
+                .await,
+        )?;
+    }
+    Ok(SerialSwipeOutcome::Sent)
+}
+
+fn claim_frontend_owner(owner: &mut Option<String>, subscriber_id: &str) -> bool {
+    if owner.is_some() {
+        false
+    } else {
+        *owner = Some(subscriber_id.to_string());
+        true
+    }
+}
+
+fn should_teardown_remote_owned_session(
+    frontend_owner: Option<&str>,
+    tauri_subscriber_count: usize,
+) -> bool {
+    frontend_owner.is_none() && tauri_subscriber_count == 0
 }
 
 #[derive(Default, Deserialize)]
@@ -401,18 +770,107 @@ async fn teardown_session(
 ) {
     let state = app.state::<EmbedSessionState>();
     let removed = state.sessions.lock().unwrap().remove(session_id);
-    if let Some(mut session) = removed {
-        set_state(&session.state, SessionState::Stopping);
-        session.stop.store(true, Ordering::Relaxed);
-        let _ = session.child.kill().await;
-        let adb_exe = get_binary_path("adb", custom_path);
-        let _ = remove_forward(&adb_exe, session.port).await;
-        emit_status(
-            window,
-            session_id,
-            &session.serial,
-            SessionState::Disconnected,
-        );
+    if let Some(session) = removed {
+        cleanup_removed_session(window, session_id, session, custom_path).await;
+    }
+}
+
+async fn cleanup_removed_session(
+    window: &Window,
+    session_id: &str,
+    mut session: EmbedSession,
+    custom_path: Option<String>,
+) {
+    set_state(&session.state, SessionState::Stopping);
+    session.stop.store(true, Ordering::Relaxed);
+    let _ = session.child.kill().await;
+    let adb_exe = get_binary_path("adb", custom_path.or(session.custom_path.take()));
+    let _ = remove_forward(&adb_exe, session.port).await;
+    emit_status(
+        window,
+        session_id,
+        &session.serial,
+        SessionState::Disconnected,
+    );
+}
+
+pub(crate) async fn release_remote_session_lease(
+    app: &AppHandle,
+    window: &Window,
+    generation: u64,
+) -> bool {
+    let state = app.state::<EmbedSessionState>();
+    let removed = {
+        let mut sessions = state.sessions.lock().unwrap();
+        let session_id = sessions.iter().find_map(|(session_id, session)| {
+            (session.remote_lease_generation == Some(generation)).then(|| session_id.clone())
+        });
+        let Some(session_id) = session_id else {
+            return false;
+        };
+        let should_remove = {
+            let session = sessions
+                .get_mut(&session_id)
+                .expect("session disappeared while locked");
+            session.remote_lease_generation = None;
+            let tauri_subscriber_count = session
+                .video
+                .lock()
+                .map(|hub| hub.tauri_subscriber_count())
+                .unwrap_or(usize::MAX);
+            session.auto_capture_lease_id.is_none()
+                && should_teardown_remote_owned_session(
+                    session.frontend_owner_subscriber.as_deref(),
+                    tauri_subscriber_count,
+                )
+        };
+        should_remove.then(|| (session_id.clone(), sessions.remove(&session_id).unwrap()))
+    };
+    if let Some((session_id, session)) = removed {
+        cleanup_removed_session(window, &session_id, session, None).await;
+        true
+    } else {
+        false
+    }
+}
+
+pub(crate) async fn release_auto_capture_session_lease(
+    app: &AppHandle,
+    window: &Window,
+    lease_id: &str,
+) -> bool {
+    let state = app.state::<EmbedSessionState>();
+    let removed = {
+        let mut sessions = state.sessions.lock().unwrap();
+        let session_id = sessions.iter().find_map(|(session_id, session)| {
+            (session.auto_capture_lease_id.as_deref() == Some(lease_id)).then(|| session_id.clone())
+        });
+        let Some(session_id) = session_id else {
+            return false;
+        };
+        let should_remove = {
+            let session = sessions
+                .get_mut(&session_id)
+                .expect("session disappeared while locked");
+            session.auto_capture_lease_id = None;
+            let tauri_subscriber_count = session
+                .video
+                .lock()
+                .map(|hub| hub.tauri_subscriber_count())
+                .unwrap_or(usize::MAX);
+            session.remote_lease_generation.is_none()
+                && should_teardown_remote_owned_session(
+                    session.frontend_owner_subscriber.as_deref(),
+                    tauri_subscriber_count,
+                )
+        };
+        should_remove.then(|| (session_id.clone(), sessions.remove(&session_id).unwrap()))
+    };
+    if let Some((session_id, session)) = removed {
+        cleanup_removed_session(window, &session_id, session, None).await;
+        true
+    } else {
+        false
     }
 }
 
@@ -520,6 +978,16 @@ fn frame_message(is_config: bool, is_key: bool, pts: u64, payload: &[u8]) -> Vec
     buf
 }
 
+/// Dimension metadata shared by browser and mobile remote decoders:
+/// `[kind=2][width:u32 BE][height:u32 BE]`.
+fn dimension_message(width: u32, height: u32) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(9);
+    buf.push(2);
+    buf.extend_from_slice(&width.to_be_bytes());
+    buf.extend_from_slice(&height.to_be_bytes());
+    buf
+}
+
 /// Read framed H.264 packets and forward each to the frontend channel until the
 /// socket closes or a stop is requested. Emits a couple of diagnostic log lines
 /// so the log panel shows whether frames actually flow.
@@ -556,6 +1024,10 @@ async fn read_frames(
             if let Ok(mut hub) = video_hub.lock() {
                 hub.width = width;
                 hub.height = height;
+                // Browser subscribers already receive dimensions through the
+                // Tauri event. The binary kind=2 packet is remote-only so the
+                // existing WebCodecs byte contract stays unchanged.
+                hub.broadcast_remote_only(dimension_message(width, height));
             }
             let _ = window.emit(
                 "embed-session-dims",
@@ -621,43 +1093,103 @@ pub async fn start_embedded_session(
     options: Option<EmbedSessionOptions>,
     on_video: Channel<InvokeResponseBody>,
 ) -> Result<serde_json::Value, String> {
+    start_embedded_session_core(
+        window,
+        &state,
+        serial,
+        custom_path,
+        options,
+        Some(on_video),
+        None,
+        None,
+    )
+    .await
+}
+
+async fn start_embedded_session_core(
+    window: Window,
+    state: &EmbedSessionState,
+    serial: String,
+    custom_path: Option<String>,
+    options: Option<EmbedSessionOptions>,
+    on_video: Option<Channel<InvokeResponseBody>>,
+    remote_generation: Option<u64>,
+    auto_capture_lease_id: Option<String>,
+) -> Result<serde_json::Value, String> {
     let serial = serial.trim().to_string();
     adb::validate_serial(&serial).map_err(|e| e.message())?;
+    let _start_guard = state.lock_serial_start(&serial).await;
 
     // A device has one scrcpy-server/control socket, but may have multiple UI
     // decoders (workspace + Macro Recorder). Attach to the existing encoded
     // stream and replay its config/current GOP so the new decoder starts clean.
     let existing = {
-        let sessions = state.sessions.lock().unwrap();
+        let mut sessions = state.sessions.lock().unwrap();
         sessions
-            .iter()
+            .iter_mut()
             .find(|(_, session)| session.serial == serial)
             .map(|(session_id, session)| {
-                (
+                if remote_generation.is_some() && session.codec != "h264" {
+                    return Err(
+                        "Remote control requires H.264; stop the existing non-H.264 embedded session first"
+                            .to_string(),
+                    );
+                }
+                if remote_generation.is_some() || auto_capture_lease_id.is_some() {
+                    if let Some(generation) = remote_generation {
+                        session.remote_lease_generation = Some(generation);
+                    }
+                    if let Some(lease_id) = auto_capture_lease_id.as_deref() {
+                        session.auto_capture_lease_id = Some(lease_id.to_string());
+                    }
+                    let hub = session
+                        .video
+                        .lock()
+                        .map_err(|_| "The embedded video stream is unavailable".to_string())?;
+                    return Ok((
+                        session_id.clone(),
+                        None,
+                        false,
+                        hub.width,
+                        hub.height,
+                        session.codec.clone(),
+                    ));
+                }
+                let subscriber_id = generate_session_token();
+                let channel = on_video
+                    .as_ref()
+                    .ok_or_else(|| "A frontend video channel is required".to_string())?;
+                let mut hub = session
+                    .video
+                    .lock()
+                    .map_err(|_| "The embedded video stream is unavailable".to_string())?;
+                hub.attach(subscriber_id.clone(), channel.clone())?;
+                let owns_session = claim_frontend_owner(
+                    &mut session.frontend_owner_subscriber,
+                    &subscriber_id,
+                );
+                Ok((
                     session_id.clone(),
-                    session.video.clone(),
+                    Some(subscriber_id),
+                    owns_session,
+                    hub.width,
+                    hub.height,
                     session.codec.clone(),
-                )
+                ))
             })
+            .transpose()?
     };
-    if let Some((session_id, video_hub, codec)) = existing {
-        let subscriber_id = generate_session_token();
-        let (width, height) = {
-            let mut hub = video_hub
-                .lock()
-                .map_err(|_| "The embedded video stream is unavailable".to_string())?;
-            hub.attach(subscriber_id.clone(), on_video)?;
-            (hub.width, hub.height)
-        };
+    if let Some((session_id, subscriber_id, owns_session, width, height, codec)) = existing {
         let _ = window.emit(
             "scrcpy-log",
-            format!("[WORKSPACE] attached another decoder for {}", serial),
+            format!("[WORKSPACE] reused embedded session for {}", serial),
         );
         return Ok(json!({
             "success": true,
             "sessionId": session_id,
             "subscriberId": subscriber_id,
-            "ownsSession": false,
+            "ownsSession": owns_session,
+            "embeddedAutoStarted": false,
             "serial": serial,
             "width": width,
             "height": height,
@@ -846,10 +1378,13 @@ pub async fn start_embedded_session(
     let _ = (width, height); // dimensions arrive via the first session packet
 
     let session_id = generate_session_token();
-    let subscriber_id = generate_session_token();
+    let subscriber_id = on_video.as_ref().map(|_| generate_session_token());
     let state_cell = Arc::new(Mutex::new(SessionState::Connected));
     let stop = Arc::new(AtomicBool::new(false));
-    let video_hub = Arc::new(Mutex::new(VideoHub::new(subscriber_id.clone(), on_video)));
+    let video_hub = Arc::new(Mutex::new(match (subscriber_id.as_ref(), on_video) {
+        (Some(subscriber_id), Some(channel)) => VideoHub::new(subscriber_id.clone(), channel),
+        _ => VideoHub::empty(),
+    }));
 
     // 5. Register the session before spawning the reader. If the stream closes
     // immediately, its teardown task can now remove the real map entry instead
@@ -865,6 +1400,10 @@ pub async fn start_embedded_session(
             state: state_cell,
             video: video_hub.clone(),
             codec: actual_codec.clone(),
+            frontend_owner_subscriber: subscriber_id.clone(),
+            remote_lease_generation: remote_generation,
+            auto_capture_lease_id: auto_capture_lease_id.clone(),
+            custom_path: custom_path.clone(),
         },
     );
 
@@ -900,7 +1439,8 @@ pub async fn start_embedded_session(
         "success": true,
         "sessionId": session_id,
         "subscriberId": subscriber_id,
-        "ownsSession": true,
+        "ownsSession": remote_generation.is_none() && auto_capture_lease_id.is_none(),
+        "embeddedAutoStarted": remote_generation.is_some() || auto_capture_lease_id.is_some(),
         "serial": serial,
         "width": width,
         "height": height,
@@ -909,20 +1449,125 @@ pub async fn start_embedded_session(
     }))
 }
 
+pub(crate) struct RemoteEmbedPreparation {
+    pub session_id: String,
+    pub auto_started: bool,
+}
+
+pub(crate) async fn ensure_remote_embedded_session(
+    window: Window,
+    state: &EmbedSessionState,
+    serial: String,
+    custom_path: Option<String>,
+    generation: u64,
+) -> Result<RemoteEmbedPreparation, String> {
+    let result = start_embedded_session_core(
+        window,
+        state,
+        serial,
+        custom_path,
+        Some(EmbedSessionOptions {
+            codec: Some("h264".to_string()),
+            ..Default::default()
+        }),
+        None,
+        Some(generation),
+        None,
+    )
+    .await?;
+    if result.get("success").and_then(Value::as_bool) != Some(true) {
+        return Err(result
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or("Could not prepare the target embedded session")
+            .to_string());
+    }
+    let session_id = result
+        .get("sessionId")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "Embedded session start returned no session id".to_string())?
+        .to_string();
+    Ok(RemoteEmbedPreparation {
+        session_id,
+        auto_started: result
+            .get("embeddedAutoStarted")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+    })
+}
+
+pub(crate) async fn ensure_auto_capture_control_session(
+    window: Window,
+    state: &EmbedSessionState,
+    serial: String,
+    custom_path: Option<String>,
+    lease_id: String,
+) -> Result<bool, String> {
+    let result = start_embedded_session_core(
+        window,
+        state,
+        serial,
+        custom_path,
+        Some(EmbedSessionOptions {
+            codec: Some("h264".to_string()),
+            ..Default::default()
+        }),
+        None,
+        None,
+        Some(lease_id),
+    )
+    .await?;
+    if result.get("success").and_then(Value::as_bool) != Some(true) {
+        return Err(result
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or("Could not prepare the auto-capture control session")
+            .to_string());
+    }
+    Ok(result
+        .get("embeddedAutoStarted")
+        .and_then(Value::as_bool)
+        .unwrap_or(false))
+}
+
 /// Remove only one frontend decoder from a shared device session. The owner
 /// continues streaming and retains the control socket/server process.
 #[tauri::command]
-pub fn detach_embedded_session(
-    state: State<'_, EmbedSessionState>,
+pub async fn detach_embedded_session(
+    window: Window,
     session_id: String,
     subscriber_id: String,
 ) -> serde_json::Value {
-    let sessions = state.sessions.lock().unwrap();
-    let detached = sessions
-        .get(&session_id)
-        .and_then(|session| session.video.lock().ok())
-        .map(|mut hub| hub.detach(&subscriber_id))
-        .unwrap_or(false);
+    let state = window.app_handle().state::<EmbedSessionState>();
+    let (detached, orphan) = {
+        let mut sessions = state.sessions.lock().unwrap();
+        let Some(session) = sessions.get_mut(&session_id) else {
+            return json!({ "success": true, "detached": false });
+        };
+        let (detached, tauri_count) = session
+            .video
+            .lock()
+            .map(|mut hub| {
+                let detached = hub.detach(&subscriber_id);
+                (detached, hub.tauri_subscriber_count())
+            })
+            .unwrap_or((false, usize::MAX));
+        if detached && session.frontend_owner_subscriber.as_deref() == Some(subscriber_id.as_str())
+        {
+            session.frontend_owner_subscriber = None;
+        }
+        let orphan = session.remote_lease_generation.is_none()
+            && session.auto_capture_lease_id.is_none()
+            && session.frontend_owner_subscriber.is_none()
+            && tauri_count == 0;
+        (
+            detached,
+            orphan.then(|| sessions.remove(&session_id).unwrap()),
+        )
+    };
+    if let Some(session) = orphan {
+        cleanup_removed_session(&window, &session_id, session, None).await;
+    }
     json!({ "success": true, "detached": detached })
 }
 
@@ -932,6 +1577,32 @@ pub async fn stop_embedded_session(
     session_id: String,
     custom_path: Option<String>,
 ) -> Result<serde_json::Value, String> {
+    let state = window.app_handle().state::<EmbedSessionState>();
+    let kept_for_headless_consumer = {
+        let mut sessions = state.sessions.lock().unwrap();
+        if let Some(session) = sessions.get_mut(&session_id) {
+            if session.remote_lease_generation.is_some() || session.auto_capture_lease_id.is_some()
+            {
+                if let Some(owner_id) = session.frontend_owner_subscriber.take() {
+                    if let Ok(mut hub) = session.video.lock() {
+                        hub.detach(&owner_id);
+                    }
+                }
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    };
+    if kept_for_headless_consumer {
+        return Ok(json!({
+            "success": true,
+            "keptForRemote": true,
+            "message": "Frontend decoder detached; a headless control consumer remains active"
+        }));
+    }
     let app = window.app_handle().clone();
     teardown_session(&app, &window, &session_id, custom_path).await;
     Ok(json!({ "success": true, "message": "Embedded session stopped" }))
@@ -973,7 +1644,10 @@ fn control_handle(
     Ok(session.control.clone())
 }
 
-async fn write_control(handle: &Arc<AsyncMutex<TcpStream>>, bytes: &[u8]) -> Result<(), String> {
+pub(crate) async fn write_control(
+    handle: &Arc<AsyncMutex<TcpStream>>,
+    bytes: &[u8],
+) -> Result<(), String> {
     let mut guard = handle.lock().await;
     guard
         .write_all(bytes)
@@ -1296,6 +1970,16 @@ mod tests {
     }
 
     #[test]
+    fn clipboard_message_targets_scrcpy_clipboard_without_paste() {
+        let msg = encode_set_clipboard("hello");
+        assert_eq!(msg[0], TYPE_SET_CLIPBOARD);
+        assert_eq!(u64::from_be_bytes(msg[1..9].try_into().unwrap()), 0);
+        assert_eq!(msg[9], 0);
+        assert_eq!(u32::from_be_bytes(msg[10..14].try_into().unwrap()), 5);
+        assert_eq!(&msg[14..], b"hello");
+    }
+
+    #[test]
     fn frame_message_header() {
         let payload = [1u8, 2, 3, 4];
         let msg = frame_message(true, false, 12345, &payload);
@@ -1304,6 +1988,79 @@ mod tests {
         assert_eq!(u64::from_be_bytes(msg[2..10].try_into().unwrap()), 12345);
         assert_eq!(u32::from_be_bytes(msg[10..14].try_into().unwrap()), 4);
         assert_eq!(&msg[14..], &payload);
+    }
+
+    #[test]
+    fn remote_dimension_message_layout() {
+        let msg = dimension_message(1080, 2400);
+        assert_eq!(msg.len(), 9);
+        assert_eq!(msg[0], 2);
+        assert_eq!(u32::from_be_bytes(msg[1..5].try_into().unwrap()), 1080);
+        assert_eq!(u32::from_be_bytes(msg[5..9].try_into().unwrap()), 2400);
+    }
+
+    #[test]
+    fn slow_remote_subscriber_is_dropped_without_blocking_tauri_subscriber() {
+        let owner_channel = Channel::new(|_| Ok(()));
+        let mut hub = VideoHub::new("owner".to_string(), owner_channel);
+        let _receiver = hub.attach_remote("remote".to_string()).unwrap();
+        for index in 0..130u64 {
+            hub.broadcast(frame_message(false, true, index, &[1]), false, true);
+        }
+        assert_eq!(hub.subscribers.len(), 1);
+        assert_eq!(hub.subscribers[0].id, "owner");
+    }
+
+    #[test]
+    fn dimension_metadata_is_sent_only_to_remote_subscribers() {
+        let browser_messages = Arc::new(Mutex::new(Vec::<Vec<u8>>::new()));
+        let browser_sink = browser_messages.clone();
+        let browser_channel = Channel::new(move |body| {
+            if let InvokeResponseBody::Raw(bytes) = body {
+                browser_sink.lock().unwrap().push(bytes);
+            }
+            Ok(())
+        });
+        let mut hub = VideoHub::new("browser".to_string(), browser_channel);
+        let remote = hub.attach_remote("remote".to_string()).unwrap();
+        let dimensions = dimension_message(1080, 2400);
+        hub.broadcast_remote_only(dimensions.clone());
+        assert!(browser_messages.lock().unwrap().is_empty());
+        assert_eq!(remote.try_recv().unwrap(), dimensions);
+    }
+
+    #[test]
+    fn first_frontend_subscriber_adopts_headless_session_ownership() {
+        let mut owner = None;
+        assert!(claim_frontend_owner(&mut owner, "workspace"));
+        assert_eq!(owner.as_deref(), Some("workspace"));
+        assert!(!claim_frontend_owner(&mut owner, "macro"));
+        assert_eq!(owner.as_deref(), Some("workspace"));
+    }
+
+    #[test]
+    fn remote_release_only_tears_down_truly_headless_session() {
+        assert!(should_teardown_remote_owned_session(None, 0));
+        assert!(!should_teardown_remote_owned_session(Some("workspace"), 0));
+        assert!(!should_teardown_remote_owned_session(None, 1));
+    }
+
+    #[tokio::test]
+    async fn starts_for_the_same_serial_are_serialized() {
+        let state = Arc::new(EmbedSessionState::default());
+        let first = state.lock_serial_start("emulator-5554").await;
+        let waiting_state = state.clone();
+        let waiter = tokio::spawn(async move {
+            let _guard = waiting_state.lock_serial_start("emulator-5554").await;
+        });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(!waiter.is_finished());
+        drop(first);
+        tokio::time::timeout(Duration::from_secs(1), waiter)
+            .await
+            .expect("second start did not acquire the serial guard")
+            .unwrap();
+        assert!(state.start_guards.lock().unwrap().is_empty());
     }
 
     #[test]
