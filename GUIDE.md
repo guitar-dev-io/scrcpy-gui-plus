@@ -28,8 +28,8 @@ Before using ScrcpyGUI, ensure you have the following:
 ## 🚀 Installation Guide
 
 ### 🪟 Windows
-1. Download the latest `.exe` or `.msi` from the [Releases](https://github.com/kil0bit-kb/scrcpy-gui-plus/releases) page.
-2. Run the installer or standalone executable.
+1. Download the latest `.exe`, `.msi`, or `*-portable.zip` from the [Releases](https://github.com/kil0bit-kb/scrcpy-gui-plus/releases) page.
+2. Run the installer, or extract the portable ZIP and launch `Mobile Device Studio.exe`. The portable package already includes scrcpy and ADB.
 3. **Smart Setup**: On the first launch, ScrcpyGUI will detect if you have `scrcpy` installed. If not, it will offer a one-click download.
 4. **Automated Updates**: When launched, ScrcpyGUI v4 will automatically check your installed version against Genymobile's latest official release and prompt you with a beautiful one-click update modal if a new version is available.
 

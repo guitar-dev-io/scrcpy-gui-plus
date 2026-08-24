@@ -69,12 +69,28 @@ jobs:
             |----------|------|
             | Windows (exe installer) | `.exe` |
             | Windows (MSI) | `.msi` |
+            | Windows (Portable, includes scrcpy + ADB) | `*-portable.zip` |
             | macOS (Universal) | `.dmg` |
             | Linux (AppImage) | `.AppImage` |
             | Linux (deb) | `.deb` |
           releaseDraft: ${{ github.event.inputs.draft == 'true' || github.event_name == 'push' }}
           prerelease: false
           args: ${{ matrix.args }}
+
+      - name: Build Windows portable package
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: ./scripts/build-portable.ps1 -SkipBuild
+
+      - name: Upload Windows portable package to release
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $portable = Get-ChildItem src-tauri/target/release/bundle/portable/*-portable.zip | Select-Object -ExpandProperty FullName
+          gh release upload "v$version" $portable --clobber
 
       - name: Upload artifacts (for workflow_dispatch without release)
         if: github.event_name == 'workflow_dispatch'
@@ -88,4 +104,5 @@ jobs:
             src-tauri/target/release/bundle/macos/*.app
             src-tauri/target/release/bundle/appimage/*.AppImage
             src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/portable/*.zip
           if-no-files-found: ignore

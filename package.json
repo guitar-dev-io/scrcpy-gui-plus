@@ -11,6 +11,7 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
+    "build:portable:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-portable.ps1",
     "test": "vitest run",
     "lint": "tsc --noEmit",
     "clean": "rm -rf dist node_modules/.vite src-tauri/target",

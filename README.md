@@ -63,6 +63,19 @@ To learn how to enable **USB Debugging**, set up **Wireless Pairing**, or instal
 2. `npm run tauri dev` (Development)
 3. `npm run tauri build` (Production)
 
+### Windows portable build
+
+Run the following command from Windows PowerShell:
+
+```powershell
+npm run build:portable:windows
+```
+
+The generated ZIP is written to
+`src-tauri/target/release/bundle/portable/`. It contains the application,
+the tested scrcpy release, and ADB, so it can be extracted and run without an
+installer. Microsoft Edge WebView2 Runtime is still required.
+
 ### Robot Framework mobile tests
 
 Flows recorded in **Automation** can be exported as keyword-driven `.robot`
