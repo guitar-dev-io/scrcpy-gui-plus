@@ -48,6 +48,9 @@ pub struct PackageEntry {
 pub struct PackageListResult {
     pub success: bool,
     pub packages: Vec<PackageEntry>,
+    pub system_state_available: bool,
+    pub enabled_state_available: bool,
+    pub running_state_available: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -70,6 +73,8 @@ pub struct PackageInfoResult {
     pub last_update_time: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_code_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data_dir: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -335,6 +340,9 @@ pub async fn list_packages(
         return PackageListResult {
             success: false,
             packages: Vec::new(),
+            system_state_available: false,
+            enabled_state_available: false,
+            running_state_available: false,
             error: Some(e.message()),
             error_code: Some(e.code().to_string()),
         };
@@ -362,6 +370,9 @@ pub async fn list_packages(
             return PackageListResult {
                 success: false,
                 packages: Vec::new(),
+                system_state_available: false,
+                enabled_state_available: false,
+                running_state_available: false,
                 error: Some(e.message()),
                 error_code: Some(e.code().to_string()),
             }
@@ -371,6 +382,7 @@ pub async fn list_packages(
     // Cross-reference system, disabled, and running sets once. This keeps the
     // UI honest without issuing one process/package query per row.
     let mut packages = parse_package_lines(&text, filter == "system");
+    let mut system_state_available = filter == "third_party" || filter == "system";
     if filter != "third_party" && filter != "system" {
         if let Ok(system_text) = adb::run_adb_text(
             Some(&serial),
@@ -380,6 +392,7 @@ pub async fn list_packages(
         )
         .await
         {
+            system_state_available = true;
             let system_set: std::collections::HashSet<String> =
                 parse_package_lines(&system_text, true)
                     .into_iter()
@@ -391,11 +404,14 @@ pub async fn list_packages(
         }
     }
 
-    let disabled_set = if filter == "disabled" {
-        packages
-            .iter()
-            .map(|pkg| pkg.package_name.clone())
-            .collect()
+    let (disabled_set, enabled_state_available) = if filter == "disabled" {
+        (
+            packages
+                .iter()
+                .map(|pkg| pkg.package_name.clone())
+                .collect(),
+            true,
+        )
     } else {
         match adb::run_adb_text(
             Some(&serial),
@@ -405,15 +421,18 @@ pub async fn list_packages(
         )
         .await
         {
-            Ok(disabled_text) => parse_package_lines(&disabled_text, false)
-                .into_iter()
-                .map(|pkg| pkg.package_name)
-                .collect(),
-            Err(_) => std::collections::HashSet::new(),
+            Ok(disabled_text) => (
+                parse_package_lines(&disabled_text, false)
+                    .into_iter()
+                    .map(|pkg| pkg.package_name)
+                    .collect(),
+                true,
+            ),
+            Err(_) => (std::collections::HashSet::new(), false),
         }
     };
 
-    let running_set = match adb::run_adb_text(
+    let (running_set, running_state_available) = match adb::run_adb_text(
         Some(&serial),
         &["shell", "ps", "-A"],
         custom_path,
@@ -421,8 +440,8 @@ pub async fn list_packages(
     )
     .await
     {
-        Ok(process_text) => parse_running_packages(&process_text),
-        Err(_) => std::collections::HashSet::new(),
+        Ok(process_text) => (parse_running_packages(&process_text), true),
+        Err(_) => (std::collections::HashSet::new(), false),
     };
     for pkg in packages.iter_mut() {
         pkg.enabled = !disabled_set.contains(&pkg.package_name);
@@ -432,6 +451,9 @@ pub async fn list_packages(
     PackageListResult {
         success: true,
         packages,
+        system_state_available,
+        enabled_state_available,
+        running_state_available,
         error: None,
         error_code: None,
     }
@@ -453,6 +475,7 @@ struct ParsedPackageInfo {
     first_install_time: Option<String>,
     last_update_time: Option<String>,
     code_path: Option<String>,
+    base_code_path: Option<String>,
     data_dir: Option<String>,
     uid: Option<String>,
     target_sdk: Option<String>,
@@ -492,6 +515,9 @@ fn parse_package_info(text: &str) -> ParsedPackageInfo {
         }
         if info.code_path.is_none() {
             info.code_path = line.strip_prefix("codePath=").map(str::to_string);
+        }
+        if info.base_code_path.is_none() {
+            info.base_code_path = line.strip_prefix("baseCodePath=").map(str::to_string);
         }
         if info.data_dir.is_none() {
             info.data_dir = line.strip_prefix("dataDir=").map(str::to_string);
@@ -544,6 +570,7 @@ fn info_error(package_name: String, error: &AdbError) -> PackageInfoResult {
         first_install_time: None,
         last_update_time: None,
         code_path: None,
+        base_code_path: None,
         data_dir: None,
         apk_size_bytes: None,
         data_size_bytes: None,
@@ -579,19 +606,20 @@ pub async fn get_package_info(
     match adb::run_adb_text(Some(&serial), &args, custom_path.clone(), INFO_TIMEOUT_SECS).await {
         Ok(text) => {
             let info = parse_package_info(&text);
-            let apk_size_bytes = if let Some(path) = info.code_path.as_deref() {
-                adb::run_adb_text(
-                    Some(&serial),
-                    &["shell", "du", "-sk", path],
-                    custom_path.clone(),
-                    INFO_TIMEOUT_SECS,
-                )
-                .await
-                .ok()
-                .and_then(|output| parse_du_bytes(&output))
-            } else {
-                None
-            };
+            let apk_size_bytes =
+                if let Some(path) = info.base_code_path.as_deref().or(info.code_path.as_deref()) {
+                    adb::run_adb_text(
+                        Some(&serial),
+                        &["shell", "du", "-sk", path],
+                        custom_path.clone(),
+                        INFO_TIMEOUT_SECS,
+                    )
+                    .await
+                    .ok()
+                    .and_then(|output| parse_du_bytes(&output))
+                } else {
+                    None
+                };
             let data_size_bytes = if let Some(path) = info.data_dir.as_deref() {
                 adb::run_adb_text(
                     Some(&serial),
@@ -613,6 +641,7 @@ pub async fn get_package_info(
                 first_install_time: info.first_install_time,
                 last_update_time: info.last_update_time,
                 code_path: info.code_path,
+                base_code_path: info.base_code_path,
                 data_dir: info.data_dir,
                 apk_size_bytes,
                 data_size_bytes,
@@ -701,11 +730,15 @@ mod tests {
 
     #[test]
     fn parse_package_info_extracts_supported_metadata() {
-        let text = "  Package [com.example.app]\n    userId=10123\n    codePath=/data/app/example/base.apk\n    dataDir=/data/user/0/com.example.app\n    versionCode=123 minSdk=21 targetSdk=33\n    versionName=1.2.3\n    firstInstallTime=2024-05-10 10:21:00\n    lastUpdateTime=2024-05-15 08:42:00\n    installerPackageName=com.android.vending\n    pkgFlags=[ HAS_CODE DEBUGGABLE ]\n    User 0: installed=true enabled=0\n";
+        let text = "  Package [com.example.app]\n    userId=10123\n    codePath=/data/app/example\n    baseCodePath=/data/app/example/base.apk\n    dataDir=/data/user/0/com.example.app\n    versionCode=123 minSdk=21 targetSdk=33\n    versionName=1.2.3\n    firstInstallTime=2024-05-10 10:21:00\n    lastUpdateTime=2024-05-15 08:42:00\n    installerPackageName=com.android.vending\n    pkgFlags=[ HAS_CODE DEBUGGABLE ]\n    User 0: installed=true enabled=0\n";
         let info = parse_package_info(text);
         assert_eq!(info.version_name, Some("1.2.3".to_string()));
         assert_eq!(info.version_code, Some("123".to_string()));
         assert_eq!(info.uid, Some("10123".to_string()));
+        assert_eq!(
+            info.base_code_path,
+            Some("/data/app/example/base.apk".to_string())
+        );
         assert_eq!(info.target_sdk, Some("33".to_string()));
         assert_eq!(info.min_sdk, Some("21".to_string()));
         assert_eq!(info.debuggable, Some(true));

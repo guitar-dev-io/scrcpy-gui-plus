@@ -1,0 +1,6 @@
+export * from './ActivityTimeline'
+export * from './CommandPalette'
+export * from './DiagnosticBundleReview'
+export * from './ProductToolingPanel'
+export * from './RecoveryDiagnostics'
+export * from './WorkspacePresetManager'

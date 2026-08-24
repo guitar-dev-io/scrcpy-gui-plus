@@ -9,6 +9,7 @@ import {
   type AutomationRunArtifacts,
   type AutomationRunLog,
   type AutomationRunLogLevel,
+  type AutomationVisualResult,
 } from '../types/automationBatchRun'
 import { runDeviceBatch } from '../utils/deviceBatchRunner'
 
@@ -23,6 +24,7 @@ export interface AutomationDeviceExecutionOutput {
   screenshotPaths?: string[]
   recordingPaths?: string[]
   reportPaths?: string[]
+  visual?: AutomationVisualResult
 }
 
 export interface AutomationDeviceExecutionContext {
@@ -30,6 +32,7 @@ export interface AutomationDeviceExecutionContext {
   signal: AbortSignal
   log: (message: string, level?: AutomationRunLogLevel) => void
   addArtifact: (kind: 'screenshot' | 'recording' | 'report', path: string) => void
+  setVisualResult: (result: AutomationVisualResult) => void
 }
 
 export type AutomationDeviceExecutor = (
@@ -58,6 +61,7 @@ interface TimedDeviceExecution extends AutomationRunArtifacts {
   durationMs: number
   logs: AutomationRunLog[]
   output: AutomationDeviceExecutionOutput
+  visual?: AutomationVisualResult
 }
 
 const emptyArtifacts = (): AutomationRunArtifacts => ({
@@ -91,10 +95,22 @@ function isLog(value: unknown): value is AutomationRunLog {
     && typeof value.message === 'string'
 }
 
+function isVisualResult(value: unknown): value is AutomationVisualResult {
+  return isObject(value)
+    && ['passed', 'failed', 'skipped', 'error'].includes(String(value.status))
+    && (value.screenshotPath === undefined || typeof value.screenshotPath === 'string')
+    && (value.baselinePath === undefined || typeof value.baselinePath === 'string')
+    && (value.diffPath === undefined || typeof value.diffPath === 'string')
+    && (value.score === undefined || typeof value.score === 'number')
+    && (value.reason === undefined || typeof value.reason === 'string')
+    && (value.threshold === undefined || typeof value.threshold === 'number')
+}
+
 function isChildResult(value: unknown): value is AutomationBatchChildResult {
   return isObject(value)
     && value.version === AUTOMATION_BATCH_RUN_VERSION
     && typeof value.deviceSerial === 'string'
+    && (value.functionalStatus === undefined || ['passed', 'failed', 'cancelled'].includes(String(value.functionalStatus)))
     && ['passed', 'failed', 'cancelled'].includes(String(value.status))
     && (value.startedAt === undefined || typeof value.startedAt === 'string')
     && typeof value.endedAt === 'string'
@@ -105,6 +121,7 @@ function isChildResult(value: unknown): value is AutomationBatchChildResult {
     && isStringArray(value.recordingPaths)
     && isStringArray(value.reportPaths)
     && (value.error === undefined || typeof value.error === 'string')
+    && (value.visual === undefined || isVisualResult(value.visual))
 }
 
 export function isAutomationBatchRunRecord(value: unknown): value is AutomationBatchRunRecord {
@@ -191,6 +208,7 @@ export async function runAutomationBatch(
     startedMs: number
     logs: AutomationRunLog[]
     artifacts: AutomationRunArtifacts
+    visual?: AutomationVisualResult
   }>()
 
   const batch = await runDeviceBatch<TimedDeviceExecution>(
@@ -207,7 +225,18 @@ export async function runAutomationBatch(
         const key = `${kind}Paths` as keyof AutomationRunArtifacts
         artifacts[key].push(path)
       }
-      const output = await execute(deviceSerial, { index, signal, log, addArtifact }) ?? {}
+      const setVisualResult = (result: AutomationVisualResult) => {
+        const current = timing.get(index)
+        if (current) current.visual = result
+      }
+      const output = await execute(deviceSerial, {
+        index,
+        signal,
+        log,
+        addArtifact,
+        setVisualResult,
+      }) ?? {}
+      const visual = output.visual ?? timing.get(index)?.visual
       const deviceEndedMs = now()
       return {
         startedAt: new Date(deviceStartedMs).toISOString(),
@@ -218,6 +247,7 @@ export async function runAutomationBatch(
         recordingPaths: [...artifacts.recordingPaths, ...(output.recordingPaths ?? [])],
         reportPaths: [...artifacts.reportPaths, ...(output.reportPaths ?? [])],
         output,
+        ...(visual ? { visual } : {}),
       }
     },
     { concurrency: options.concurrency, signal: options.signal },
@@ -231,6 +261,7 @@ export async function runAutomationBatch(
       return {
         version: AUTOMATION_BATCH_RUN_VERSION,
         deviceSerial: result.deviceId,
+        functionalStatus: 'passed',
         status: 'passed',
         ...execution,
       }
@@ -241,6 +272,7 @@ export async function runAutomationBatch(
     return {
       version: AUTOMATION_BATCH_RUN_VERSION,
       deviceSerial: result.deviceId,
+      functionalStatus: result.status === 'failure' ? 'failed' : 'cancelled',
       status: result.status === 'failure' ? 'failed' : 'cancelled',
       ...(partial ? { startedAt: new Date(partial.startedMs).toISOString() } : {}),
       endedAt: new Date(childEndedMs).toISOString(),
@@ -252,6 +284,7 @@ export async function runAutomationBatch(
         reportPaths: [...partial.artifacts.reportPaths],
       } : emptyArtifacts()),
       error: errorMessage(result.status === 'failure' ? result.error : result.reason),
+      ...(partial?.visual ? { visual: partial.visual } : {}),
     }
   })
   const summary = {

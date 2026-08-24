@@ -63,4 +63,35 @@ describe('useCompareSessions', () => {
     expect(sanitizeCompareSessions([{ id: 'x', screenshotIds: ['a', 'b'], referenceScreenshotId: 'z' }]))
       .toMatchObject([{ id: 'x', screenshotIds: ['a', 'b'], referenceScreenshotId: 'a' }])
   })
+
+  it('persists normalized ignore regions and clamps them to image bounds', () => {
+    const { result } = renderHook(() => useCompareSessions())
+    act(() => { result.current.createSession([entry('a'), entry('b')]) })
+    const id = result.current.sessions[0].id
+    act(() => result.current.updateIgnoreSettings(id, {
+      statusBar: true,
+      navigationBar: false,
+      customRegions: [{ id: 'x', name: 'Dynamic clock', x: 0.8, y: 0.9, width: 0.8, height: 0.5 }],
+    }))
+    expect(result.current.sessions[0].ignoreSettings).toEqual({
+      statusBar: true,
+      navigationBar: false,
+      customRegions: [{ id: 'x', name: 'Dynamic clock', x: 0.8, y: 0.9, width: 0.2, height: 0.1 }],
+    })
+  })
+
+  it('keeps a local baseline snapshot when its source is recaptured', () => {
+    const { result } = renderHook(() => useCompareSessions())
+    act(() => { result.current.createSession([entry('a'), entry('b')]) })
+    const id = result.current.sessions[0].id
+    act(() => result.current.saveBaseline(id, entry('a')))
+    act(() => result.current.replaceScreenshot(id, 'a', entry('a-new')))
+    expect(result.current.sessions[0].baseline).toMatchObject({
+      sourceScreenshotId: 'a',
+      path: '/shots/a.png',
+    })
+    expect(result.current.sessions[0].screenshotIds).toEqual(['a-new', 'b'])
+    act(() => result.current.clearBaseline(id))
+    expect(result.current.sessions[0].baseline).toBeUndefined()
+  })
 })

@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import {
+  buildComparisonValidityMask,
   comparePixelBuffers,
   containRect,
   similarityLabel,
 } from '../../utils/visualDifference'
+import type { CompareIgnoreSettings } from '../../types/compare'
 
 interface DifferenceCanvasProps {
   referencePath: string
   targetPath: string
   threshold: number
+  ignoreSettings: CompareIgnoreSettings
 }
 
 const source = (path: string) => /^(asset|blob|data|https?):/i.test(path)
@@ -29,6 +32,7 @@ export default function DifferenceCanvas({
   referencePath,
   targetPath,
   threshold,
+  ignoreSettings,
 }: DifferenceCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [score, setScore] = useState<number | null>(null)
@@ -56,14 +60,16 @@ export default function DifferenceCanvas({
         }
         const referenceDraw = draw(reference)
         const targetDraw = draw(target)
-        const valid = new Uint8Array(width * height)
         const left = Math.max(referenceDraw.rect.x, targetDraw.rect.x)
         const top = Math.max(referenceDraw.rect.y, targetDraw.rect.y)
         const right = Math.min(referenceDraw.rect.x + referenceDraw.rect.width, targetDraw.rect.x + targetDraw.rect.width)
         const bottom = Math.min(referenceDraw.rect.y + referenceDraw.rect.height, targetDraw.rect.y + targetDraw.rect.height)
-        for (let y = top; y < bottom; y++) {
-          valid.fill(1, y * width + left, y * width + right)
-        }
+        const valid = buildComparisonValidityMask(width, height, {
+          x: left,
+          y: top,
+          width: Math.max(0, right - left),
+          height: Math.max(0, bottom - top),
+        }, ignoreSettings)
         const result = comparePixelBuffers(
           referenceDraw.pixels.data,
           targetDraw.pixels.data,
@@ -85,7 +91,7 @@ export default function DifferenceCanvas({
       })
       .catch((reason) => !cancelled && setError(String(reason)))
     return () => { cancelled = true }
-  }, [referencePath, targetPath, threshold])
+  }, [ignoreSettings, referencePath, targetPath, threshold])
 
   const label = score === null ? null : similarityLabel(score)
   return (

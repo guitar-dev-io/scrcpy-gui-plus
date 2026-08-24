@@ -34,6 +34,9 @@ export interface PackageEntry {
 export interface PackageListResult {
     success: boolean;
     packages: PackageEntry[];
+    systemStateAvailable: boolean;
+    enabledStateAvailable: boolean;
+    runningStateAvailable: boolean;
     error?: string;
     errorCode?: string;
 }
@@ -46,6 +49,8 @@ export interface PackageInfoResult {
     firstInstallTime?: string;
     lastUpdateTime?: string;
     codePath?: string;
+    /** Resolved path to the package's base APK when Android exposes it. */
+    baseCodePath?: string;
     dataDir?: string;
     apkSizeBytes?: number;
     dataSizeBytes?: number;

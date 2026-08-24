@@ -83,6 +83,23 @@ fn quote(path: &str) -> String {
     format!("'{}'", path.trim())
 }
 
+fn pull_filename(remote_path: &str, local_name: Option<String>) -> Result<String, String> {
+    match local_name {
+        Some(name)
+            if !name.is_empty() && !name.contains(['/', '\\']) && name != "." && name != ".." =>
+        {
+            Ok(name)
+        }
+        Some(_) => Err("Local filename must not contain path separators".to_string()),
+        None => Ok(remote_path
+            .trim_end_matches('/')
+            .rsplit('/')
+            .next()
+            .unwrap_or("file")
+            .to_string()),
+    }
+}
+
 fn list_err(path: &str, code: &str, msg: String) -> ListResult {
     ListResult {
         success: false,
@@ -209,6 +226,7 @@ pub async fn fm_pull(
     remote_path: String,
     local_dir: String,
     custom_path: Option<String>,
+    local_name: Option<String>,
 ) -> FsResult {
     let serial = serial.trim().to_string();
     if let Err(e) = adb::validate_serial(&serial) {
@@ -218,12 +236,10 @@ pub async fn fm_pull(
         return fs_err("invalid_path", m);
     }
 
-    let filename = remote_path
-        .trim_end_matches('/')
-        .rsplit('/')
-        .next()
-        .unwrap_or("file")
-        .to_string();
+    let filename = match pull_filename(&remote_path, local_name) {
+        Ok(name) => name,
+        Err(message) => return fs_err("invalid_local_name", message),
+    };
     if let Err(error) = std::fs::create_dir_all(&local_dir) {
         return fs_err(
             "create_local_dir_failed",
@@ -532,6 +548,22 @@ mod tests {
     #[test]
     fn quote_wraps_in_single_quotes() {
         assert_eq!(quote("/sdcard/My Folder"), "'/sdcard/My Folder'");
+    }
+
+    #[test]
+    fn pull_filename_supports_safe_override_and_rejects_traversal() {
+        assert_eq!(
+            pull_filename(
+                "/data/app/base.apk",
+                Some("com.example.app.apk".to_string())
+            ),
+            Ok("com.example.app.apk".to_string())
+        );
+        assert!(pull_filename("/data/app/base.apk", Some("../escape.apk".to_string())).is_err());
+        assert_eq!(
+            pull_filename("/data/app/base.apk", None),
+            Ok("base.apk".to_string())
+        );
     }
 
     #[test]

@@ -978,7 +978,7 @@ export const en = {
     screenshotAll: 'Screenshot all',
     recordAll: 'Record all',
     stopRecordAll: 'Stop recording',
-    installAll: 'Install APK to all',
+    installAll: 'Install APK to targets',
     restartAppAll: 'Restart app',
     restartPkgPlaceholder: 'com.example.app to restart on all devices',
     launch: 'Launch',

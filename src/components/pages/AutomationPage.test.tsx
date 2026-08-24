@@ -6,12 +6,17 @@ const mocks = vi.hoisted(() => ({
   open: vi.fn(),
   runMaestroTest: vi.fn(),
   cancelMaestroRun: vi.fn(),
+  captureScreenshot: vi.fn(),
 }))
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: mocks.open }))
 vi.mock('../../services/maestroService', () => ({
   runMaestroTest: mocks.runMaestroTest,
   cancelMaestroRun: mocks.cancelMaestroRun,
+}))
+vi.mock('../../services/screenshotService', () => ({
+  captureScreenshot: mocks.captureScreenshot,
+  saveExternalScreenshot: vi.fn(),
 }))
 vi.mock('../macro-recorder', () => ({ default: () => <div>Macro recorder</div> }))
 
@@ -20,6 +25,13 @@ describe('AutomationPage batch Maestro integration', () => {
     localStorage.clear()
     mocks.open.mockReset().mockResolvedValue('/flows/smoke.yaml')
     mocks.cancelMaestroRun.mockReset().mockResolvedValue(true)
+    mocks.captureScreenshot.mockReset().mockImplementation(async ({ deviceSerial }) => ({
+      success: true,
+      path: `/captures/${deviceSerial}.png`,
+      filename: `${deviceSerial}.png`,
+      deviceSerial,
+      capturedAt: '2026-08-24T00:00:00.000Z',
+    }))
     mocks.runMaestroTest.mockReset().mockImplementation(
       async (flowPath: string, deviceSerial: string) => ({
         success: true,
@@ -63,7 +75,9 @@ describe('AutomationPage batch Maestro integration', () => {
       'pixel-b',
     ])
     await waitFor(() => expect(screen.getByText(/Last run · 2 passed/)).toBeInTheDocument())
-    expect(screen.getAllByText('passed')).toHaveLength(2)
+    expect(screen.getAllByText('passed')).toHaveLength(4)
+    expect(screen.getAllByText('skipped')).toHaveLength(2)
+    expect(mocks.captureScreenshot).toHaveBeenCalledTimes(2)
     expect(notify).toHaveBeenCalledWith(
       'Maestro batch finished',
       '2 passed, 0 failed, 0 cancelled',

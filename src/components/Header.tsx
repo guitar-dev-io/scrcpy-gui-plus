@@ -14,6 +14,7 @@ import {
   Monitor,
   Maximize2,
   BatteryMedium,
+  Command,
   Wifi,
   UserCircle,
   X,
@@ -34,6 +35,7 @@ interface HeaderProps {
   isRefreshing: boolean
   onRefresh: () => void
   onOpenSettings: () => void
+  onOpenCommandPalette?: () => void
   onDownload: () => void
   onSetPath: () => void
   onResetPath: () => void
@@ -63,6 +65,7 @@ export default function Header({
   isRefreshing,
   onRefresh,
   onOpenSettings,
+  onOpenCommandPalette,
   onDownload,
   onSetPath,
   onResetPath,
@@ -185,6 +188,15 @@ export default function Header({
             aria-haspopup="dialog"
           >
             <Palette size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={onOpenCommandPalette}
+            className={iconButton}
+            title="Command palette (Cmd/Ctrl+K)"
+            aria-label="Open command palette"
+          >
+            <Command size={15} />
           </button>
           <button
             type="button"

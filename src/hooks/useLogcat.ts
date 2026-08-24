@@ -12,6 +12,7 @@ import {
     type LogEntry,
     type LogLevel
 } from '../types/logcat';
+import { runCustomCommand } from '../services/customCommandService';
 
 interface UseLogcatOptions {
     activeDevice: string;
@@ -62,16 +63,20 @@ export interface LogcatFilters {
     tagFilter: string;
     search: string;
     crashOnly: boolean;
+    /** Resolved process IDs take precedence over best-effort tag/message text. */
+    pidFilter?: readonly string[];
 }
 
 export function filterLogcatEntries(entries: readonly LogEntry[], filters: LogcatFilters): LogEntry[] {
     const q = filters.search.trim().toLowerCase();
     const tag = filters.tagFilter.trim().toLowerCase();
+    const pids = new Set(filters.pidFilter || []);
     const minRank = LEVEL_ORDER[filters.minLevel];
     return entries.filter((entry) => {
         if (filters.crashOnly && !entry.crash && !entry.anr) return false;
         if (LEVEL_ORDER[entry.level] < minRank) return false;
-        if (tag && !entry.tag.toLowerCase().includes(tag) && !entry.message.toLowerCase().includes(tag))
+        if (pids.size > 0 && !pids.has(entry.pid)) return false;
+        if (pids.size === 0 && tag && !entry.tag.toLowerCase().includes(tag) && !entry.message.toLowerCase().includes(tag))
             return false;
         if (q && !entry.raw.toLowerCase().includes(q)) return false;
         return true;
@@ -94,6 +99,7 @@ export function useLogcat({ activeDevice, customPath, enabled, initialTagFilter 
     const [tagFilter, setTagFilter] = useState(initialTagFilter);
     const [search, setSearch] = useState('');
     const [crashOnly, setCrashOnly] = useState(false);
+    const [packagePids, setPackagePids] = useState<string[]>([]);
 
     const serial = (activeDevice || '').trim();
     const pausedRef = useRef(paused);
@@ -104,6 +110,25 @@ export function useLogcat({ activeDevice, customPath, enabled, initialTagFilter 
     useEffect(() => {
         setTagFilter(initialTagFilter);
     }, [initialTagFilter]);
+
+    // App Manager supplies a package name. Resolve its live PID so ordinary
+    // log lines are filtered by process rather than requiring the package name
+    // to appear in the tag/message. Text matching remains the safe fallback.
+    useEffect(() => {
+        let cancelled = false;
+        setPackagePids([]);
+        if (!enabled || !serial || !/^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+$/.test(initialTagFilter)) {
+            return () => { cancelled = true; };
+        }
+        void runCustomCommand(serial, ['shell', 'pidof', '{package}'], initialTagFilter, customPath)
+            .then((result) => {
+                if (cancelled || !result.success) return;
+                const pids = (result.stdout || '').trim().split(/\s+/).filter((pid) => /^\d+$/.test(pid));
+                setPackagePids(pids);
+            })
+            .catch(() => undefined);
+        return () => { cancelled = true; };
+    }, [enabled, serial, initialTagFilter, customPath]);
 
     const appendEntries = useCallback((incoming: LogEntry[]) => {
         setEntries((prev) => {
@@ -201,8 +226,8 @@ export function useLogcat({ activeDevice, customPath, enabled, initialTagFilter 
     }, [appendEntries]);
 
     const filtered = useMemo(() => {
-        return filterLogcatEntries(entries, { minLevel, tagFilter, search, crashOnly });
-    }, [entries, search, tagFilter, minLevel, crashOnly]);
+        return filterLogcatEntries(entries, { minLevel, tagFilter, search, crashOnly, pidFilter: tagFilter === initialTagFilter ? packagePids : [] });
+    }, [entries, search, tagFilter, minLevel, crashOnly, packagePids, initialTagFilter]);
 
     const crashCount = useMemo(
         () => entries.filter((e) => e.crash || e.anr).length,

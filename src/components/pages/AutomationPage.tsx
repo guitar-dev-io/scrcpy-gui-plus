@@ -1,10 +1,15 @@
 import { useRef, useState } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
-import { Bot, FileCode2, Play, Square } from 'lucide-react'
+import { Bot, Camera, FileCode2, Image, Play, Square } from 'lucide-react'
 import AutomationTargetSelector from '../automation/AutomationTargetSelector'
 import MacroRecorder from '../macro-recorder'
 import { runAutomationBatch } from '../../services/automationBatchRunService'
 import { cancelMaestroRun, runMaestroTest } from '../../services/maestroService'
+import { captureScreenshot } from '../../services/screenshotService'
+import {
+  compareAutomationImages,
+  runAutomationVisualStep,
+} from '../../services/automationVisualService'
 import type { AutomationBatchRunRecord } from '../../types/automationBatchRun'
 import type { AutomationTarget, AutomationTargetResolution } from '../../types/automationTarget'
 import type { ToolbarNotifier } from '../device-control-toolbar'
@@ -24,6 +29,12 @@ function resultTone(status: 'passed' | 'failed' | 'cancelled') {
   return 'text-amber-400'
 }
 
+function visualTone(status: 'passed' | 'failed' | 'skipped' | 'error') {
+  if (status === 'passed') return 'text-emerald-400'
+  if (status === 'failed' || status === 'error') return 'text-red-400'
+  return 'text-amber-400'
+}
+
 export default function AutomationPage({
   activeDevice,
   availableDeviceIds,
@@ -35,6 +46,8 @@ export default function AutomationPage({
   const [target, setTarget] = useState<AutomationTarget>({ mode: 'current' })
   const [resolution, setResolution] = useState<AutomationTargetResolution | null>(null)
   const [flowPath, setFlowPath] = useState('')
+  const [baselinePath, setBaselinePath] = useState('')
+  const [captureAfterRun, setCaptureAfterRun] = useState(true)
   const [isRunning, setIsRunning] = useState(false)
   const [lastRun, setLastRun] = useState<AutomationBatchRunRecord | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -46,6 +59,14 @@ export default function AutomationPage({
       filters: [{ name: 'Maestro flow', extensions: ['yaml', 'yml'] }],
     })
     if (typeof selected === 'string') setFlowPath(selected)
+  }
+
+  const chooseBaseline = async () => {
+    const selected = await open({
+      multiple: false,
+      filters: [{ name: 'Baseline image', extensions: ['png', 'jpg', 'jpeg'] }],
+    })
+    if (typeof selected === 'string') setBaselinePath(selected)
   }
 
   const runBatch = async () => {
@@ -69,6 +90,7 @@ export default function AutomationPage({
           activeMaestroRunsRef.current.add(childRunId)
           context.log(`Starting Maestro flow on ${deviceSerial}`)
 
+          let flowError: unknown
           try {
             const result = await runMaestroTest(flowPath, deviceSerial, childRunId)
             for (const artifact of result.artifacts) {
@@ -86,9 +108,46 @@ export default function AutomationPage({
                   : result.stderr.trim() || `Maestro exited with code ${result.exitCode ?? 'unknown'}`
               throw new Error(reason)
             }
+          } catch (error) {
+            flowError = error
           } finally {
             activeMaestroRunsRef.current.delete(childRunId)
           }
+
+          if (captureAfterRun && !context.signal.aborted) {
+            context.log('Capturing post-run screenshot for visual assertion')
+            const visual = await runAutomationVisualStep(
+              {
+                automationId: flowPath,
+                deviceSerial,
+                baselinePath: baselinePath || undefined,
+              },
+              {
+                capture: (serial) => captureScreenshot({
+                  deviceSerial: serial,
+                  outputDir,
+                  customPath,
+                }),
+                compare: compareAutomationImages,
+              },
+            )
+            context.setVisualResult(visual)
+            if (visual.screenshotPath) context.addArtifact('screenshot', visual.screenshotPath)
+            if (visual.diffPath) context.addArtifact('screenshot', visual.diffPath)
+            context.log(
+              `Visual ${visual.status}: ${visual.reason || 'completed'}`,
+              visual.status === 'error' || visual.status === 'failed' ? 'warn' : 'info',
+            )
+          } else if (context.signal.aborted) {
+            context.setVisualResult({
+              status: 'skipped',
+              reason: 'Functional run was cancelled before visual capture',
+            })
+          } else if (!captureAfterRun) {
+            context.setVisualResult({ status: 'skipped', reason: 'Post-run capture disabled' })
+          }
+
+          if (flowError) throw flowError
         },
         {
           concurrency: 2,
@@ -153,6 +212,23 @@ export default function AutomationPage({
             <button type="button" onClick={() => void chooseFlow()} disabled={isRunning} className="mt-3 flex h-9 w-full items-center rounded-lg border border-[var(--border-base)] bg-[var(--bg-base)] px-3 text-left text-[10px] text-[var(--text-base)] transition-colors hover:border-primary/45 disabled:opacity-45">
               <span className="truncate">{flowPath || 'Choose a .yaml or .yml Maestro flow'}</span>
             </button>
+            <div className="mt-2 grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)]">
+              <label className="inline-flex h-9 items-center gap-2 rounded-lg border border-[var(--border-base)] bg-[var(--bg-base)] px-3 text-[9px] text-[var(--text-base)]">
+                <input
+                  type="checkbox"
+                  checked={captureAfterRun}
+                  onChange={(event) => setCaptureAfterRun(event.target.checked)}
+                  disabled={isRunning}
+                  className="accent-primary"
+                />
+                <Camera size={12} aria-hidden="true" />
+                Capture after flow
+              </label>
+              <button type="button" onClick={() => void chooseBaseline()} disabled={isRunning || !captureAfterRun} className="flex h-9 min-w-0 items-center gap-2 rounded-lg border border-[var(--border-base)] bg-[var(--bg-base)] px-3 text-left text-[9px] text-[var(--text-base)] transition-colors hover:border-primary/45 disabled:opacity-45">
+                <Image size={12} className="shrink-0 text-primary" aria-hidden="true" />
+                <span className="truncate">{baselinePath || 'Optional baseline image'}</span>
+              </button>
+            </div>
             <div className="mt-3 flex gap-2">
               <button type="button" onClick={() => void runBatch()} disabled={isRunning || !flowPath || !resolution?.isValid} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-[10px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45">
                 <Play size={12} fill="currentColor" aria-hidden="true" />
@@ -190,10 +266,22 @@ export default function AutomationPage({
                     <span className="truncate font-medium text-[var(--text-base)]">{result.deviceSerial}</span>
                     <span className={`font-semibold uppercase ${resultTone(result.status)}`}>{result.status}</span>
                   </div>
+                  <div className="mt-1 flex items-center gap-2 text-[8px]">
+                    <span className="text-[var(--text-subtle)]">Functional</span>
+                    <span className={`font-semibold uppercase ${resultTone(result.functionalStatus ?? result.status)}`}>{result.functionalStatus ?? result.status}</span>
+                    {result.visual && (
+                      <>
+                        <span className="text-[var(--text-subtle)]">Visual</span>
+                        <span className={`font-semibold uppercase ${visualTone(result.visual.status)}`}>{result.visual.status}</span>
+                        {result.visual.score !== undefined && <span className="text-[var(--text-muted)]">{result.visual.score.toFixed(2)}%</span>}
+                      </>
+                    )}
+                  </div>
                   <p className="mt-1 text-[8px] text-[var(--text-subtle)]">
                     {(result.durationMs / 1000).toFixed(1)}s · {result.logs.length} logs · {result.screenshotPaths.length} screenshots · {result.recordingPaths.length} recordings · {result.reportPaths.length} reports
                   </p>
                   {result.error && <p className="mt-1 truncate text-[8px] text-red-400" title={result.error}>{result.error}</p>}
+                  {result.visual?.reason && <p className="mt-1 truncate text-[8px] text-[var(--text-muted)]" title={result.visual.reason}>{result.visual.reason}</p>}
                 </div>
               ))}
             </div>

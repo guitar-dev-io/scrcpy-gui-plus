@@ -15,9 +15,10 @@ export async function fmPull(
     serial: string,
     remotePath: string,
     localDir: string,
-    customPath?: string
+    customPath?: string,
+    localName?: string
 ): Promise<FsResult> {
-    return invoke<FsResult>('fm_pull', { serial, remotePath, localDir, customPath });
+    return invoke<FsResult>('fm_pull', { serial, remotePath, localDir, customPath, localName });
 }
 
 export async function fmPush(

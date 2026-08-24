@@ -10,7 +10,7 @@ import {
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open } from '@tauri-apps/plugin-dialog'
-import { ChevronLeft, Home, RotateCw, Smartphone, SquareStack } from 'lucide-react'
+import { ChevronLeft, Home, RotateCw, Smartphone, SquareStack, X } from 'lucide-react'
 import Sidebar from './components/Sidebar'
 import ControlPanel from './components/ControlPanel'
 import LogPanel from './components/LogPanel'
@@ -49,6 +49,8 @@ import ConnectionHealth from './components/connection-health'
 import PresetProfiles from './components/preset-profiles'
 import MacroRecorder from './components/macro-recorder'
 import CustomCommand from './components/custom-command'
+import { CommandPalette } from './components/product-tooling/CommandPalette'
+import { ProductToolingPanel } from './components/product-tooling/ProductToolingPanel'
 import FileManager from './components/file-manager'
 import WidgetLayout from './components/widget-layout'
 import KeymapController from './components/keymap-controller'
@@ -67,6 +69,8 @@ import { useDeviceStatus } from './hooks/useDeviceStatus'
 import { useWorkspaceShell } from './hooks/useWorkspaceShell'
 import { useEmbeddedMirror } from './hooks/useEmbeddedMirror'
 import { useAdbLiveFrame } from './hooks/useAdbLiveFrame'
+import { useActivityTimeline } from './hooks/useActivityTimeline'
+import { useDeviceRecoverySnapshot } from './hooks/useDeviceRecoverySnapshot'
 import { getAdbLiveFrameDataUrl } from './utils/adbLiveFrame'
 import { useIosMirror, type IosDeviceInfo } from './hooks/useIosMirror'
 import { getVersion } from '@tauri-apps/api/app'
@@ -82,7 +86,14 @@ import { openWorkspaceModal, type WorkspaceModal } from './types/workspaceModal'
 import type { CompanionDevice } from './types/companion'
 import type { ScreenshotSourceKind } from './types/screenshot'
 import type { DeviceActionId } from './types/deviceControl'
+import type {
+  MultiDeviceWorkspaceSnapshot,
+  RecoveryActionId,
+} from './types/productTooling'
 import { runDeviceAction } from './services/deviceActionService'
+import { fmPull } from './services/fileManagerService'
+import { createStudioCommands } from './services/productCommandService'
+import { loadDeviceGroups, saveDeviceGroups } from './services/deviceGroupService'
 import { runDeviceBatch } from './utils/deviceBatchRunner'
 import { useI18n } from './i18n'
 import { ShellUiProvider, useShellUi } from './contexts/ShellUiContext'
@@ -221,6 +232,7 @@ function AppContent() {
     registeredDeviceIds,
     initialSelectedDeviceIds: restoredWorkspace.selectedDeviceIds,
   })
+  const activity = useActivityTimeline()
   const selectedOnlineDeviceIds = useMemo(() => {
     const online = new Set(
       registeredDevices
@@ -229,6 +241,28 @@ function AppContent() {
     )
     return Array.from(selectedDeviceIds).filter((serial) => online.has(serial))
   }, [registeredDevices, selectedDeviceIds])
+  const previousDeviceStatesRef = useRef<Record<string, string>>({})
+  useEffect(() => {
+    const previous = previousDeviceStatesRef.current
+    const next: Record<string, string> = {}
+    for (const device of registeredDevices) {
+      next[device.serial] = device.adbState
+      if (previous[device.serial] === device.adbState) continue
+      activity.append({
+        kind: 'device',
+        level: device.adbState === 'device'
+          ? 'success'
+          : device.adbState === 'offline' || device.adbState === 'unauthorized'
+            ? 'warning'
+            : 'info',
+        title: device.adbState === 'device' ? 'Device connected' : `Device ${device.adbState}`,
+        detail: device.detail,
+        deviceId: device.serial,
+        metadata: { adbState: device.adbState, connectionType: device.connectionType },
+      })
+    }
+    previousDeviceStatesRef.current = next
+  }, [activity.append, registeredDevices])
   const companion = useCompanion()
   const physicalAndroidDevices = useMemo(
     () => devices.filter((serial) => !/^emulator-\d+$/.test(serial)),
@@ -240,6 +274,7 @@ function AppContent() {
     autoRefresh: true,
     enabled: Boolean(activeDevice),
   })
+  const activeRecovery = useDeviceRecoverySnapshot(activeDevice)
   const workspaceShell = useWorkspaceShell(runTerminalCommand)
   const [appToolPackage, setAppToolPackage] = useState('')
   const [workspaceShellDraft, setWorkspaceShellDraft] = useState('')
@@ -707,6 +742,8 @@ function AppContent() {
   const [isTestSessionOpen, setIsTestSessionOpen] = useState(false)
   const [isUiInspectorOpen, setIsUiInspectorOpen] = useState(false)
   const [isDeviceStatusOpen, setIsDeviceStatusOpen] = useState(false)
+  const [isProductToolingOpen, setIsProductToolingOpen] = useState(false)
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false)
   const [workspaceModal, setWorkspaceModal] = useState<WorkspaceModal>(null)
   const [workspaceDeviceScope, setWorkspaceDeviceScope] = useState<
     string[] | null
@@ -833,6 +870,11 @@ function AppContent() {
     } catch (e) {
       console.error(e)
     }
+  }
+
+  const openMultiDeviceApkInstall = () => {
+    setWorkspaceDeviceScope(null)
+    setWorkspaceModal('batch')
   }
 
   const handleScreenshotCapture = async (serial?: string) => {
@@ -1660,6 +1702,139 @@ function AppContent() {
     selectWorkspaceTool('shell')
   }
 
+  const pullPackageApk = async (packageName: string, remotePath: string) => {
+    if (!activeAndroidWorkspaceDevice) return
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        defaultPath: screenshot.screenshotDir || undefined,
+        title: `Save ${packageName} APK`,
+      })
+      if (typeof selected !== 'string') return
+      const result = await fmPull(
+        activeAndroidWorkspaceDevice,
+        remotePath,
+        selected,
+        config.scrcpyPath,
+        `${packageName}.apk`,
+      )
+      if (result.success) {
+        notify('APK saved', result.path || selected, 'success')
+      } else {
+        notify('Pull APK failed', result.error || 'Unknown error', 'error')
+      }
+    } catch (error) {
+      notify('Pull APK failed', error instanceof Error ? error.message : String(error), 'error')
+    }
+  }
+
+  const currentWorkspaceSnapshot = (): MultiDeviceWorkspaceSnapshot => {
+    const groupAssignments: Record<string, string> = {}
+    for (const group of loadDeviceGroups(localStorage).groups) {
+      for (const deviceId of group.deviceIds) groupAssignments[deviceId] = group.id
+    }
+    return {
+      deviceSerials: registeredDevices.map((device) => device.serial),
+      selectedSerials: Array.from(selectedDeviceIds),
+      groupAssignments,
+    }
+  }
+
+  const applyWorkspacePreset = (snapshot: MultiDeviceWorkspaceSnapshot) => {
+    const available = new Set(registeredDeviceIds)
+    const deviceSerials = snapshot.deviceSerials.filter((serial) => available.has(serial))
+    const selectedSerials = snapshot.selectedSerials.filter((serial) => available.has(serial))
+    const document = loadDeviceGroups(localStorage)
+    const presetDevices = new Set(snapshot.deviceSerials)
+    const groups = document.groups.map((group) => ({
+      ...group,
+      deviceIds: group.deviceIds.filter((serial) => !presetDevices.has(serial)),
+    }))
+    for (const [serial, groupId] of Object.entries(snapshot.groupAssignments)) {
+      if (!available.has(serial)) continue
+      const group = groups.find((candidate) => candidate.id === groupId)
+      if (group && !group.deviceIds.includes(serial)) group.deviceIds.push(serial)
+    }
+    saveDeviceGroups(localStorage, { ...document, groups })
+    selectAllDevices(selectedSerials)
+    setWorkspaceDeviceScope(deviceSerials)
+    setWorkspaceModal('batch')
+    activity.append({
+      kind: 'operation',
+      level: 'success',
+      title: 'Workspace preset applied',
+      detail: `${deviceSerials.length} available devices restored`,
+    })
+  }
+
+  const handleProductRecoveryAction = (action: RecoveryActionId, deviceId?: string) => {
+    const target = deviceId || activeDevice
+    if (target) setActiveDevice(target)
+    activity.append({
+      kind: 'recovery',
+      level: 'info',
+      title: `Recovery action: ${action}`,
+      deviceId: target || undefined,
+    })
+    if (action === 'refresh-device' || action === 'retry-recovery') {
+      handleRefresh()
+    } else if (action === 'restart-adb') {
+      void handleKillAdb()
+    } else if (action === 'open-logcat') {
+      handleNavigate('logcat-viewer')
+    } else if (action === 'apply-safe-profile') {
+      setConfig((current) => applyQualityMode({
+        ...current,
+        device: target,
+        qualityMode: 'balanced',
+      }))
+    } else if (action === 'authorize-device') {
+      showAlert(
+        'Authorize Android device',
+        'Unlock the device, accept the USB debugging prompt, then refresh devices.',
+        'info',
+      )
+    }
+  }
+
+  const exportProductDiagnostic = async (content: string, name: string) => {
+    try {
+      const path = await invoke<string>('save_report', { content, name })
+      activity.append({
+        kind: 'diagnostic',
+        level: 'success',
+        title: 'Diagnostic bundle exported',
+        detail: path,
+        deviceId: activeDevice || undefined,
+      })
+      notify('Diagnostic bundle exported', path, 'success')
+    } catch (error) {
+      notify('Diagnostic export failed', String(error), 'error')
+    }
+  }
+
+  const studioCommands = createStudioCommands({
+    activeDevice,
+    refreshDevices: handleRefresh,
+    captureAll: handleCaptureAllSelected,
+    openDeviceWorkspace: openMultiDeviceApkInstall,
+    openLogcat: (deviceId) => {
+      if (deviceId) setActiveDevice(deviceId)
+      handleNavigate('logcat-viewer')
+    },
+    openShell: (deviceId) => {
+      if (deviceId) setActiveDevice(deviceId)
+      handleNavigate('dashboard')
+      selectWorkspaceTool('shell')
+    },
+    openAppManager: (deviceId) => {
+      if (deviceId) setActiveDevice(deviceId)
+      handleNavigate('app-manager')
+    },
+    openDiagnostics: () => setIsProductToolingOpen(true),
+  })
+
   const viewOnlyToolUnavailable = (
     <div className="flex h-full min-h-64 flex-col items-center justify-center gap-2 px-6 text-center">
       <Smartphone size={24} className="text-[var(--text-subtle)]" />
@@ -1689,6 +1864,7 @@ function AppContent() {
       isRefreshing={isRefreshing}
       onRefresh={handleRefresh}
       onOpenSettings={() => handleNavigate('settings')}
+      onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
       onDownload={downloadScrcpy}
       onSetPath={handleSetPath}
       onResetPath={handleResetPath}
@@ -2009,6 +2185,9 @@ function AppContent() {
                   history={screenshot.history}
                   onSetReference={compareSessions.setReference}
                   onDeleteSession={compareSessions.deleteSession}
+                  onUpdateIgnoreSettings={compareSessions.updateIgnoreSettings}
+                  onSaveBaseline={compareSessions.saveBaseline}
+                  onClearBaseline={compareSessions.clearBaseline}
                   onRecapture={async (sessionId, entry) => {
                     const result = await screenshot.capture(entry.deviceSerial)
                     if (!result.success) {
@@ -2342,8 +2521,10 @@ function AppContent() {
                     notify={notify}
                     confirmAction={confirmAction}
                     onInstallApk={handleInstallApkBrowse}
+                    onInstallMultiple={openMultiDeviceApkInstall}
                     onOpenLogcat={openPackageLogcat}
                     onOpenShell={openPackageShell}
+                    onPullApk={pullPackageApk}
                   />
                 }
                 simulators={
@@ -2480,6 +2661,41 @@ function AppContent() {
         </>
       }
     >
+      <CommandPalette
+        commands={studioCommands}
+        open={isCommandPaletteOpen}
+        onOpenChange={setIsCommandPaletteOpen}
+      />
+
+      {isProductToolingOpen && (
+        <div className="fixed inset-0 z-[470] flex items-center justify-center bg-black/70 p-4" onMouseDown={() => setIsProductToolingOpen(false)}>
+          <section role="dialog" aria-modal="true" aria-label="Product tooling" className="flex h-[min(760px,92vh)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-[var(--border-base)] bg-zinc-950 shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
+            <header className="flex h-12 shrink-0 items-center justify-between border-b border-zinc-800 px-4">
+              <div>
+                <h2 className="text-sm font-semibold text-zinc-100">Product Tooling</h2>
+                <p className="text-[9px] text-zinc-500">Recovery, workspace presets, activity and diagnostics</p>
+              </div>
+              <button type="button" onClick={() => setIsProductToolingOpen(false)} aria-label="Close product tooling" className="rounded-lg p-2 text-zinc-500 hover:bg-white/5 hover:text-white"><X size={15} /></button>
+            </header>
+            <ProductToolingPanel
+              devices={registeredDevices.map((device) => ({
+                deviceId: device.serial,
+                adbState: device.adbState,
+                status: device.health,
+                recovery: device.serial === activeDevice ? activeRecovery : undefined,
+              }))}
+              selectedDeviceId={activeDevice || undefined}
+              workspaceSnapshot={currentWorkspaceSnapshot()}
+              activity={activity.events}
+              appVersion={appVersion}
+              onApplyWorkspacePreset={applyWorkspacePreset}
+              onRecoveryAction={handleProductRecoveryAction}
+              onExportBundle={exportProductDiagnostic}
+            />
+          </section>
+        </div>
+      )}
+
       <OnboardingModal
         isOpen={isOnboardingOpen}
         onClose={() => setIsOnboardingOpen(false)}
@@ -2521,8 +2737,10 @@ function AppContent() {
         notify={notify}
         confirmAction={confirmAction}
         onInstallApk={handleInstallApkBrowse}
+        onInstallMultiple={openMultiDeviceApkInstall}
         onOpenLogcat={openPackageLogcat}
         onOpenShell={openPackageShell}
+        onPullApk={pullPackageApk}
       />
 
       <LogcatViewer

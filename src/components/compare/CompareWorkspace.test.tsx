@@ -16,6 +16,7 @@ const sessions = [{
   createdAt: '2026-08-23T00:00:02Z',
   screenshotIds: ['a', 'b'],
   referenceScreenshotId: 'a',
+  ignoreSettings: { statusBar: false, navigationBar: false, customRegions: [] },
 }]
 
 describe('CompareWorkspace', () => {
@@ -55,5 +56,49 @@ describe('CompareWorkspace', () => {
     expect(screen.getByText(/25%/)).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('Compare view mode'), { target: { value: 'difference' } })
     expect(screen.getByLabelText('Pixel threshold')).toHaveValue(16)
+  })
+
+  it('updates system and normalized custom ignore regions', () => {
+    const onUpdateIgnoreSettings = vi.fn()
+    const { rerender } = render(<CompareWorkspace sessions={sessions} history={history} onSetReference={vi.fn()} onDeleteSession={vi.fn()} onUpdateIgnoreSettings={onUpdateIgnoreSettings} />)
+    fireEvent.click(screen.getByLabelText('Ignore status bar'))
+    expect(onUpdateIgnoreSettings).toHaveBeenCalledWith('session', {
+      statusBar: true,
+      navigationBar: false,
+      customRegions: [],
+    })
+    fireEvent.change(screen.getByLabelText('Ignore region x'), { target: { value: '25' } })
+    fireEvent.change(screen.getByLabelText('Ignore region width'), { target: { value: '25' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add region' }))
+    expect(onUpdateIgnoreSettings).toHaveBeenLastCalledWith('session', expect.objectContaining({
+      customRegions: [expect.objectContaining({ x: 0.25, width: 0.25 })],
+    }))
+
+    const withRegion = [{ ...sessions[0], ignoreSettings: {
+      ...sessions[0].ignoreSettings,
+      customRegions: [{ id: 'clock', name: 'Clock', x: 0, y: 0, width: 0.2, height: 0.1 }],
+    } }]
+    rerender(<CompareWorkspace sessions={withRegion} history={history} onSetReference={vi.fn()} onDeleteSession={vi.fn()} onUpdateIgnoreSettings={onUpdateIgnoreSettings} />)
+    fireEvent.click(screen.getByLabelText('Remove Clock'))
+    expect(onUpdateIgnoreSettings).toHaveBeenLastCalledWith('session', expect.objectContaining({ customRegions: [] }))
+  })
+
+  it('saves, uses, and clears a local baseline', () => {
+    const onSaveBaseline = vi.fn()
+    const onClearBaseline = vi.fn()
+    const withBaseline = [{ ...sessions[0], baseline: {
+      sourceScreenshotId: 'a',
+      path: '/baseline-a.png',
+      filename: 'baseline-a.png',
+      deviceSerial: 'a',
+      deviceName: 'Pixel A baseline',
+      savedAt: '2026-08-23T01:00:00Z',
+    } }]
+    render(<CompareWorkspace sessions={withBaseline} history={history} onSetReference={vi.fn()} onDeleteSession={vi.fn()} onSaveBaseline={onSaveBaseline} onClearBaseline={onClearBaseline} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Replace baseline' }))
+    expect(onSaveBaseline).toHaveBeenCalledWith('session', history[0])
+    expect(screen.getByRole('button', { name: 'Saved baseline' })).toHaveAttribute('aria-pressed', 'true')
+    fireEvent.click(screen.getByLabelText('Clear saved baseline'))
+    expect(onClearBaseline).toHaveBeenCalledWith('session')
   })
 })

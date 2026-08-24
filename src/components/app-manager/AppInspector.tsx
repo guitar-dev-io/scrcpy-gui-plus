@@ -2,6 +2,7 @@ import {
   Ban,
   Braces,
   Database,
+  Download,
   Eraser,
   FileJson,
   Loader2,
@@ -25,6 +26,8 @@ interface AppInspectorProps {
   onClearCache: () => void
   onOpenLogcat?: () => void
   onOpenShell?: () => void
+  onPullApk?: () => void
+  pullingApk?: boolean
   onShowPackageInfo: () => void
   onClose?: () => void
 }
@@ -38,6 +41,8 @@ export function AppInspector({
   onClearCache,
   onOpenLogcat,
   onOpenShell,
+  onPullApk,
+  pullingApk = false,
   onShowPackageInfo,
   onClose,
 }: AppInspectorProps) {
@@ -107,9 +112,10 @@ export function AppInspector({
         <InspectorSection title="Developer Tools">
           <div className="grid grid-cols-2 gap-2">
             {onOpenLogcat && <ToolButton icon={ScrollText} label="Open Logcat" onClick={onOpenLogcat} />}
-            {onOpenShell && <ToolButton icon={Terminal} label="Shell Context" onClick={onOpenShell} />}
+            <ToolButton icon={Terminal} label="Shell Context" onClick={onOpenShell} disabled={!onOpenShell || loading} title={onOpenShell ? 'Open a run-as shell draft for this debuggable package.' : 'Package shell context requires a debuggable app.'} />
             <ToolButton icon={Braces} label="Package Info" onClick={onShowPackageInfo} />
             <ToolButton icon={Settings} label="App Settings" onClick={() => onAction('open_settings')} />
+            <ToolButton icon={Download} label="Pull APK" onClick={onPullApk} disabled={!onPullApk || loading} busy={pullingApk} title={onPullApk ? 'Save the base APK to a local folder.' : 'The base APK path is unavailable.'} />
             <ToolButton icon={Database} label="Open App Data" disabled title="Direct /data access is unavailable without root or run-as file browsing." />
           </div>
         </InspectorSection>
@@ -154,8 +160,8 @@ function ActionButton({ icon: Icon, label, onClick, primary, danger, busy, title
   return <button type="button" onClick={onClick} disabled={busy} title={title} className={`flex h-9 items-center justify-center gap-1.5 rounded-md border text-[9px] font-semibold transition disabled:opacity-40 ${style}`}>{busy ? <Loader2 size={12} className="animate-spin" /> : <Icon size={12} />}{label}</button>
 }
 
-function ToolButton({ icon: Icon, label, onClick, disabled, title }: { icon: typeof Settings; label: string; onClick?: () => void; disabled?: boolean; title?: string }) {
-  return <button type="button" onClick={onClick} disabled={disabled} title={title} className="flex h-9 items-center justify-center gap-1.5 rounded-md border border-[var(--border-base)] bg-[var(--bg-elevated)] text-[9px] text-[var(--text-muted)] hover:border-primary/30 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"><Icon size={12} />{label}</button>
+function ToolButton({ icon: Icon, label, onClick, disabled, busy, title }: { icon: typeof Settings; label: string; onClick?: () => void; disabled?: boolean; busy?: boolean; title?: string }) {
+  return <button type="button" onClick={onClick} disabled={disabled || busy} title={title} className="flex h-9 items-center justify-center gap-1.5 rounded-md border border-[var(--border-base)] bg-[var(--bg-elevated)] text-[9px] text-[var(--text-muted)] hover:border-primary/30 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40">{busy ? <Loader2 size={12} className="animate-spin" /> : <Icon size={12} />}{label}</button>
 }
 
 function InspectorSkeleton() {

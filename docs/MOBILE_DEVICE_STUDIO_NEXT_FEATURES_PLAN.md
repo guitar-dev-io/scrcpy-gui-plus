@@ -146,34 +146,34 @@ Status: **Implementation complete; available-hardware QA pending**
 
 ## Phase 8 - Ignore regions and baselines
 
-Status: **Pending**
+Status: **Implementation complete**
 
-- [ ] Ignore status/navigation bars.
-- [ ] Normalized custom ignore regions.
-- [ ] Save local baselines and compare current captures against them.
+- [x] Ignore status/navigation bars.
+- [x] Normalized custom ignore regions.
+- [x] Save local baselines and compare current captures against them.
 
 ## Phase 9 - Automation visual integration
 
-Status: **Partial: multi-device/group targeting already complete**
+Status: **Implementation complete**
 
 - [x] Current, selected-device, and group automation targets.
 - [x] Per-device functional run results and bounded local history.
-- [ ] Reused capture step in the automation flow.
-- [ ] Baseline comparison step with independent functional/visual status.
-- [ ] Attach screenshot, baseline, diff, score, and reason to existing results.
+- [x] Reused capture step in the automation flow.
+- [x] Baseline comparison step with independent functional/visual status.
+- [x] Attach screenshot, baseline, diff, score, and reason to existing results.
 
 ## Phase 10 - Product tooling
 
-Status: **Partial**
+Status: **Implementation complete**
 
 - [x] Device Detail already exposes core ADB/device/health information.
 - [x] Basic diagnostic report and bug-report infrastructure already exist.
 - [x] Launch/quality profiles and local dashboard layouts already exist.
-- [ ] Contextual recovery diagnostics/actions.
-- [ ] Named multi-device workspace presets.
-- [ ] Lightweight Cmd/Ctrl+K command palette reusing existing operations.
-- [ ] Bounded device/activity timeline.
-- [ ] Reviewable diagnostic bundle covering recent lifecycle and device state.
+- [x] Contextual recovery diagnostics/actions.
+- [x] Named multi-device workspace presets.
+- [x] Lightweight Cmd/Ctrl+K command palette reusing existing operations.
+- [x] Bounded device/activity timeline.
+- [x] Reviewable diagnostic bundle covering recent lifecycle and device state.
 
 ## Performance and validation constraints
 
@@ -182,9 +182,10 @@ Status: **Partial**
 - Continue bounded/staggered health and batch work.
 - Serialize conflicting work per device while allowing different devices to
   operate concurrently.
-- Validate against the available two physical devices. Higher connection-count
-  checks use deterministic automated/load tests and are documented as such;
-  they do not claim unavailable 4/9/20/30-device physical evidence.
+- Validate against available physical devices. Connection-count checks up to
+  nine devices may use deterministic automated/load tests and are documented
+  as such. Validation or feature claims above nine devices are outside the
+  current scope.
 
 ## Progress summary
 
@@ -196,6 +197,6 @@ Status: **Partial**
 - [x] Phase 5 - Capture All and compare sessions (available-hardware QA pending)
 - [x] Phase 6 - Visual compare workspace (available-hardware QA pending)
 - [x] Phase 7 - Overlay and deterministic difference (available-hardware QA pending)
-- [ ] Phase 8 - Ignore regions and baselines
-- [ ] Phase 9 - Automation visual integration
-- [ ] Phase 10 - Product tooling
+- [x] Phase 8 - Ignore regions and baselines
+- [x] Phase 9 - Automation visual integration
+- [x] Phase 10 - Product tooling

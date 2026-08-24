@@ -119,6 +119,40 @@ describe('runAutomationBatch', () => {
     expect(run.results[1].logs[0].message).toBe('running fail')
   })
 
+  it('keeps functional and visual status independent and persists visual artifacts on failure', async () => {
+    const run = await runAutomationBatch(
+      { automationId: 'visual', automationName: 'Visual', deviceSerials: ['functional-pass', 'functional-fail'] },
+      async (serial, { setVisualResult, addArtifact }) => {
+        const visual = {
+          status: 'failed' as const,
+          screenshotPath: `/${serial}.png`,
+          baselinePath: '/baseline.png',
+          diffPath: `/${serial}-diff.png`,
+          score: 82,
+          reason: 'Similarity is below threshold',
+        }
+        setVisualResult(visual)
+        addArtifact('screenshot', visual.screenshotPath)
+        if (serial === 'functional-fail') throw new Error('flow assertion failed')
+      },
+      { now: tickingClock(), createId: () => 'visual-run' },
+    )
+
+    expect(run.results[0]).toMatchObject({
+      status: 'passed',
+      functionalStatus: 'passed',
+      screenshotPaths: ['/functional-pass.png'],
+      visual: { status: 'failed', score: 82, diffPath: '/functional-pass-diff.png' },
+    })
+    expect(run.results[1]).toMatchObject({
+      status: 'failed',
+      functionalStatus: 'failed',
+      error: 'flow assertion failed',
+      screenshotPaths: ['/functional-fail.png'],
+      visual: { status: 'failed', score: 82, diffPath: '/functional-fail-diff.png' },
+    })
+  })
+
   it('preserves completed children and marks in-flight and unstarted devices cancelled', async () => {
     const controller = new AbortController()
     const inFlight = deferred<void>()
