@@ -73,7 +73,7 @@ jobs:
             | macOS (Universal) | `.dmg` |
             | Linux (AppImage) | `.AppImage` |
             | Linux (deb) | `.deb` |
-          releaseDraft: ${{ github.event.inputs.draft == 'true' || github.event_name == 'push' }}
+          releaseDraft: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.draft == 'true' }}
           prerelease: false
           args: ${{ matrix.args }}
 

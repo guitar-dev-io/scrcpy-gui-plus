@@ -1,6 +1,6 @@
 [package]
 name = "scrcpy-gui-plus"
-version = "1.0.9"
+version = "1.0.10"
 authors = ["KB-kil0bit"]
 description = "A modern GUI for Scrcpy written in React and Rust"
 edition = "2021"
