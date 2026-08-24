@@ -92,6 +92,7 @@ import type {
 } from './types/productTooling'
 import { runDeviceAction } from './services/deviceActionService'
 import { fmPull } from './services/fileManagerService'
+import { extractApkContents } from './services/apkToolkitService'
 import { createStudioCommands } from './services/productCommandService'
 import { loadDeviceGroups, saveDeviceGroups } from './services/deviceGroupService'
 import { runDeviceBatch } from './utils/deviceBatchRunner'
@@ -120,6 +121,9 @@ const FileExplorerPage = lazy(
 )
 const WirelessAdbPage = lazy(() => import('./components/pages/WirelessAdbPage'))
 const AppManagerPage = lazy(() => import('./components/pages/AppManagerPage'))
+const LocalApkToolkitPage = lazy(
+  () => import('./components/pages/LocalApkToolkitPage'),
+)
 const SimulatorsPage = lazy(() => import('./components/pages/SimulatorsPage'))
 const LogcatViewerPage = lazy(
   () => import('./components/pages/LogcatViewerPage'),
@@ -875,6 +879,62 @@ function AppContent() {
   const openMultiDeviceApkInstall = () => {
     setWorkspaceDeviceScope(null)
     setWorkspaceModal('batch')
+  }
+
+  const installLocalApkOnCurrent = async (filePath: string) => {
+    if (!activeAndroidWorkspaceDevice) {
+      notify('No Android device selected', 'Select an online Android device before installing the APK.', 'warning')
+      return
+    }
+    const result = await installApk(activeAndroidWorkspaceDevice, filePath, config.scrcpyPath)
+    notify(
+      result?.success === false ? 'APK install failed' : 'APK installed',
+      result?.message ? String(result.message) : `${filePath} → ${activeAndroidWorkspaceDevice}`,
+      result?.success === false ? 'error' : 'success',
+    )
+  }
+
+  const installLocalApkOnSelected = async (filePath: string) => {
+    const targets = selectedOnlineDeviceIds.slice(0, 9)
+    if (targets.length === 0) {
+      notify('No selected devices', 'Select at least one online Android device before installing the APK.', 'warning')
+      return
+    }
+    const run = await runDeviceBatch(
+      targets,
+      async (serial) => {
+        const result = await invoke<{ success?: boolean; error?: string; message?: string }>('install_apk', {
+          device: serial,
+          filePath,
+          customPath: config.scrcpyPath,
+        })
+        if (result.success === false) throw new Error(result.error || result.message || 'APK install failed')
+        return result
+      },
+      { concurrency: 3 },
+    )
+    notify(
+      run.summary.failed === 0 ? 'APK installed' : 'APK install completed with failures',
+      `${run.summary.succeeded} succeeded, ${run.summary.failed + run.summary.cancelled} failed${selectedOnlineDeviceIds.length > 9 ? ' (limited to 9 devices)' : ''}.`,
+      run.summary.failed === 0 ? 'success' : 'warning',
+    )
+  }
+
+  const extractLocalApkContents = async (filePath: string) => {
+    const outputDirectory = await open({
+      directory: true,
+      multiple: false,
+      title: 'Extract APK contents',
+    })
+    if (typeof outputDirectory !== 'string') return
+    const result = await extractApkContents(filePath, outputDirectory)
+    notify(
+      result.success ? 'APK contents extracted' : 'APK extraction failed',
+      result.success
+        ? `${result.extractedFiles} files extracted to ${result.outputPath}`
+        : result.error || 'Unknown extraction error',
+      result.success ? 'success' : 'error',
+    )
   }
 
   const handleScreenshotCapture = async (serial?: string) => {
@@ -2525,6 +2585,13 @@ function AppContent() {
                     onOpenLogcat={openPackageLogcat}
                     onOpenShell={openPackageShell}
                     onPullApk={pullPackageApk}
+                  />
+                }
+                apkToolkit={
+                  <LocalApkToolkitPage
+                    onInstallCurrent={installLocalApkOnCurrent}
+                    onInstallSelected={installLocalApkOnSelected}
+                    onExtractContents={(path) => extractLocalApkContents(path)}
                   />
                 }
                 simulators={

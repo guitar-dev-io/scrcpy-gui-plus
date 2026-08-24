@@ -1,14 +1,18 @@
 import {
+  Archive,
   Ban,
   Braces,
   Database,
   Download,
   Eraser,
   FileJson,
+  Files,
+  GitCompareArrows,
   Loader2,
   PackageMinus,
   Play,
   ScrollText,
+  ScanSearch,
   Settings,
   Terminal,
   Trash2,
@@ -16,9 +20,12 @@ import {
 } from 'lucide-react'
 import type { AppActionId, PackageEntry, PackageInfoResult } from '../../types/appManager'
 import { formatPackageBytes, packageDisplayName } from '../../utils/appManagerView'
+import { AppIcon } from './AppIcon'
 
 interface AppInspectorProps {
   pkg?: PackageEntry
+  deviceSerial: string
+  customPath?: string
   info?: PackageInfoResult
   loading: boolean
   busy: (action: AppActionId) => boolean
@@ -29,11 +36,17 @@ interface AppInspectorProps {
   onPullApk?: () => void
   pullingApk?: boolean
   onShowPackageInfo: () => void
+  onOpenSplitApks: () => void
+  onOpenApkInspector: () => void
+  onOpenApkCompare: () => void
+  onOpenApkBackup: () => void
   onClose?: () => void
 }
 
 export function AppInspector({
   pkg,
+  deviceSerial,
+  customPath,
   info,
   loading,
   busy,
@@ -44,6 +57,10 @@ export function AppInspector({
   onPullApk,
   pullingApk = false,
   onShowPackageInfo,
+  onOpenSplitApks,
+  onOpenApkInspector,
+  onOpenApkCompare,
+  onOpenApkBackup,
   onClose,
 }: AppInspectorProps) {
   if (!pkg) {
@@ -70,7 +87,7 @@ export function AppInspector({
 
       <div className="p-4">
         <div className="flex items-start gap-3">
-          <AppGlyph packageName={pkg.packageName} />
+          <AppIcon serial={deviceSerial} packageName={pkg.packageName} customPath={customPath} eager />
           <div className="min-w-0">
             <h3 className="truncate text-[13px] font-bold text-[var(--text-base)]">{name}</h3>
             <p className="truncate text-[9px] text-[var(--text-subtle)]" title={pkg.packageName}>{pkg.packageName}</p>
@@ -116,6 +133,10 @@ export function AppInspector({
             <ToolButton icon={Braces} label="Package Info" onClick={onShowPackageInfo} />
             <ToolButton icon={Settings} label="App Settings" onClick={() => onAction('open_settings')} />
             <ToolButton icon={Download} label="Pull APK" onClick={onPullApk} disabled={!onPullApk || loading} busy={pullingApk} title={onPullApk ? 'Save the base APK to a local folder.' : 'The base APK path is unavailable.'} />
+            <ToolButton icon={Files} label="Split APKs" onClick={onOpenSplitApks} disabled={loading} title="Discover and selectively extract base and split APKs." />
+            <ToolButton icon={ScanSearch} label="Inspect APK" onClick={onOpenApkInspector} title="Choose a local APK for manifest and signature analysis." />
+            <ToolButton icon={GitCompareArrows} label="Compare APKs" onClick={onOpenApkCompare} title="Compare an extracted installed APK with a local build, or compare two local APKs." />
+            <ToolButton icon={Archive} label="Backup APK Set" onClick={onOpenApkBackup} disabled={loading} title="Export base and split APKs with integrity-checked metadata. App data is excluded." />
             <ToolButton icon={Database} label="Open App Data" disabled title="Direct /data access is unavailable without root or run-as file browsing." />
           </div>
         </InspectorSection>
@@ -130,12 +151,6 @@ export function AppInspector({
       </div>
     </div>
   )
-}
-
-export function AppGlyph({ packageName }: { packageName: string }) {
-  const palettes = ['bg-sky-500/20 text-sky-300', 'bg-violet-500/20 text-violet-300', 'bg-emerald-500/20 text-emerald-300', 'bg-amber-500/20 text-amber-300', 'bg-rose-500/20 text-rose-300']
-  const hash = [...packageName].reduce((sum, character) => sum + character.charCodeAt(0), 0)
-  return <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/5 text-[13px] font-bold ${palettes[hash % palettes.length]}`}>{packageDisplayName(packageName).slice(0, 1)}</span>
 }
 
 function booleanLabel(value?: boolean) {

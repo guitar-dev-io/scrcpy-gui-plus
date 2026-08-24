@@ -1,4 +1,5 @@
 import { useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { open } from '@tauri-apps/plugin-dialog'
 import {
   AppWindow,
   Ban,
@@ -34,7 +35,12 @@ import {
   type PackageSort,
 } from '../../utils/appManagerView'
 import type { ToolbarNotifier } from '../device-control-toolbar'
-import { AppGlyph, AppInspector } from './AppInspector'
+import { compareInputFromExtraction } from '../../services/apkCompareService'
+import { discoverPackageApks, extractPackageApks } from '../../services/apkToolkitService'
+import type { ApkCompareInput } from '../../types/apkCompare'
+import { ApkBackupDialog, ApkCompareDialog, ApkInspectorDialog, SplitApkDialog } from '../apk-toolkit'
+import { AppIcon } from './AppIcon'
+import { AppInspector } from './AppInspector'
 
 interface AppManagerProps {
   isOpen: boolean
@@ -94,6 +100,12 @@ export default function AppManager({
   const [inspectorOpen, setInspectorOpen] = useState(false)
   const [showPackageInfo, setShowPackageInfo] = useState(false)
   const [pullingPackage, setPullingPackage] = useState<string | null>(null)
+  const [splitApkPackage, setSplitApkPackage] = useState<string | null>(null)
+  const [apkInspectorOpen, setApkInspectorOpen] = useState(false)
+  const [apkCompareOpen, setApkCompareOpen] = useState(false)
+  const [apkCompareLeft, setApkCompareLeft] = useState<ApkCompareInput>()
+  const [preparingCompare, setPreparingCompare] = useState(false)
+  const [apkBackupOpen, setApkBackupOpen] = useState(false)
 
   useEffect(() => {
     if ((isOpen || embedded) && activeDevice) void refresh()
@@ -208,6 +220,34 @@ export default function AppManager({
     }
   }
 
+  const prepareInstalledApkCompare = async () => {
+    if (!selectedPackage || preparingCompare) return
+    const outputDirectory = await open({ directory: true, multiple: false, title: `Extract ${selectedPackage} for comparison` })
+    if (typeof outputDirectory !== 'string') return
+    setPreparingCompare(true)
+    try {
+      const discovery = await discoverPackageApks(activeDevice, selectedPackage, customPath)
+      if (!discovery.success || discovery.files.length === 0) throw new Error(discovery.error || 'No APK files were discovered')
+      const extraction = await extractPackageApks({
+        serial: activeDevice,
+        packageName: selectedPackage,
+        remotePaths: discovery.files.map((file) => file.path),
+        outputDirectory,
+        customPath,
+        mode: 'folder',
+      })
+      const input = compareInputFromExtraction(extraction)
+      if (!input) throw new Error(extraction.error || 'The installed base APK could not be extracted')
+      setApkCompareLeft(input)
+      setApkCompareOpen(true)
+      notify('Installed APK ready', 'Choose the local APK in Compare to view structured differences.', 'success')
+    } catch (reason) {
+      notify('Prepare APK compare failed', reason instanceof Error ? reason.message : String(reason), 'error')
+    } finally {
+      setPreparingCompare(false)
+    }
+  }
+
   const selected = packages.find((pkg) => pkg.packageName === selectedPackage)
   const selectedInfo = selectedPackage ? infoCache[selectedPackage] : undefined
   const userCount = packages.filter((pkg) => !pkg.system).length
@@ -267,6 +307,8 @@ export default function AppManager({
                     <PackageRow
                       key={pkg.packageName}
                       pkg={pkg}
+                      deviceSerial={activeDevice}
+                      customPath={customPath}
                       info={infoCache[pkg.packageName]}
                       selected={selectedPackage === pkg.packageName}
                       menuOpen={menuPackage === pkg.packageName}
@@ -292,14 +334,14 @@ export default function AppManager({
           </main>
 
           <aside className="hidden min-h-0 w-[300px] shrink-0 flex-col overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] xl:flex">
-            <AppInspector pkg={selected} info={selectedInfo} loading={selectedPackage ? Boolean(infoLoading[selectedPackage]) : false} busy={(action) => Boolean(pending[`${selectedPackage ?? ''}::${action}`] || (action === 'clear_cache' && pending['::clear_cache']))} onAction={(action) => selectedPackage && handleAction(selectedPackage, action)} onClearCache={handleClearCache} onOpenLogcat={selectedPackage && onOpenLogcat ? () => onOpenLogcat(selectedPackage) : undefined} onOpenShell={selectedPackage && selectedInfo?.debuggable && onOpenShell ? () => onOpenShell(selectedPackage) : undefined} onPullApk={selectedPackage && selectedInfo?.baseCodePath && onPullApk ? () => handlePullApk(selectedPackage, selectedInfo.baseCodePath!) : undefined} pullingApk={pullingPackage === selectedPackage} onShowPackageInfo={() => setShowPackageInfo(true)} />
+            <AppInspector deviceSerial={activeDevice} customPath={customPath} pkg={selected} info={selectedInfo} loading={selectedPackage ? Boolean(infoLoading[selectedPackage]) : false} busy={(action) => Boolean(pending[`${selectedPackage ?? ''}::${action}`] || (action === 'clear_cache' && pending['::clear_cache']))} onAction={(action) => selectedPackage && handleAction(selectedPackage, action)} onClearCache={handleClearCache} onOpenLogcat={selectedPackage && onOpenLogcat ? () => onOpenLogcat(selectedPackage) : undefined} onOpenShell={selectedPackage && selectedInfo?.debuggable && onOpenShell ? () => onOpenShell(selectedPackage) : undefined} onPullApk={selectedPackage && selectedInfo?.baseCodePath && onPullApk ? () => handlePullApk(selectedPackage, selectedInfo.baseCodePath!) : undefined} pullingApk={pullingPackage === selectedPackage} onShowPackageInfo={() => setShowPackageInfo(true)} onOpenSplitApks={() => selectedPackage && setSplitApkPackage(selectedPackage)} onOpenApkInspector={() => setApkInspectorOpen(true)} onOpenApkCompare={() => void prepareInstalledApkCompare()} onOpenApkBackup={() => setApkBackupOpen(true)} />
           </aside>
         </div>
 
         {inspectorOpen && (
           <div className="fixed inset-0 z-[320] bg-black/55 xl:hidden" onClick={() => setInspectorOpen(false)}>
             <aside className="absolute inset-y-0 right-0 flex w-[min(90vw,360px)] flex-col overflow-hidden border-l border-[var(--border-base)] bg-[var(--bg-surface)] shadow-2xl" onClick={(event) => event.stopPropagation()}>
-              <AppInspector pkg={selected} info={selectedInfo} loading={selectedPackage ? Boolean(infoLoading[selectedPackage]) : false} busy={(action) => Boolean(pending[`${selectedPackage ?? ''}::${action}`] || (action === 'clear_cache' && pending['::clear_cache']))} onAction={(action) => selectedPackage && handleAction(selectedPackage, action)} onClearCache={handleClearCache} onOpenLogcat={selectedPackage && onOpenLogcat ? () => onOpenLogcat(selectedPackage) : undefined} onOpenShell={selectedPackage && selectedInfo?.debuggable && onOpenShell ? () => onOpenShell(selectedPackage) : undefined} onPullApk={selectedPackage && selectedInfo?.baseCodePath && onPullApk ? () => handlePullApk(selectedPackage, selectedInfo.baseCodePath!) : undefined} pullingApk={pullingPackage === selectedPackage} onShowPackageInfo={() => setShowPackageInfo(true)} onClose={() => setInspectorOpen(false)} />
+              <AppInspector deviceSerial={activeDevice} customPath={customPath} pkg={selected} info={selectedInfo} loading={selectedPackage ? Boolean(infoLoading[selectedPackage]) : false} busy={(action) => Boolean(pending[`${selectedPackage ?? ''}::${action}`] || (action === 'clear_cache' && pending['::clear_cache']))} onAction={(action) => selectedPackage && handleAction(selectedPackage, action)} onClearCache={handleClearCache} onOpenLogcat={selectedPackage && onOpenLogcat ? () => onOpenLogcat(selectedPackage) : undefined} onOpenShell={selectedPackage && selectedInfo?.debuggable && onOpenShell ? () => onOpenShell(selectedPackage) : undefined} onPullApk={selectedPackage && selectedInfo?.baseCodePath && onPullApk ? () => handlePullApk(selectedPackage, selectedInfo.baseCodePath!) : undefined} pullingApk={pullingPackage === selectedPackage} onShowPackageInfo={() => setShowPackageInfo(true)} onOpenSplitApks={() => selectedPackage && setSplitApkPackage(selectedPackage)} onOpenApkInspector={() => setApkInspectorOpen(true)} onOpenApkCompare={() => void prepareInstalledApkCompare()} onOpenApkBackup={() => setApkBackupOpen(true)} onClose={() => setInspectorOpen(false)} />
             </aside>
           </div>
         )}
@@ -307,6 +349,10 @@ export default function AppManager({
         {showPackageInfo && selected && (
           <PackageInfoDialog pkg={selected} info={selectedInfo} loading={Boolean(infoLoading[selected.packageName])} onClose={() => setShowPackageInfo(false)} />
         )}
+        {splitApkPackage && <SplitApkDialog open serial={activeDevice} packageName={splitApkPackage} customPath={customPath} onClose={() => setSplitApkPackage(null)} />}
+        <ApkInspectorDialog open={apkInspectorOpen} onClose={() => setApkInspectorOpen(false)} />
+        <ApkCompareDialog open={apkCompareOpen} left={apkCompareLeft} onClose={() => { setApkCompareOpen(false); setApkCompareLeft(undefined) }} />
+        {selectedPackage && <ApkBackupDialog open={apkBackupOpen} serial={activeDevice} packageName={selectedPackage} customPath={customPath} onClose={() => setApkBackupOpen(false)} />}
       </div>
     </div>
   )
@@ -328,11 +374,11 @@ function ControlBar({ search, filter, sort, showFilters, runningOnly, counts, ca
   return <section className="shrink-0 space-y-2 pb-3" aria-label="App search and filters"><div className="flex flex-wrap items-center gap-2"><label className="relative min-w-[220px] flex-1"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-subtle)]" /><input type="search" value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Search apps or package name..." aria-label="Search apps or package name" className="h-9 w-full rounded-lg border border-[var(--border-base)] bg-[var(--bg-input)] pl-9 pr-3 text-[10px] text-[var(--text-base)] outline-none placeholder:text-[var(--text-subtle)] focus:border-primary/60 focus:ring-2 focus:ring-primary/10" /></label><div role="tablist" aria-label="Package type" className="flex h-9 rounded-lg border border-[var(--border-base)] bg-[var(--bg-surface)] p-1">{packageTabs.map(([id, label, disabled]) => <button key={id} type="button" role="tab" aria-selected={filter === id} disabled={disabled} onClick={() => onFilter(id)} className={`rounded-md px-3 text-[9px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-35 ${filter === id ? 'bg-primary/15 text-primary ring-1 ring-primary/35' : 'text-[var(--text-muted)] hover:text-[var(--text-base)]'}`}>{label}</button>)}</div><button type="button" aria-expanded={showFilters} onClick={onToggleFilters} className={`flex h-9 items-center gap-2 rounded-lg border px-3 text-[9px] font-semibold ${showFilters ? 'border-primary/50 bg-primary/10 text-primary' : 'border-[var(--border-base)] bg-[var(--bg-surface)] text-[var(--text-muted)] hover:text-[var(--text-base)]'}`}><Filter size={13} />Filters</button><select value={sort} onChange={(event) => onSort(event.target.value as PackageSort)} aria-label="Sort applications" className="h-9 rounded-lg border border-[var(--border-base)] bg-[var(--bg-surface)] px-3 text-[9px] font-semibold text-[var(--text-muted)] outline-none focus:border-primary"><option value="name-asc">Name A–Z</option><option value="name-desc">Name Z–A</option></select></div>{showFilters && <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)]/60 p-2"><span className="px-1 text-[8px] font-bold uppercase tracking-widest text-[var(--text-subtle)]">State</span><FilterChip label={`Running (${capabilities.running ? counts.running : '—'})`} active={runningOnly} disabled={!capabilities.running} onClick={onToggleRunning} tone="success" title={capabilities.running ? undefined : 'Running process state is unavailable for this device.'} /><FilterChip label="Disabled" active={filter === 'disabled'} disabled={!capabilities.enabled} onClick={() => onFilter(filter === 'disabled' ? 'all' : 'disabled')} title={capabilities.enabled ? undefined : 'Enabled state is unavailable for this device.'} /><FilterChip label="Debuggable" disabled title="Package-wide debuggable data is not available without inspecting every app." /><FilterChip label="Recently Installed" disabled title="Install dates are fetched lazily for the selected app only." /></div>}</section>
 }
 
-function PackageRow({ pkg, info, selected, menuOpen, launchBusy, onSelect, onLaunch, onToggleMenu, onAction, onPackageInfo, onClearCache, onOpenLogcat, onOpenShell, onPullApk, pullingApk, menuAbove }: { pkg: PackageEntry; info?: PackageInfoResult; selected: boolean; menuOpen: boolean; launchBusy: boolean; onSelect: () => void; onLaunch: () => void; onToggleMenu: () => void; onAction: (action: AppActionId) => void; onPackageInfo: () => void; onClearCache: () => void; onOpenLogcat?: () => void; onOpenShell?: () => void; onPullApk?: () => void; pullingApk: boolean; menuAbove: boolean }) {
+function PackageRow({ pkg, deviceSerial, customPath, info, selected, menuOpen, launchBusy, onSelect, onLaunch, onToggleMenu, onAction, onPackageInfo, onClearCache, onOpenLogcat, onOpenShell, onPullApk, pullingApk, menuAbove }: { pkg: PackageEntry; deviceSerial: string; customPath?: string; info?: PackageInfoResult; selected: boolean; menuOpen: boolean; launchBusy: boolean; onSelect: () => void; onLaunch: () => void; onToggleMenu: () => void; onAction: (action: AppActionId) => void; onPackageInfo: () => void; onClearCache: () => void; onOpenLogcat?: () => void; onOpenShell?: () => void; onPullApk?: () => void; pullingApk: boolean; menuAbove: boolean }) {
   const name = packageDisplayName(pkg.packageName)
   const selectOnKey = (event: React.KeyboardEvent<HTMLElement>) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onSelect() } }
   return <article role="row" tabIndex={0} aria-selected={selected} aria-label={`${name} ${pkg.packageName}`} onClick={onSelect} onKeyDown={selectOnKey} className={`relative grid min-h-[64px] cursor-pointer grid-cols-[minmax(220px,1fr)_76px_64px_72px] items-center border-b px-4 outline-none transition focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary xl:grid-cols-[minmax(230px,1fr)_82px_68px_74px_86px_72px] ${selected ? 'border-primary/35 bg-primary/[0.075] shadow-[inset_2px_0_0_var(--primary)]' : 'border-[var(--border-subtle)] hover:bg-[var(--bg-hover)]'}`}>
-    <div role="gridcell" className="flex min-w-0 items-center gap-3"><AppGlyph packageName={pkg.packageName} /><div className="min-w-0"><p className="truncate text-[10px] font-semibold text-[var(--text-base)]">{name}</p><p className="truncate text-[8px] text-[var(--text-subtle)]">{pkg.packageName}</p>{info?.versionName && <p className="truncate text-[8px] text-[var(--text-subtle)]">Version {info.versionName}</p>}</div></div>
+    <div role="gridcell" className="flex min-w-0 items-center gap-3"><AppIcon serial={deviceSerial} packageName={pkg.packageName} customPath={customPath} eager={selected} /><div className="min-w-0"><p className="truncate text-[10px] font-semibold text-[var(--text-base)]">{name}</p><p className="truncate text-[8px] text-[var(--text-subtle)]">{pkg.packageName}</p>{info?.versionName && <p className="truncate text-[8px] text-[var(--text-subtle)]">Version {info.versionName}</p>}</div></div>
     <StatusBadge pkg={pkg} /><TypeBadge system={pkg.system} /><span className="hidden text-[9px] text-[var(--text-muted)] xl:block">{formatPackageBytes(info?.apkSizeBytes)}</span><span className="hidden truncate text-[8px] text-[var(--text-subtle)] xl:block" title={info?.lastUpdateTime}>{info?.lastUpdateTime || '—'}</span>
     <div role="gridcell" data-app-row-actions className="flex justify-end gap-1" onClick={(event) => event.stopPropagation()}><button type="button" onClick={onLaunch} disabled={launchBusy} title={`Launch ${name}`} aria-label={`Launch ${name}`} className="flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border-base)] text-[var(--text-muted)] hover:border-primary/40 hover:bg-primary/10 hover:text-primary disabled:opacity-40">{launchBusy ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}</button><button type="button" onClick={onToggleMenu} aria-expanded={menuOpen} aria-haspopup="menu" title={`More actions for ${name}`} aria-label={`More actions for ${name}`} className="flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border-base)] text-[var(--text-muted)] hover:text-[var(--text-base)]"><MoreVertical size={13} /></button>{menuOpen && <RowMenu pkg={pkg} onAction={onAction} onPackageInfo={onPackageInfo} onClearCache={onClearCache} onOpenLogcat={onOpenLogcat} onOpenShell={onOpenShell} onPullApk={onPullApk} pullingApk={pullingApk} above={menuAbove} />}</div>
   </article>

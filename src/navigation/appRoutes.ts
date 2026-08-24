@@ -7,6 +7,7 @@ export type AppRouteId =
   | 'file-explorer'
   | 'wireless-adb'
   | 'app-manager'
+  | 'apk-toolkit'
   | 'simulators'
   | 'logcat-viewer'
   | 'performance'
@@ -35,6 +36,7 @@ export const APP_ROUTES: readonly AppRouteDefinition[] = [
   { id: 'script-manager', label: 'Script Manager', path: '/scripts', group: 'testing' },
   { id: 'task-scheduler', label: 'Task Scheduler', path: '/task-scheduler', group: 'testing' },
   { id: 'app-manager', label: 'App Manager', path: '/app-manager', group: 'tools' },
+  { id: 'apk-toolkit', label: 'APK Toolkit', path: '/apk-toolkit', group: 'tools' },
   { id: 'simulators', label: 'Simulators', path: '/simulators', group: 'tools' },
   { id: 'file-explorer', label: 'File Explorer', path: '/files', group: 'tools' },
   { id: 'logcat-viewer', label: 'Logcat Viewer', path: '/logcat', group: 'tools' },

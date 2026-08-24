@@ -681,6 +681,8 @@ interface ApkAnalysis {
 
 ## Phase 1 — Extract APK + Split APK
 
+**Status:** Implementation complete; physical-device QA pending
+
 **Scope**
 - `pm path`
 - detect base/splits
@@ -700,6 +702,8 @@ interface ApkAnalysis {
 
 ## Phase 2 — APK Inspector
 
+**Status:** Implementation complete; physical-device QA pending
+
 **Scope**
 - General
 - Permissions
@@ -717,6 +721,8 @@ interface ApkAnalysis {
 
 ## Phase 3 — App Manager Integration
 
+**Status:** Implementation complete; physical-device QA pending
+
 **Scope**
 - Extract APK
 - APK Inspector
@@ -731,6 +737,8 @@ interface ApkAnalysis {
 ---
 
 ## Phase 4 — APK Compare
+
+**Status:** Implementation complete; physical-device QA pending
 
 **Scope**
 - Installed vs Local APK
@@ -751,6 +759,8 @@ interface ApkAnalysis {
 
 ## Phase 5 — Backup / Export
 
+**Status:** Implementation complete; physical-device QA pending
+
 **Scope**
 - APK Set archive
 - metadata
@@ -765,6 +775,8 @@ interface ApkAnalysis {
 ---
 
 ## Phase 6 — Local APK Toolkit
+
+**Status:** Implementation complete
 
 **Scope**
 - Open local APK
@@ -783,9 +795,12 @@ interface ApkAnalysis {
 
 ## Phase 7 — Optional jadx / apktool
 
+**Status:** Implementation complete; optional-tool QA pending
+
 **Scope**
 - binary detection
-- configure
+- Java runtime detection and user-facing requirements
+- configure directory or tool file path (`apktool*.jar` supported via Java)
 - background job
 - output lifecycle
 - File Explorer integration
@@ -810,18 +825,18 @@ interface ApkAnalysis {
 
 Checklist:
 
-- [ ] ค้นหา existing package list / package info
-- [ ] ค้นหา existing `pm path`
-- [ ] ค้นหา existing ADB pull logic
-- [ ] ตรวจว่ามี Pull APK / Share APK อยู่แล้วหรือไม่
-- [ ] เพิ่ม Split APK detection โดยไม่ทำ service ซ้ำ
-- [ ] สร้าง Extract dialog และผูก selected app/device จริง
-- [ ] สร้าง analyzer core ที่ใช้ได้กับ installed/extracted/local APK
-- [ ] เพิ่ม APK Inspector
-- [ ] เพิ่ม Compare flow แบบ structured
-- [ ] เพิ่ม Backup/Export archive พร้อม metadata
-- [ ] เชื่อม Logcat / Shell / Files ด้วย device/package context เดิม
-- [ ] เพิ่ม tests
+- [x] ค้นหา existing package list / package info
+- [x] ค้นหา existing `pm path`
+- [x] ค้นหา existing ADB pull logic
+- [x] ตรวจว่ามี Pull APK / Share APK อยู่แล้วหรือไม่
+- [x] เพิ่ม Split APK detection โดยไม่ทำ service ซ้ำ
+- [x] สร้าง Extract dialog และผูก selected app/device จริง
+- [x] สร้าง analyzer core ที่ใช้ได้กับ installed/extracted/local APK
+- [x] เพิ่ม APK Inspector
+- [x] เพิ่ม Compare flow แบบ structured
+- [x] เพิ่ม Backup/Export archive พร้อม metadata
+- [x] เชื่อม Logcat / Shell / Files ด้วย device/package context เดิม
+- [x] เพิ่ม tests
 - [ ] Manual QA ด้วย package จริงบน device
 
 หลังแต่ละ phase:
@@ -838,31 +853,31 @@ manual device verification
 
 # 17. Acceptance Criteria
 
-- [ ] Extract installed app ได้ทั้ง base APK และ split APK
-- [ ] แสดงรายการ split และขนาดจริงเมื่อดึงได้
-- [ ] Export APK Set ได้โดยไฟล์ไม่ชนชื่อเดิม
-- [ ] APK Inspector เปิดได้จาก App Manager
-- [ ] APK Inspector เปิด local APK ได้
-- [ ] แสดง package/version/SDK จากข้อมูลจริง
-- [ ] แสดง permissions จากข้อมูลจริง
-- [ ] แสดง components จากข้อมูลจริง
-- [ ] แสดง native ABI/libraries จากข้อมูลจริง
-- [ ] แสดง signing information จากข้อมูลจริง
-- [ ] Compare Installed vs Local APK ได้
-- [ ] Compare แสดง added/removed/changed แบบเข้าใจง่าย
-- [ ] Backup archive มี APK files + metadata
-- [ ] Backup archive เปิดกลับมา inspect ได้
-- [ ] App Manager ใช้ purple เป็น primary
-- [ ] Red ใช้เฉพาะ destructive action
-- [ ] ไม่มี duplicated ADB/package services โดยไม่จำเป็น
-- [ ] Open Logcat ใช้ package context ถูกต้อง
-- [ ] Shell ใช้ device/package context ถูกต้อง
-- [ ] File Explorer ใช้ device/package context ถูกต้อง
-- [ ] ไม่ pull/analyze APK ทุกแอปใน list โดยอัตโนมัติ
-- [ ] build ผ่าน
-- [ ] typecheck ผ่าน
-- [ ] tests ผ่าน
-- [ ] App Manager เดิมไม่ regression
+- [x] Extract installed app ได้ทั้ง base APK และ split APK
+- [x] แสดงรายการ split และขนาดจริงเมื่อดึงได้
+- [x] Export APK Set ได้โดยไฟล์ไม่ชนชื่อเดิม
+- [x] APK Inspector เปิดได้จาก App Manager
+- [x] APK Inspector เปิด local APK ได้
+- [x] แสดง package/version/SDK จากข้อมูลจริง
+- [x] แสดง permissions จากข้อมูลจริง
+- [x] แสดง components จากข้อมูลจริง
+- [x] แสดง native ABI/libraries จากข้อมูลจริง
+- [x] แสดง signing information จากข้อมูลจริง
+- [x] Compare Installed vs Local APK ได้
+- [x] Compare แสดง added/removed/changed แบบเข้าใจง่าย
+- [x] Backup archive มี APK files + metadata
+- [x] Backup archive เปิดกลับมา validate และ inspect base APK ได้
+- [x] App Manager ใช้ purple เป็น primary
+- [x] Red ใช้เฉพาะ destructive action
+- [x] ไม่มี duplicated ADB/package services โดยไม่จำเป็น
+- [x] Open Logcat ใช้ package context ถูกต้อง
+- [x] Shell ใช้ device/package context ถูกต้อง
+- [x] File Explorer ใช้ device/package context ถูกต้อง
+- [x] ไม่ pull/analyze APK ทุกแอปใน list โดยอัตโนมัติ
+- [x] build ผ่าน
+- [x] typecheck ผ่าน
+- [x] tests ผ่าน
+- [x] App Manager เดิมไม่ regression
 
 ---
 

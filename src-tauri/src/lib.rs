@@ -1,4 +1,9 @@
 mod adb;
+mod apk_analyzer;
+mod apk_archive;
+mod apk_backup;
+mod apk_optional_tools;
+mod apk_toolkit;
 mod app_manager;
 mod auto_capture;
 mod bug_report;
@@ -131,6 +136,8 @@ pub fn run() {
 
             app.manage(AutoCaptureState::default());
 
+            app.manage(apk_optional_tools::ApkOptionalToolsState::default());
+
             // Show splashscreen instantly
             if let Some(splash_window) = app.get_webview_window("splashscreen") {
                 splash_window.show().unwrap();
@@ -194,6 +201,21 @@ pub fn run() {
             app_manager::list_packages,
             app_manager::get_package_info,
             app_manager::app_action,
+            apk_analyzer::analyze_local_apk,
+            apk_analyzer::extract_apk_launcher_icon,
+            apk_analyzer::get_package_icon,
+            apk_archive::extract_apk_contents,
+            apk_backup::create_apk_set_backup,
+            apk_backup::validate_apk_set_archive,
+            apk_optional_tools::set_apk_optional_tools_directory,
+            apk_optional_tools::set_apk_optional_tool_path,
+            apk_optional_tools::detect_apk_optional_tools,
+            apk_optional_tools::start_apk_optional_tool_job,
+            apk_optional_tools::get_apk_optional_tool_job,
+            apk_optional_tools::cancel_apk_optional_tool_job,
+            apk_optional_tools::cleanup_apk_optional_tool_job,
+            apk_toolkit::apk_discover_splits,
+            apk_toolkit::apk_export_package,
             logcat::start_logcat,
             logcat::stop_logcat,
             logcat::clear_logcat,

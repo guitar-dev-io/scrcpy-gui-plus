@@ -17,6 +17,7 @@ describe('app route registry', () => {
       'script-manager',
       'task-scheduler',
       'app-manager',
+      'apk-toolkit',
       'simulators',
       'file-explorer',
       'logcat-viewer',
@@ -30,6 +31,7 @@ describe('app route registry', () => {
   it('maps route ids to Tauri-safe hashes', () => {
     expect(appRouteToHash('dashboard')).toBe('#/dashboard')
     expect(appRouteToHash('file-explorer')).toBe('#/files')
+    expect(appRouteToHash('apk-toolkit')).toBe('#/apk-toolkit')
   })
 
   it('resolves hashes and falls back to the dashboard', () => {
