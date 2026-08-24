@@ -41,4 +41,4 @@ image = { version = "=0.25.8", default-features = false, features = [
   "jpeg",
 ] }
 sha2 = "0.10"
-openssl = "0.10"
+openssl = { version = "0.10", features = ["vendored"] }
