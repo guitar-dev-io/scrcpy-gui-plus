@@ -132,6 +132,7 @@ const PerformancePage = lazy(() => import('./components/pages/PerformancePage'))
 const InputControlPage = lazy(
   () => import('./components/pages/InputControlPage'),
 )
+const QrStudioPage = lazy(() => import('./components/pages/QrStudioPage'))
 const AutomationPage = lazy(() => import('./components/pages/AutomationPage'))
 const ScriptManagerPage = lazy(
   () => import('./components/pages/ScriptManagerPage'),
@@ -1938,7 +1939,7 @@ function AppContent() {
     <AppShell
       header={undefined}
       navigation={
-        <AppNavigation
+        activeRoute === 'qr-studio' ? undefined : <AppNavigation
           actions={{
             'shell-terminal': () => {
               selectWorkspaceTool('shell')
@@ -1953,10 +1954,10 @@ function AppContent() {
           }}
         />
       }
-      footer={<Footer version={appVersion} />}
+      footer={activeRoute === 'qr-studio' ? undefined : <Footer version={appVersion} />}
       content={
         <>
-          <WorkspaceTabBar
+          {activeRoute !== 'qr-studio' && <WorkspaceTabBar
             deviceWorkspaces={Array.from(
               new Set([
                 ...openDeviceWorkspaces,
@@ -2008,7 +2009,7 @@ function AppContent() {
               setMultiDeviceView((current) => !current)
             }}
             toolbar={appHeader(true)}
-          />
+          />}
           <div
             aria-hidden={activeRoute !== 'dashboard' ? true : undefined}
             className={
@@ -2672,6 +2673,7 @@ function AppContent() {
                     notify={notify}
                   />
                 }
+                qrStudio={<QrStudioPage onExit={() => handleNavigate('dashboard')} />}
                 automation={
                   <AutomationPage
                     activeDevice={activeAndroidWorkspaceDevice}

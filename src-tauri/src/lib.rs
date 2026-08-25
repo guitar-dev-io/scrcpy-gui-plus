@@ -209,6 +209,7 @@ pub fn run() {
             apk_backup::validate_apk_set_archive,
             apk_optional_tools::set_apk_optional_tools_directory,
             apk_optional_tools::set_apk_optional_tool_path,
+            apk_optional_tools::install_apk_optional_tools,
             apk_optional_tools::detect_apk_optional_tools,
             apk_optional_tools::start_apk_optional_tool_job,
             apk_optional_tools::get_apk_optional_tool_job,

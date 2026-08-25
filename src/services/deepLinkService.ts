@@ -17,6 +17,9 @@ export async function launchDeepLink(
     });
 }
 
-export async function generateQrSvg(text: string): Promise<string> {
-    return invoke<string>('generate_qr_svg', { text });
+export async function generateQrSvg(
+    text: string,
+    errorCorrection: 'L' | 'M' | 'Q' | 'H' = 'M'
+): Promise<string> {
+    return invoke<string>('generate_qr_svg', { text, errorCorrection });
 }

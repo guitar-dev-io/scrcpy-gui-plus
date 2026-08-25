@@ -1,11 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const invoke = vi.hoisted(() => vi.fn())
+const listen = vi.hoisted(() => vi.fn())
 vi.mock('@tauri-apps/api/core', () => ({ invoke }))
+vi.mock('@tauri-apps/api/event', () => ({ listen }))
 
 import {
   configureApkOptionalToolPath,
   configureApkOptionalTools,
+  installApkOptionalTools,
+  onApkOptionalToolsInstallProgress,
 } from './apkOptionalToolsService'
 
 describe('apkOptionalToolsService', () => {
@@ -32,5 +36,22 @@ describe('apkOptionalToolsService', () => {
       tool: 'apktool',
       path: undefined,
     })
+  })
+
+  it('installs managed tools and subscribes to installer progress', async () => {
+    invoke.mockResolvedValue({ installDirectory: '/data/tools' })
+    await installApkOptionalTools()
+    expect(invoke).toHaveBeenCalledWith('install_apk_optional_tools')
+
+    const handler = vi.fn()
+    listen.mockResolvedValue(vi.fn())
+    await onApkOptionalToolsInstallProgress(handler)
+    expect(listen).toHaveBeenCalledWith(
+      'apk-optional-tools-install-progress',
+      expect.any(Function),
+    )
+    const listener = listen.mock.calls[0]?.[1]
+    listener({ payload: { phase: 'complete', message: 'Ready' } })
+    expect(handler).toHaveBeenCalledWith({ phase: 'complete', message: 'Ready' })
   })
 })

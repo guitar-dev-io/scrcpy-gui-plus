@@ -6,8 +6,33 @@ export interface ApkOptionalToolInfo {
   available: boolean
   executablePath?: string
   configuredPath?: string
+  managed: boolean
   version?: string
   reason?: string
+}
+
+export type ApkOptionalToolsInstallPhase =
+  | 'downloading'
+  | 'verifying'
+  | 'installing'
+  | 'installed'
+  | 'complete'
+  | 'failed'
+
+export interface ApkOptionalToolsInstallProgress {
+  phase: ApkOptionalToolsInstallPhase
+  tool?: ApkOptionalTool
+  downloadedBytes: number
+  totalBytes?: number
+  completedTools: number
+  totalTools: number
+  message: string
+}
+
+export interface ApkOptionalToolsInstallResult {
+  installDirectory: string
+  jadxVersion: string
+  apktoolVersion: string
 }
 
 export interface ApkOptionalToolsDetection {

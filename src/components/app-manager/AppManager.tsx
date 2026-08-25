@@ -323,7 +323,10 @@ export default function AppManager({
                       onOpenShell={infoCache[pkg.packageName]?.debuggable && onOpenShell ? () => onOpenShell(pkg.packageName) : undefined}
                       onPullApk={infoCache[pkg.packageName]?.baseCodePath && onPullApk ? () => handlePullApk(pkg.packageName, infoCache[pkg.packageName].baseCodePath!) : undefined}
                       pullingApk={pullingPackage === pkg.packageName}
-                      menuAbove={rowIndex >= pagedPackages.length - 3}
+                      menuAbove={
+                        pagedPackages.length > 3 &&
+                        rowIndex >= pagedPackages.length - 3
+                      }
                     />
                   ))
                 )}

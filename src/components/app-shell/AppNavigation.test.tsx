@@ -38,6 +38,7 @@ describe('AppNavigation', () => {
     expect(screen.getByRole('button', { name: 'Devices' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('button', { name: 'Automation' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Script Manager' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'QR Studio' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Test Runs' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Test Cases' })).not.toBeInTheDocument()
   })

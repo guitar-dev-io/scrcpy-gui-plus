@@ -12,6 +12,7 @@ export type AppRouteId =
   | 'logcat-viewer'
   | 'performance'
   | 'input-control'
+  | 'qr-studio'
   | 'automation'
   | 'script-manager'
   | 'task-scheduler'
@@ -42,6 +43,7 @@ export const APP_ROUTES: readonly AppRouteDefinition[] = [
   { id: 'logcat-viewer', label: 'Logcat Viewer', path: '/logcat', group: 'tools' },
   { id: 'performance', label: 'Performance', path: '/performance', group: 'tools' },
   { id: 'input-control', label: 'Input Control', path: '/input-control', group: 'tools' },
+  { id: 'qr-studio', label: 'QR Studio', path: '/qr-studio', group: 'tools' },
   { id: 'wireless-adb', label: 'Wireless ADB', path: '/wireless-adb', group: 'system' },
   { id: 'settings', label: 'Settings', path: '/settings', group: 'system' },
 ]

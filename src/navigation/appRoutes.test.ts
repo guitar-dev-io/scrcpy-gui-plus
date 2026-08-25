@@ -23,6 +23,7 @@ describe('app route registry', () => {
       'logcat-viewer',
       'performance',
       'input-control',
+      'qr-studio',
       'wireless-adb',
       'settings',
     ])

@@ -130,7 +130,7 @@ pub async fn launch_deep_link(
 
 /// Generate an SVG QR code for arbitrary text (typically a deep link URI).
 #[tauri::command]
-pub fn generate_qr_svg(text: String) -> Result<String, String> {
+pub fn generate_qr_svg(text: String, error_correction: Option<String>) -> Result<String, String> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return Err("Nothing to encode".to_string());
@@ -138,7 +138,18 @@ pub fn generate_qr_svg(text: String) -> Result<String, String> {
     if trimmed.len() > 4096 {
         return Err("Text is too long to encode".to_string());
     }
-    let code = QrCode::with_error_correction_level(trimmed.as_bytes(), EcLevel::M)
+    let level = match error_correction
+        .as_deref()
+        .unwrap_or("M")
+        .to_ascii_uppercase()
+        .as_str()
+    {
+        "L" => EcLevel::L,
+        "Q" => EcLevel::Q,
+        "H" => EcLevel::H,
+        _ => EcLevel::M,
+    };
+    let code = QrCode::with_error_correction_level(trimmed.as_bytes(), level)
         .map_err(|e| e.to_string())?;
     let svg = code
         .render::<svg::Color>()
@@ -170,14 +181,17 @@ mod tests {
 
     #[test]
     fn generate_qr_svg_produces_svg() {
-        let svg = generate_qr_svg("https://example.com".to_string()).unwrap();
+        let svg = generate_qr_svg("https://example.com".to_string(), None).unwrap();
+        let high =
+            generate_qr_svg("https://example.com".to_string(), Some("H".to_string())).unwrap();
         assert!(svg.contains("<svg"));
         assert!(svg.contains("</svg>"));
+        assert_ne!(svg, high);
     }
 
     #[test]
     fn generate_qr_svg_rejects_empty() {
-        assert!(generate_qr_svg("".to_string()).is_err());
-        assert!(generate_qr_svg("   ".to_string()).is_err());
+        assert!(generate_qr_svg("".to_string(), None).is_err());
+        assert!(generate_qr_svg("   ".to_string(), Some("H".to_string())).is_err());
     }
 }

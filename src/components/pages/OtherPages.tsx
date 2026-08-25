@@ -17,6 +17,7 @@ interface OtherPagesProps {
   logcatViewer: ReactNode
   performance: ReactNode
   inputControl: ReactNode
+  qrStudio: ReactNode
   automation: ReactNode
   scriptManager: ReactNode
   taskScheduler: ReactNode
@@ -37,6 +38,7 @@ export default function OtherPages({
   logcatViewer,
   performance,
   inputControl,
+  qrStudio,
   automation,
   scriptManager,
   taskScheduler,
@@ -55,6 +57,7 @@ export default function OtherPages({
     'logcat-viewer': logcatViewer,
     performance,
     'input-control': inputControl,
+    'qr-studio': qrStudio,
     automation,
     'script-manager': scriptManager,
     'task-scheduler': taskScheduler,

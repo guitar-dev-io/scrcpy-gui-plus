@@ -253,4 +253,17 @@ describe('AppManager workspace', () => {
     expect(within(menu).getByRole('menuitem', { name: 'Clear Data' })).toBeInTheDocument()
     expect(within(menu).getByRole('menuitem', { name: 'Pull APK' })).toBeEnabled()
   })
+
+  it('opens a single search-result row menu below the row', async () => {
+    mocks.state.packages = [packages[0]]
+    renderManager()
+
+    await userEvent.click(screen.getByLabelText('More actions for Chrome'))
+
+    const menu = screen.getByRole('menu', {
+      name: 'Actions for com.android.chrome',
+    })
+    expect(menu).toHaveClass('top-12')
+    expect(menu).not.toHaveClass('bottom-12')
+  })
 })

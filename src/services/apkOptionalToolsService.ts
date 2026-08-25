@@ -1,5 +1,12 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { ApkOptionalTool, ApkOptionalToolJobStatus, ApkOptionalToolsDetection } from '../types/apkOptionalTools'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import type {
+  ApkOptionalTool,
+  ApkOptionalToolJobStatus,
+  ApkOptionalToolsDetection,
+  ApkOptionalToolsInstallProgress,
+  ApkOptionalToolsInstallResult,
+} from '../types/apkOptionalTools'
 
 export const configureApkOptionalTools = (directory?: string) =>
   invoke<string | null>('set_apk_optional_tools_directory', { directory })
@@ -9,6 +16,17 @@ export const configureApkOptionalToolPath = (tool: ApkOptionalTool, path?: strin
 
 export const detectApkOptionalTools = () =>
   invoke<ApkOptionalToolsDetection>('detect_apk_optional_tools')
+
+export const installApkOptionalTools = () =>
+  invoke<ApkOptionalToolsInstallResult>('install_apk_optional_tools')
+
+export const onApkOptionalToolsInstallProgress = (
+  handler: (progress: ApkOptionalToolsInstallProgress) => void,
+): Promise<UnlistenFn> =>
+  listen<ApkOptionalToolsInstallProgress>(
+    'apk-optional-tools-install-progress',
+    (event) => handler(event.payload),
+  )
 
 export const startApkOptionalToolJob = (tool: ApkOptionalTool, inputPath: string) =>
   invoke<ApkOptionalToolJobStatus>('start_apk_optional_tool_job', { tool, inputPath })

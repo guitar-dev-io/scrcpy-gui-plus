@@ -1,4 +1,3 @@
-import { useI18n } from '../../i18n'
 import type { EmbeddedSessionState } from '../../hooks/useEmbeddedSession'
 import DeviceStatusOverlay, { type OverlayKind } from './DeviceStatusOverlay'
 
@@ -29,17 +28,14 @@ interface DeviceDisplayProps {
 export default function DeviceDisplay({
   canvasRef,
   containerRef,
-  dimensions,
   state,
   error,
-  fps,
   imageSrc,
   imageLabel = 'Companion',
   bare = false,
   onRetry,
   onStop,
 }: DeviceDisplayProps) {
-  const { t } = useI18n()
   const connected = state === 'connected'
   const hasImage = Boolean(imageSrc)
   const displayConnected = connected || hasImage
@@ -99,18 +95,6 @@ export default function DeviceDisplay({
         />
       )}
 
-      {displayConnected && dimensions && (
-        <span className="absolute left-2 top-2 z-20 rounded-md border border-zinc-800 bg-black/60 px-2 py-1 text-[8px] font-bold tracking-wider text-zinc-300 tabular-nums">
-          {dimensions.width}x{dimensions.height} ·{' '}
-          {hasImage ? imageLabel : `${fps} ${t('workspace.fps')}`}
-        </span>
-      )}
-
-      {connected && (
-        <span className="absolute bottom-2 left-2 z-20 max-w-[260px] rounded-md border border-zinc-800 bg-black/50 px-2 py-1 text-[7px] leading-relaxed tracking-wide text-zinc-500">
-          {t('workspace.keyboardHint')}
-        </span>
-      )}
     </div>
   )
 }
