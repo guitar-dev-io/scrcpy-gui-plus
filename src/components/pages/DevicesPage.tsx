@@ -303,7 +303,8 @@ function DeviceCard({
             aria-checked={batchSelected}
             aria-label={`${batchSelected ? 'Deselect' : 'Select'} ${model}`}
             onClick={onToggleSelection}
-            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] ${batchSelected ? 'border-primary bg-primary text-on-primary' : 'border-[var(--border-base)] text-transparent hover:border-primary/60'}`}
+            disabled={unavailable}
+            className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] disabled:cursor-not-allowed disabled:opacity-35 ${batchSelected ? 'border-primary bg-primary text-on-primary' : 'border-[var(--border-base)] text-transparent hover:border-primary/60'}`}
           >
             <Check size={12} />
           </button>
@@ -514,7 +515,12 @@ export default function DevicesPage({
     androidDevices.length +
     companionDevices.length +
     (iosReady ? iosDevices.length : 0)
-  const visibleSerials = filteredAndroidDevices.map(({ serial }) => serial)
+  const visibleSelectableSerials = filteredAndroidDevices
+    .filter(({ registeredDevice, serial }) => {
+      const state = deriveDeviceState(registeredDevice, runningSet.has(serial))
+      return state === 'online' || state === 'busy'
+    })
+    .map(({ serial }) => serial)
 
   useEffect(() => {
     if (!toolsOpen) return
@@ -629,11 +635,11 @@ export default function DevicesPage({
             {onSelectAllDevices && (
               <button
                 type="button"
-                onClick={() => onSelectAllDevices(visibleSerials)}
-                disabled={visibleSerials.length === 0}
+                onClick={() => onSelectAllDevices(visibleSelectableSerials)}
+                disabled={visibleSelectableSerials.length === 0}
                 className="rounded px-2 py-1 text-primary hover:bg-primary/10 disabled:opacity-40"
               >
-                Select visible ({visibleSerials.length})
+                Select visible online ({visibleSelectableSerials.length})
               </button>
             )}
             {onClearDeviceSelection && selectedDeviceIds.size > 0 && (

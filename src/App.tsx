@@ -1401,8 +1401,11 @@ function AppContent() {
       config={config}
       setConfig={setConfig}
       onStart={handleStart}
-      onStop={handleStop}
-      isRunning={sessionRunning}
+      onStop={() => {
+        if (embeddedDashboardConnected) requestEmbeddedSession('stop')
+        if (sessionRunning) void handleStop()
+      }}
+      isRunning={sessionRunning || embeddedDashboardConnected}
       detectedCameras={detectedCameras}
       renderDriverSupport={renderDriverSupport}
       onListOptions={(arg) => {
@@ -1498,6 +1501,9 @@ function AppContent() {
   const embeddedRunningDevices = Object.entries(embeddedConnections)
     .filter(([, connected]) => connected)
     .map(([serial]) => serial)
+  const allRunningAndroidDevices = Array.from(
+    new Set([...runningDevices, ...embeddedRunningDevices]),
+  )
   const dashboardWorkspaceSerials = Array.from(
     new Set([...openDeviceWorkspaces, ...(activeDevice ? [activeDevice] : [])]),
   )
@@ -1920,7 +1926,9 @@ function AppContent() {
       activeDevice={activeAndroidWorkspaceDevice}
       customPath={config.scrcpyPath}
       connected={
-        activeIosUdid || activeCompanionWorkspaceId ? false : sessionRunning
+        activeIosUdid || activeCompanionWorkspaceId
+          ? false
+          : sessionRunning || embeddedDashboardConnected
       }
       isRefreshing={isRefreshing}
       onRefresh={handleRefresh}
@@ -2309,7 +2317,7 @@ function AppContent() {
                     devices={devices}
                     registeredDevices={registeredDevices}
                     activeDevice={activeDevice}
-                    runningDevices={runningDevices}
+                    runningDevices={allRunningAndroidDevices}
                     customPath={config.scrcpyPath}
                     isRefreshing={isRefreshing}
                     onRefresh={handleRefresh}
@@ -2366,7 +2374,7 @@ function AppContent() {
                 }
                 sessions={
                   <SessionsPage
-                    runningDevices={runningDevices}
+                    runningDevices={allRunningAndroidDevices}
                     activeSessions={sessionHistory.activeSessions}
                     history={sessionHistory.history}
                     activeDevice={activeDevice}
@@ -2375,7 +2383,12 @@ function AppContent() {
                     onView={(serial) => {
                       openDeviceWorkspace(serial)
                     }}
-                    onStop={(serial) => void stopScrcpy(serial)}
+                    onStop={(serial) => {
+                      if (embeddedConnections[serial]) {
+                        requestEmbeddedSession('stop', serial)
+                      }
+                      if (runningDevices.includes(serial)) void stopScrcpy(serial)
+                    }}
                     onRunAgain={(entry) => {
                       setActiveDevice(entry.deviceSerial)
                       setConfig(entry.config)
@@ -2385,7 +2398,13 @@ function AppContent() {
                       })
                       void runScrcpy(entry.config)
                     }}
-                    onClearHistory={sessionHistory.clearHistory}
+                    onClearHistory={() =>
+                      confirmAction(
+                        'Clear session history',
+                        'Remove all saved session history from this computer?',
+                        sessionHistory.clearHistory,
+                      )
+                    }
                     settings={
                       <div className="space-y-4">
                         {controlPanel}
@@ -2519,14 +2538,20 @@ function AppContent() {
                       }
                       return result
                     }}
-                    onClearHistory={screenshot.clearHistory}
+                    onClearHistory={() =>
+                      confirmAction(
+                        'Clear screenshot history',
+                        'Remove all screenshot history entries? Screenshot files will not be deleted.',
+                        screenshot.clearHistory,
+                      )
+                    }
                   />
                 }
                 recordings={
                   <RecordingsPage
                     deviceControls={deviceToolbar}
                     activeDevice={activeDevice}
-                    isRunning={sessionRunning}
+                    isRunning={sessionRunning || embeddedDashboardConnected}
                     recordPath={config.recordPath}
                     onChangeRecordPath={handleChangeRecordPath}
                     onOpenDashboard={() => handleNavigate('dashboard')}
@@ -2540,7 +2565,13 @@ function AppContent() {
                     onRemoveEntry={(id, deleteFile) =>
                       void recordingLibrary.removeEntry(id, deleteFile)
                     }
-                    onClearHistory={recordingLibrary.clearHistory}
+                    onClearHistory={() =>
+                      confirmAction(
+                        'Clear recording history',
+                        'Remove all recording history entries? Recording files will not be deleted.',
+                        recordingLibrary.clearHistory,
+                      )
+                    }
                   />
                 }
                 fileExplorer={
@@ -2626,7 +2657,7 @@ function AppContent() {
                     connected={
                       !activeIosUdid &&
                       !activeCompanionWorkspaceId &&
-                      sessionRunning
+                      (sessionRunning || embeddedDashboardConnected)
                     }
                     bitrateMbps={config.bitrate}
                     adaptiveEnabled={
@@ -2661,6 +2692,21 @@ function AppContent() {
                             600,
                           )
                         })
+                      } else if (embeddedDashboardConnected && activeDevice) {
+                        const serial = activeDevice
+                        requestEmbeddedSession('stop', serial)
+                        if (adaptiveRestartTimerRef.current !== null) {
+                          window.clearTimeout(adaptiveRestartTimerRef.current)
+                        }
+                        adaptiveRestartTimerRef.current = window.setTimeout(
+                          () => {
+                            adaptiveRestartTimerRef.current = null
+                            if (latestActiveDeviceRef.current === serial) {
+                              requestEmbeddedSession('start', serial)
+                            }
+                          },
+                          600,
+                        )
                       }
                     }}
                   />
@@ -2915,7 +2961,7 @@ function AppContent() {
       <ConnectionHealth
         isOpen={isConnHealthOpen}
         onClose={() => setIsConnHealthOpen(false)}
-        connected={sessionRunning}
+        connected={sessionRunning || embeddedDashboardConnected}
         bitrateMbps={config.bitrate}
       />
 

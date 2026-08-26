@@ -265,7 +265,7 @@ export default function ControlPanel({
                                 <div className="grid grid-cols-1 gap-3">
                                     {/* HID Keyboard */}
                                     <Tooltip text={t('controlPanel.hidKeyboardTooltip')}>
-                                        <div className="flex items-start gap-3 cursor-pointer group" onClick={() => handleChange('hidKeyboard', !config.hidKeyboard)}>
+                                        <button type="button" role="switch" aria-checked={Boolean(config.hidKeyboard)} className="flex w-full items-start gap-3 cursor-pointer group text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]" onClick={() => handleChange('hidKeyboard', !config.hidKeyboard)}>
                                             <div className={`mt-0.5 w-3.5 h-3.5 rounded border flex items-center justify-center transition-colors ${config.hidKeyboard ? 'bg-primary border-primary' : 'border-zinc-700 group-hover:border-primary'}`}>
                                                 {config.hidKeyboard && <div className="w-1.5 h-1.5 bg-black rounded-[1px]" />}
                                             </div>
@@ -275,12 +275,12 @@ export default function ControlPanel({
                                                     <span className="text-[10px] font-bold uppercase text-zinc-300 tracking-wide group-hover:text-primary">{t('controlPanel.hidKeyboard')}</span>
                                                 </div>
                                             </div>
-                                        </div>
+                                        </button>
                                     </Tooltip>
 
                                     {/* HID Mouse */}
                                     <Tooltip text={t('controlPanel.hidMouseTooltip')}>
-                                        <div className="flex items-start gap-3 cursor-pointer group" onClick={() => handleChange('hidMouse', !config.hidMouse)}>
+                                        <button type="button" role="switch" aria-checked={Boolean(config.hidMouse)} className="flex w-full items-start gap-3 cursor-pointer group text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]" onClick={() => handleChange('hidMouse', !config.hidMouse)}>
                                             <div className={`mt-0.5 w-3.5 h-3.5 rounded border flex items-center justify-center transition-colors ${config.hidMouse ? 'bg-primary border-primary' : 'border-zinc-700 group-hover:border-primary'}`}>
                                                 {config.hidMouse && <div className="w-1.5 h-1.5 bg-black rounded-[1px]" />}
                                             </div>
@@ -290,20 +290,20 @@ export default function ControlPanel({
                                                     <span className="text-[10px] font-bold uppercase text-zinc-300 tracking-wide group-hover:text-primary">{t('controlPanel.hidMouse')}</span>
                                                 </div>
                                             </div>
-                                        </div>
+                                        </button>
                                     </Tooltip>
 
                                     {/* Advanced: Pure HID (Old OTG Pure) */}
                                     {(config.hidKeyboard || config.hidMouse) && (
                                         <Tooltip text={t('controlPanel.pureHidTooltip')}>
-                                            <div className="flex items-start gap-3 ml-0.5 cursor-pointer group animate-in slide-in-from-top-1 duration-200" onClick={() => handleChange('otgPure', !config.otgPure)}>
+                                            <button type="button" role="switch" aria-checked={Boolean(config.otgPure)} className="flex w-full items-start gap-3 ml-0.5 cursor-pointer group animate-in slide-in-from-top-1 duration-200 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]" onClick={() => handleChange('otgPure', !config.otgPure)}>
                                                 <div className={`mt-0.5 w-3 h-3 rounded border flex items-center justify-center transition-colors ${config.otgPure ? 'bg-red-500 border-red-500' : 'border-zinc-700 group-hover:border-red-500'}`}>
                                                     {config.otgPure && <div className="w-1 h-1 bg-white rounded-[1px]" />}
                                                 </div>
                                                 <div className="flex flex-col">
                                                     <span className={`text-[9px] font-bold uppercase tracking-wider transition-colors ${config.otgPure ? 'text-red-400' : 'text-zinc-500 group-hover:text-red-400'}`}>{t('controlPanel.pureHid')}</span>
                                                 </div>
-                                            </div>
+                                            </button>
                                         </Tooltip>
                                     )}
                                 </div>
@@ -417,14 +417,14 @@ export default function ControlPanel({
                                     <span className="text-[7px] font-bold px-1 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 uppercase tracking-widest">{t('controlPanel.badgeNew')}</span>
                                 </div>
                                 <Tooltip text={t('controlPanel.cameraTorchTooltip')}>
-                                    <div className="flex items-center justify-between gap-2 cursor-pointer group" onClick={() => handleChange('cameraTorch', !config.cameraTorch)}>
+                                    <button type="button" role="switch" aria-checked={Boolean(config.cameraTorch)} className="flex w-full items-center justify-between gap-2 cursor-pointer group text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]" onClick={() => handleChange('cameraTorch', !config.cameraTorch)}>
                                         <div className="flex items-center gap-2">
                                             <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-colors ${config.cameraTorch ? 'bg-primary border-primary' : 'border-zinc-700 group-hover:border-primary'}`}>
                                                 {config.cameraTorch && <div className="w-1.5 h-1.5 bg-black rounded-[1px]" />}
                                             </div>
                                             <span className="text-[10px] font-bold uppercase text-zinc-300 tracking-wide group-hover:text-primary transition-colors">{t('controlPanel.cameraTorch')}</span>
                                         </div>
-                                    </div>
+                                    </button>
                                 </Tooltip>
                                 <div className="space-y-1">
                                     <div className="flex justify-between items-center h-4">

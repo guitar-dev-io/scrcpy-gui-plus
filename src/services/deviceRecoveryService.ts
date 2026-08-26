@@ -47,12 +47,7 @@ export class DeviceRecoveryManager {
   private nextGeneration = 1
 
   getSnapshot(deviceId: string): DeviceRecoverySnapshot {
-    return this.entries.get(deviceId)?.snapshot ?? {
-      deviceId,
-      phase: 'idle',
-      attempt: 0,
-      maxAttempts: 0,
-    }
+    return this.ensureEntry(deviceId).snapshot
   }
 
   subscribe(deviceId: string, listener: RecoveryListener) {

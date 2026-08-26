@@ -363,8 +363,8 @@ export default function FileExplorerWorkspace({ fm, activeDevice, customPath, de
   return (
     <>
     <div className="flex h-full min-h-[420px] w-full flex-col overflow-hidden rounded-lg border border-white/[0.08] bg-[#0d1725] text-slate-200 shadow-[0_18px_45px_rgba(0,0,0,.24)]">
-      <div className="grid min-h-0 flex-1 xl:grid-cols-[232px_minmax(440px,1fr)_330px]">
-        <aside className="min-h-0 overflow-y-auto custom-scrollbar border-b border-white/[0.07] bg-[#0b1421]/80 p-3 xl:border-b-0 xl:border-r">
+      <div className="grid min-h-0 flex-1 lg:grid-cols-[190px_minmax(360px,1fr)_250px] xl:grid-cols-[232px_minmax(440px,1fr)_330px]">
+        <aside className="min-h-0 overflow-y-auto custom-scrollbar border-b border-white/[0.07] bg-[#0b1421]/80 p-3 lg:border-b-0 lg:border-r">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-base font-semibold text-slate-100">Explorer</h2>
             <button type="button" onClick={fm.refresh} disabled={fm.loading || !activeDevice} title="Refresh" className="rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-white/[0.06] hover:text-violet-300 disabled:opacity-40">
@@ -403,7 +403,7 @@ export default function FileExplorerWorkspace({ fm, activeDevice, customPath, de
           </div>
         </aside>
 
-        <main className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[#0d1725]">
+        <main className="flex min-h-[360px] min-w-0 flex-col overflow-hidden bg-[#0d1725] lg:min-h-0">
           <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-white/[0.07] px-4 py-3">
             <button type="button" onClick={goBack} disabled={!canGoBack} className="rounded-md p-1 text-slate-400 hover:bg-white/[0.05] hover:text-white disabled:opacity-30"><ArrowLeft size={16} /></button>
             <button type="button" onClick={goForward} disabled={!canGoForward} className="rounded-md p-1 text-slate-400 hover:bg-white/[0.05] hover:text-white disabled:opacity-30"><ArrowRight size={16} /></button>
@@ -581,7 +581,7 @@ export default function FileExplorerWorkspace({ fm, activeDevice, customPath, de
           </div>
         </main>
 
-        <aside className="min-h-0 overflow-y-auto custom-scrollbar border-t border-white/[0.07] bg-[#0b1421]/75 p-3 xl:border-l xl:border-t-0">
+        <aside className="min-h-0 overflow-y-auto custom-scrollbar border-t border-white/[0.07] bg-[#0b1421]/75 p-3 lg:border-l lg:border-t-0">
           <div className="relative flex h-52 items-center justify-center overflow-hidden rounded-lg border border-white/[0.08] bg-slate-900">
             {!selectedEntry ? null : selectedEntry.isDir ? (
               <div className="flex flex-col items-center gap-2 text-slate-600">

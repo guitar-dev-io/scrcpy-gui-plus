@@ -35,7 +35,7 @@ export const APP_ROUTES: readonly AppRouteDefinition[] = [
   { id: 'recordings', label: 'Recordings', path: '/recordings', group: 'main' },
   { id: 'automation', label: 'Automation', path: '/automation', group: 'testing' },
   { id: 'script-manager', label: 'Script Manager', path: '/scripts', group: 'testing' },
-  { id: 'task-scheduler', label: 'Task Scheduler', path: '/task-scheduler', group: 'testing' },
+  { id: 'task-scheduler', label: 'Test Session', path: '/task-scheduler', group: 'testing' },
   { id: 'app-manager', label: 'App Manager', path: '/app-manager', group: 'tools' },
   { id: 'apk-toolkit', label: 'APK Toolkit', path: '/apk-toolkit', group: 'tools' },
   { id: 'simulators', label: 'Simulators', path: '/simulators', group: 'tools' },

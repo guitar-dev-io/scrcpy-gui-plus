@@ -131,6 +131,27 @@ describe('DevicesPage registry browsing', () => {
     expect(onSelectDevice).toHaveBeenCalledWith('USB-PIXEL')
   })
 
+  it('selects only visible online devices for batch actions', () => {
+    const onSelectAllDevices = vi.fn()
+    render(
+      <DevicesPage
+        {...baseProps}
+        devices={['USB-PIXEL']}
+        registeredDevices={registeredDevices}
+        onToggleDeviceSelection={vi.fn()}
+        onSelectAllDevices={onSelectAllDevices}
+      />,
+    )
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Select visible online (1)' }),
+    )
+    expect(onSelectAllDevices).toHaveBeenCalledWith(['USB-PIXEL'])
+    expect(
+      screen.getByRole('checkbox', { name: 'Select Galaxy S24' }),
+    ).toBeDisabled()
+  })
+
   it('shows unauthorized recovery guidance and exposes a refresh action', () => {
     const onRefresh = vi.fn()
     render(

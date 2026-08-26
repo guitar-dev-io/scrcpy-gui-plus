@@ -76,21 +76,27 @@ export default function SessionBehavior({ config, setConfig }: SessionBehaviorPr
                             type="button"
                             onClick={() => !disabled && setIsOpen(o => !o)}
                             disabled={disabled}
+                            aria-haspopup="listbox"
+                            aria-expanded={isOpen}
+                            aria-label={`${t('sessionBehavior.audioCodec')}: ${labelFor(value)}`}
                             className="flex items-center gap-1 bg-zinc-950/60 border border-zinc-800 hover:border-primary/60 rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-zinc-300 hover:text-primary transition-colors"
                         >
                             <span>{labelFor(value)}</span>
                             <ChevronDown size={10} className={`transition-transform duration-150 ${isOpen ? 'rotate-180' : ''}`} />
                         </button>
                         {isOpen && (
-                            <div className="absolute right-0 top-full mt-1 z-50 min-w-[88px] bg-zinc-950 border border-zinc-800 rounded-md shadow-2xl py-1 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100">
+                            <div role="listbox" aria-label={t('sessionBehavior.audioCodec')} className="absolute right-0 top-full mt-1 z-50 min-w-[88px] bg-zinc-950 border border-zinc-800 rounded-md shadow-2xl py-1 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100">
                                 {AUDIO_CODEC_VALUES.map((opt) => (
-                                    <div
+                                    <button
+                                        type="button"
+                                        role="option"
+                                        aria-selected={value === opt}
                                         key={opt}
                                         onClick={() => { onChange(opt); setIsOpen(false); }}
-                                        className={`px-2 py-1 text-[9px] uppercase tracking-wider font-bold cursor-pointer transition-colors ${value === opt ? 'bg-primary/20 text-primary' : 'text-zinc-400 hover:bg-primary hover:text-on-primary'}`}
+                                        className={`block w-full px-2 py-1 text-left text-[9px] uppercase tracking-wider font-bold cursor-pointer transition-colors ${value === opt ? 'bg-primary/20 text-primary' : 'text-zinc-400 hover:bg-primary hover:text-on-primary'}`}
                                     >
                                         {labelFor(opt)}
-                                    </div>
+                                    </button>
                                 ))}
                             </div>
                         )}
@@ -101,9 +107,13 @@ export default function SessionBehavior({ config, setConfig }: SessionBehaviorPr
     };
 
     const Toggle = ({ checked, onChange, icon: Icon, label, tooltip, danger = false }: { checked: boolean, onChange: (v: boolean) => void, icon: any, label: string, tooltip: string, danger?: boolean }) => (
-        <div
+        <button
+            type="button"
+            role="switch"
+            aria-checked={checked}
+            aria-label={label}
             onClick={() => onChange(!checked)}
-            className="group flex cursor-pointer items-center justify-between gap-3 rounded-[var(--radius-md)] px-2 py-1.5 transition-colors hover:bg-white/5"
+            className="group flex w-full cursor-pointer items-center justify-between gap-3 rounded-[var(--radius-md)] px-2 py-1.5 text-left transition-colors hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
         >
             <div className="flex items-center gap-2 min-w-0">
                 <div className={`p-1 rounded-md shrink-0 transition-colors ${checked ? (danger ? 'bg-red-500/10 text-red-500' : 'bg-primary/10 text-primary') : 'bg-zinc-800/50 text-zinc-500 group-hover:text-zinc-300'}`}>
@@ -121,7 +131,7 @@ export default function SessionBehavior({ config, setConfig }: SessionBehaviorPr
             <div className={`w-6 h-3.5 shrink-0 rounded-full p-0.5 transition-all duration-300 ${checked ? (danger ? 'bg-red-600' : 'bg-primary') : 'bg-zinc-800'}`}>
                 <div className={`w-2.5 h-2.5 rounded-full shadow-sm transition-all duration-300 ${checked ? (danger ? 'bg-white translate-x-2.5' : 'bg-[var(--text-on-primary)] translate-x-2.5') : 'bg-white translate-x-0'}`} />
             </div>
-        </div>
+        </button>
     );
 
     return (

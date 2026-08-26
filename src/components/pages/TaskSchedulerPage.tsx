@@ -23,7 +23,7 @@ export default function TaskSchedulerPage({
             <ListTodo size={16} aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <h1 className="text-lg font-semibold text-[var(--text-base)]">Task Scheduler</h1>
+            <h1 className="text-lg font-semibold text-[var(--text-base)]">Test Session</h1>
             <p className="mt-1 text-[10px] text-[var(--text-subtle)]">
               Run a scripted test session and export a device summary report.
             </p>

@@ -4,6 +4,12 @@ import { DeviceRecoveryManager } from './deviceRecoveryService'
 describe('DeviceRecoveryManager', () => {
   afterEach(() => vi.useRealTimers())
 
+  it('returns a stable idle snapshot for external-store consumers', () => {
+    const manager = new DeviceRecoveryManager()
+
+    expect(manager.getSnapshot('pixel')).toBe(manager.getSnapshot('pixel'))
+  })
+
   it('retries with the configured bounded backoff and then recovers', async () => {
     vi.useFakeTimers()
     const manager = new DeviceRecoveryManager()
