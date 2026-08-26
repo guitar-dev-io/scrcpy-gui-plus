@@ -21,6 +21,18 @@ export function saveMaestroFlow(
   return invoke<string>('save_maestro_flow', { content, name })
 }
 
+export function saveMaestroFlowAs(content: string, path: string): Promise<string> {
+  return invoke<string>('save_maestro_flow_as', { content, path })
+}
+
+export function getMaestroFlowDirectory(): Promise<string> {
+  return invoke<string>('get_maestro_flow_directory')
+}
+
+export function readMaestroFlow(path: string): Promise<string> {
+  return invoke<string>('read_maestro_flow', { path })
+}
+
 export function runMaestroTest(
   flowPath: string,
   deviceSerial: string,

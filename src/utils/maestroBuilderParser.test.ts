@@ -160,6 +160,20 @@ describe('parseMaestroBuilderYaml', () => {
     expect(flow.actions[0].selector).toEqual({ type: 'id', value: 'confirm_payment' })
   })
 
+  it('parses Maestro shorthand element commands as text selectors', () => {
+    const yaml = [
+      'appId: "com.example.app"',
+      '---',
+      '- tapOn: "Sign in"',
+      '- assertVisible: "Welcome"',
+      '',
+    ].join('\n')
+    const flow = parseMaestroBuilderYaml(yaml)
+
+    expect(flow.actions[0]).toMatchObject({ command: 'tapOn', selector: { type: 'text', value: 'Sign in' } })
+    expect(flow.actions[1]).toMatchObject({ command: 'assertVisible', selector: { type: 'text', value: 'Welcome' } })
+  })
+
   it('parses a repeat block into a structured action with real children', () => {
     const yaml = [
       'appId: "com.example.app"',
@@ -234,5 +248,72 @@ describe('parseMaestroBuilderYaml', () => {
     const flow = parseMaestroBuilderYaml(yaml)
     expect(flow.actions[0]).toMatchObject({ command: 'runFlow', config: { path: 'subflows/login.yaml' } })
     expect(flow.actions[1]).toMatchObject({ command: 'runScript', config: { path: 'scripts/setup.js' } })
+  })
+
+  it('preserves conditional runFlow and element options without losing YAML', () => {
+    const yaml = [
+      'appId: "com.hip.iot"',
+      '---',
+      '- runFlow:',
+      '    when:',
+      '      notVisible:',
+      '        text: "การจัดการบ้าน"',
+      '    commands:',
+      '      - tapOn:',
+      '          text: "${CURRENT_HOME}"',
+      '          index: 0',
+      '          retryTapIfNoChange: true',
+      '- tapOn:',
+      '    text: "Home Management"',
+      '    retryTapIfNoChange: true',
+      '',
+    ].join('\n')
+
+    const flow = parseMaestroBuilderYaml(yaml)
+    expect(flow.actions).toHaveLength(2)
+    expect(flow.actions.every((action) => action.command === '__unsupported__')).toBe(true)
+    expect(buildMaestroBuilderYaml(flow)).toContain('retryTapIfNoChange: true')
+    expect(buildMaestroBuilderYaml(flow)).toContain('notVisible:')
+  })
+
+  it('preserves scrollUntilVisible options not represented by the visual model', () => {
+    const yaml = [
+      'appId: "com.hip.iot"',
+      '---',
+      '- scrollUntilVisible:',
+      '    element:',
+      '      text: "${TARGET_HOME}"',
+      '    direction: DOWN',
+      '    timeout: 20000',
+      '    speed: 50',
+      '    centerElement: true',
+      '',
+    ].join('\n')
+
+    const flow = parseMaestroBuilderYaml(yaml)
+    expect(flow.actions[0].command).toBe('__unsupported__')
+    const rebuilt = buildMaestroBuilderYaml(flow)
+    expect(rebuilt).toContain('speed: 50')
+    expect(rebuilt).toContain('centerElement: true')
+  })
+
+  it('preserves a bounded conditional repeat used for UI searching', () => {
+    const yaml = [
+      'appId: "com.hip.iot"',
+      '---',
+      '- repeat:',
+      '    times: 10',
+      '    while:',
+      '      true: ${output.homeFound == false}',
+      '    commands:',
+      '      - scroll',
+      '',
+    ].join('\n')
+
+    const flow = parseMaestroBuilderYaml(yaml)
+    expect(flow.actions[0].command).toBe('__unsupported__')
+    const rebuilt = buildMaestroBuilderYaml(flow)
+    expect(rebuilt).toContain('while:')
+    expect(rebuilt).toContain('${output.homeFound == false}')
   })
 })

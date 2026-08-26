@@ -1,6 +1,6 @@
 [package]
 name = "scrcpy-gui-plus"
-version = "1.0.12"
+version = "1.0.13"
 authors = ["KB-kil0bit"]
 description = "A modern GUI for Scrcpy written in React and Rust"
 edition = "2021"
@@ -26,6 +26,7 @@ reqwest = { version = "0.13", default-features = false, features = [
   "native-tls",
 ] }
 zip = "8.1.0"
+quick-xml = "0.41.0"
 flate2 = "1.0"
 tar = "0.4"
 tokio = { version = "1.49.0", features = ["full"] }

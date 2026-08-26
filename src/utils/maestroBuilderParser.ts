@@ -82,6 +82,15 @@ function parseSelectorLine(line: string): { type: MaestroBuilderSelectorType; va
   return { type: match[1] as MaestroBuilderSelectorType, value: unquoteYamlScalar(match[2]) }
 }
 
+function isLosslessExpandedSelector(bodyLines: string[]): boolean {
+  if (bodyLines.length === 0 || !parseSelectorLine(bodyLines[0])) return false
+  if (bodyLines.length === 1) return true
+  if (bodyLines.length !== 3) return false
+  const relationMatch = bodyLines[1].trim().match(/^([A-Za-z]+)\s*:\s*$/)
+  if (!relationMatch || !RELATION_KEYWORDS.includes(relationMatch[1] as MaestroSelectorRelation)) return false
+  return parseSelectorLine(bodyLines[2].trim().replace(/^-\s*/, '')) !== null
+}
+
 function findLine(bodyLines: string[], keyword: string): string | undefined {
   return bodyLines.find((line) => line.trim().startsWith(`${keyword}:`))
 }
@@ -114,6 +123,9 @@ function parseBlock(block: string[]): MaestroFlowAction {
   }
 
   if (command === 'scrollUntilVisible') {
+    if (bodyLines.some((line) => /^\s*(?:speed|centerElement)\s*:/.test(line))) {
+      return rawAction(block)
+    }
     const selectorLine = bodyLines[1]
     const selector = selectorLine ? parseSelectorLine(selectorLine) : null
     const directionLine = findLine(bodyLines, 'direction')
@@ -165,6 +177,16 @@ function parseBlock(block: string[]): MaestroFlowAction {
   if (!definition) return rawAction(block)
 
   if (definition.requiresElement) {
+    // Maestro accepts a text selector in shorthand form, for example
+    // `- tapOn: "Sign in"`, as well as the expanded selector map. Keep both
+    // forms editable in the visual builder.
+    if (hasColon && inline !== '') {
+      return createMaestroFlowAction(command, { type: 'text', value: unquoteYamlScalar(inline) })
+    }
+    // Options such as retryTapIfNoChange or compound selectors cannot yet be
+    // represented by the visual selector model. Preserve the complete block
+    // instead of silently dropping those lines when it is re-serialized.
+    if (!isLosslessExpandedSelector(bodyLines)) return rawAction(block)
     const selectorLine = bodyLines[0]
     const selector = selectorLine ? parseSelectorLine(selectorLine) : null
     return createMaestroFlowAction(command, withRelation(selector, bodyLines))
@@ -173,6 +195,11 @@ function parseBlock(block: string[]): MaestroFlowAction {
   if (definition.requiresChildren) {
     const commandsIndex = bodyLines.findIndex((line) => line.trim() === 'commands:')
     const ownFieldLines = commandsIndex === -1 ? bodyLines : bodyLines.slice(0, commandsIndex)
+    const hasUnrepresentedControlFlow = ownFieldLines.some((line) => {
+      const fieldMatch = line.trim().match(/^([A-Za-z][A-Za-z0-9]*)\s*:/)
+      return !fieldMatch || !definition.fields.some((field) => field.name === fieldMatch[1])
+    })
+    if (hasUnrepresentedControlFlow) return rawAction(block)
     const nestedLines = commandsIndex === -1 ? [] : bodyLines.slice(commandsIndex + 1)
     const minIndent = nestedLines
       .filter((line) => line.trim() !== '')
@@ -196,7 +223,11 @@ function parseBlock(block: string[]): MaestroFlowAction {
   if (definition.bareValueField) {
     const field = definition.fields.find((f) => f.name === definition.bareValueField)
     const action = createMaestroFlowAction(command)
-    if (!hasColon || inline === '') return action
+    if (!hasColon || inline === '') {
+      // Conditional runFlow uses a nested `when` + `commands` map rather than
+      // a file path. Keep that valid Maestro form intact as raw YAML.
+      return bodyLines.length > 0 ? rawAction(block) : action
+    }
     if (field?.type === 'number') action.config = { [definition.bareValueField]: Number(inline) }
     else action.config = { [definition.bareValueField]: unquoteYamlScalar(inline) }
     return action

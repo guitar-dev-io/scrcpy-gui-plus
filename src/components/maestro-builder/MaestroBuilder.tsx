@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { CheckCircle2, ChevronDown, Play, Save, Square, X } from 'lucide-react'
+import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
+import { CheckCircle2, ChevronDown, Database, FileInput, FileOutput, FilePlus2, FolderOpen, Pencil, Play, Save, Square, X } from 'lucide-react'
 import { useMaestroBuilder } from '../../hooks/useMaestroBuilder'
 import { useUiInspector } from '../../hooks/useUiInspector'
 import { useMaestroTest } from '../../hooks/useMaestroTest'
 import { useMaestroRunProgress } from '../../hooks/useMaestroRunProgress'
 import { parseMaestroBuilderYaml } from '../../utils/maestroBuilderParser'
+import { validateMaestroBuilderFlow } from '../../utils/maestroBuilderValidator'
 import { findMaestroFlowAction } from '../../utils/maestroBuilderFlow'
 import { findMaestroCommandDefinition } from '../../utils/maestroCommandRegistry'
 import { recommendMaestroSelectors } from '../../utils/maestroSelectorRecommendation'
-import { cancelMaestroRun, getForegroundAppPackage, runMaestroTest, saveMaestroFlow } from '../../services/maestroService'
+import { cancelMaestroRun, getForegroundAppPackage, getMaestroFlowDirectory, readMaestroFlow, runMaestroTest, saveMaestroFlow, saveMaestroFlowAs } from '../../services/maestroService'
+import { openPath, revealInFolder } from '../../services/screenshotService'
+import { readAutomationDataSource } from '../../services/automationDataService'
 import { runAutomationBatch } from '../../services/automationBatchRunService'
 import { resolveAutomationTarget } from '../../services/automationTargetService'
 import { useDeviceGroups } from '../../hooks/useDeviceGroups'
@@ -16,6 +20,8 @@ import type { AutomationBatchRunRecord } from '../../types/automationBatchRun'
 import type { AutomationTarget } from '../../types/automationTarget'
 import type { MaestroBuilderSelector, MaestroCommandId, MaestroFlowAction } from '../../types/maestroBuilder'
 import type { UiNode } from '../../types/uiInspector'
+import type { AutomationDataRecord, AutomationDataSource } from '../../types/automationData'
+import { applyAutomationRecord } from '../../utils/automationData'
 import { formatRunDuration } from '../test-runner/testRunnerModel'
 import type { ToolbarNotifier } from '../device-control-toolbar'
 import MaestroCliStatusBanner from './MaestroCliStatusBanner'
@@ -28,6 +34,8 @@ import MaestroHierarchyPanel from './MaestroHierarchyPanel'
 import MaestroRunHistoryPanel from './MaestroRunHistoryPanel'
 import MaestroVariablesPanel from './MaestroVariablesPanel'
 import MaestroYamlPreviewPanel from './MaestroYamlPreviewPanel'
+import MaestroYamlEditorDialog, { type MaestroYamlEditorMode } from './MaestroYamlEditorDialog'
+import MaestroDataSourceDialog from './MaestroDataSourceDialog'
 
 interface MaestroBuilderProps {
   activeDevice: string
@@ -41,6 +49,16 @@ interface MaestroBuilderProps {
 
 function slugForFilename(name: string): string {
   return name.trim().replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'maestro-flow'
+}
+
+const FLOW_FILE_PATHS_KEY = 'scrcpy_maestro_builder_file_paths'
+
+function loadFlowFilePaths(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(FLOW_FILE_PATHS_KEY) || '{}') as Record<string, string>
+  } catch {
+    return {}
+  }
 }
 
 function isFormTarget(target: EventTarget | null): boolean {
@@ -71,9 +89,33 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
   const [foregroundLoading, setForegroundLoading] = useState(false)
   const [foregroundError, setForegroundError] = useState('')
   const [failedActionId, setFailedActionId] = useState<string | null>(null)
+  const [yamlEditorMode, setYamlEditorMode] = useState<MaestroYamlEditorMode | null>(null)
+  const [flowFilePath, setFlowFilePath] = useState(() => loadFlowFilePaths()[builder.flow.id] || '')
+  const [dataSource, setDataSource] = useState<AutomationDataSource | null>(null)
+  const [dataRunning, setDataRunning] = useState(false)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
   const batchAbortRef = useRef<AbortController | null>(null)
   const activeBatchRunsRef = useRef(new Set<string>())
+
+  useEffect(() => {
+    setFlowFilePath(loadFlowFilePaths()[builder.flow.id] || '')
+  }, [builder.flow.id])
+
+  const rememberFlowFilePath = (path: string, flowId = builder.flow.id) => {
+    setFlowFilePath(path)
+    localStorage.setItem(FLOW_FILE_PATHS_KEY, JSON.stringify({
+      ...loadFlowFilePaths(),
+      [flowId]: path,
+    }))
+  }
+
+  const writeFlowFile = async () => {
+    const path = flowFilePath
+      ? await saveMaestroFlowAs(builder.yaml, flowFilePath)
+      : await saveMaestroFlow(builder.yaml, slugForFilename(builder.flow.name))
+    rememberFlowFilePath(path)
+    return path
+  }
   const { groups } = useDeviceGroups()
   const targetResolution = useMemo(
     () => resolveAutomationTarget(target, {
@@ -106,10 +148,106 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
 
   const handleExport = async () => {
     try {
-      const path = await saveMaestroFlow(builder.yaml, slugForFilename(builder.flow.name))
+      const path = await writeFlowFile()
       notify('Flow exported', path, 'success')
     } catch (cause) {
       notify('Export failed', String(cause), 'error')
+    }
+  }
+
+  const handleSaveAs = async () => {
+    try {
+      const selected = await saveDialog({
+        title: 'Save Maestro YAML',
+        defaultPath: flowFilePath || `${slugForFilename(builder.flow.name)}.yaml`,
+        filters: [{ name: 'Maestro YAML', extensions: ['yaml', 'yml'] }],
+      })
+      if (!selected) return
+      const selectedPath = /\.ya?ml$/i.test(selected) ? selected : `${selected}.yaml`
+      const path = await saveMaestroFlowAs(builder.yaml, selectedPath)
+      rememberFlowFilePath(path)
+      notify('YAML saved', path, 'success')
+    } catch (cause) {
+      notify('Save As failed', String(cause), 'error')
+    }
+  }
+
+  const handleOpenFlowFolder = async () => {
+    try {
+      if (flowFilePath) await revealInFolder(flowFilePath)
+      else await openPath(await getMaestroFlowDirectory())
+    } catch (cause) {
+      notify('Could not open flow folder', String(cause), 'error')
+    }
+  }
+
+  const handleOpenYaml = async () => {
+    try {
+      const selected = await openDialog({
+        title: 'Open Maestro YAML',
+        multiple: false,
+        directory: false,
+        filters: [{ name: 'Maestro YAML', extensions: ['yaml', 'yml'] }],
+      })
+      if (!selected || Array.isArray(selected)) return
+      const yaml = await readMaestroFlow(selected)
+      const filename = selected.split(/[\\/]/).pop()?.replace(/\.ya?ml$/i, '') || 'Imported flow'
+      const imported = parseMaestroBuilderYaml(yaml, filename)
+      builder.importFlow(imported)
+      rememberFlowFilePath(selected, imported.id)
+      notify('YAML opened', selected, 'success')
+    } catch (cause) {
+      notify('Open YAML failed', String(cause), 'error')
+    }
+  }
+
+  const handleOpenDataSource = async () => {
+    try {
+      const selected = await openDialog({
+        title: 'Open Automation Data',
+        multiple: false,
+        directory: false,
+        filters: [{ name: 'Automation Data', extensions: ['xlsx', 'csv', 'tsv', 'json'] }],
+      })
+      if (!selected || Array.isArray(selected)) return
+      const source = await readAutomationDataSource(selected)
+      if (source.datasets.length === 0) throw new Error('No datasets were found in this file.')
+      setDataSource(source)
+    } catch (cause) {
+      notify('Could not open automation data', String(cause), 'error')
+    }
+  }
+
+  const handleRunDataRecords = async (records: AutomationDataRecord[]) => {
+    if (!activeDevice || dataRunning || records.length === 0) return
+    setDataRunning(true)
+    setLowerRightTab('logs')
+    let passed = 0
+    let failed = 0
+    try {
+      for (let index = 0; index < records.length; index += 1) {
+        const yaml = applyAutomationRecord(builder.yaml, records[index])
+        const name = `${slugForFilename(builder.flow.name)}-row-${index + 1}`
+        const path = await saveMaestroFlow(yaml, name)
+        const result = await maestro.run(path, {
+          flowId: `${builder.flow.id}-row-${index + 1}`,
+          flowName: `${builder.flow.name} · Row ${index + 1}`,
+          appId: builder.flow.appId,
+          yaml,
+        })
+        if (result?.success) passed += 1
+        else {
+          failed += 1
+          break
+        }
+      }
+      setRunHistoryToken((token) => token + 1)
+      notify('Data run finished', `${passed} passed · ${failed} failed · ${records.length - passed - failed} not run`, failed === 0 ? 'success' : 'error')
+      if (failed === 0) setDataSource(null)
+    } catch (cause) {
+      notify('Data run failed', String(cause), 'error')
+    } finally {
+      setDataRunning(false)
     }
   }
 
@@ -123,9 +261,40 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
     }
   }
 
-  const handleSave = () => {
+  const handleApplyYaml = (name: string, yaml: string): string | null => {
+    if (!yaml.split(/\r?\n/).some((line) => line.trim() === '---')) {
+      return 'Add a --- separator between the flow header and commands.'
+    }
+    try {
+      const imported = parseMaestroBuilderYaml(yaml, name.trim() || 'YAML Flow')
+      const issues = validateMaestroBuilderFlow(imported)
+      if (issues.length > 0) return issues[0].message
+      if (yamlEditorMode === 'edit') {
+        imported.id = builder.flow.id
+        imported.createdAt = builder.flow.createdAt
+      }
+      imported.updatedAt = new Date().toISOString()
+      builder.importFlow(imported)
+      setYamlEditorMode(null)
+      notify(
+        yamlEditorMode === 'new' ? 'YAML flow created' : 'YAML changes applied',
+        `${imported.actions.length} steps loaded. Press Save to add it to the flow library.`,
+        'success',
+      )
+      return null
+    } catch (cause) {
+      return cause instanceof Error ? cause.message : String(cause)
+    }
+  }
+
+  const handleSave = async () => {
     builder.saveFlow()
-    notify('Flow saved', builder.flow.name, 'success')
+    try {
+      const path = await writeFlowFile()
+      notify('Flow and YAML saved', path, 'success')
+    } catch (cause) {
+      notify('Flow saved to library; YAML save failed', String(cause), 'error')
+    }
   }
 
   const handleRun = async () => {
@@ -139,7 +308,7 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
       setBatchRunning(true)
       setLowerRightTab('logs')
       try {
-        const path = await saveMaestroFlow(builder.yaml, slugForFilename(builder.flow.name))
+        const path = await writeFlowFile()
         const batch = await runAutomationBatch(
           {
             automationId: builder.flow.id,
@@ -174,12 +343,20 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
       }
       return
     }
+    let path: string
+    try {
+      path = await writeFlowFile()
+    } catch (cause) {
+      notify('Could not save YAML for run', String(cause), 'error')
+      return
+    }
     let lastResult = null
     for (let index = 0; index < repeatCount; index += 1) {
-      lastResult = await maestro.runGenerated(builder.yaml, slugForFilename(builder.flow.name), {
+      lastResult = await maestro.run(path, {
         flowId: builder.flow.id,
         flowName: builder.flow.name,
         appId: builder.flow.appId,
+        yaml: builder.yaml,
       })
       if (!lastResult?.success) break
     }
@@ -299,8 +476,11 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
             </div>
           </div>
           <span className="hidden items-center gap-1 text-[8px] text-emerald-400 sm:flex"><CheckCircle2 size={10} /> Auto saved</span>
+          <button type="button" onClick={() => setYamlEditorMode('new')} className="flex h-7 items-center gap-1 rounded border border-[var(--border-base)] px-2 text-[8px] font-semibold text-[var(--text-muted)] hover:border-primary/40 hover:text-primary"><FilePlus2 size={10} /> New YAML</button>
+          <button type="button" onClick={() => setYamlEditorMode('edit')} className="flex h-7 items-center gap-1 rounded border border-[var(--border-base)] px-2 text-[8px] font-semibold text-[var(--text-muted)] hover:border-primary/40 hover:text-primary"><Pencil size={10} /> Edit YAML</button>
+          <button type="button" onClick={() => void handleSaveAs()} className="flex h-7 items-center gap-1 rounded border border-[var(--border-base)] px-2 text-[8px] font-semibold text-[var(--text-muted)] hover:border-primary/40 hover:text-primary"><FileOutput size={10} /> Save As…</button>
           <button type="button" onClick={() => void handleExport()} className="h-7 rounded border border-[var(--border-base)] px-2 text-[8px] font-semibold text-[var(--text-muted)] hover:text-primary">Export YAML</button>
-          <button type="button" onClick={handleSave} className="flex h-7 items-center gap-1 rounded border border-primary/50 px-2.5 text-[8px] font-semibold text-primary hover:bg-primary/10"><Save size={10} /> Save</button>
+          <button type="button" onClick={() => void handleSave()} className="flex h-7 items-center gap-1 rounded border border-primary/50 px-2.5 text-[8px] font-semibold text-primary hover:bg-primary/10"><Save size={10} /> Save</button>
           {maestro.running || batchRunning ? (
             <button type="button" onClick={() => void cancelRun()} disabled={maestro.cancelling} className="flex h-7 items-center gap-1 rounded bg-red-500/15 px-3 text-[8px] font-bold text-red-300"><Square size={9} fill="currentColor" /> Stop</button>
           ) : (
@@ -341,6 +521,22 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
           {maestro.running && hasProgress && <span className="ml-auto font-semibold text-primary">Running {Math.min(runProgress.completedCount + 1, runProgress.totalCount)}/{runProgress.totalCount}</span>}
           {batchRunning && <span className="ml-auto font-semibold text-primary">Running {targetResolution.serials.length} devices independently…</span>}
           {!targetResolution.isValid && <span role="alert" className="ml-auto text-red-300">{targetResolution.error?.message}</span>}
+        </div>
+
+        <div className="flex min-h-7 items-center gap-2 border-t border-[var(--border-subtle)] px-3 text-[8px]">
+          <span className="shrink-0 font-semibold uppercase tracking-wider text-[var(--text-subtle)]">Flow file</span>
+          <span className="min-w-0 flex-1 truncate font-mono text-[var(--text-muted)]" title={flowFilePath || 'The YAML file will be created when you Save, Export, or Run.'}>
+            {flowFilePath || 'Not written yet — Save, Export, or Run to create the YAML file.'}
+          </span>
+          <button type="button" onClick={() => void handleOpenDataSource()} className="flex h-5 shrink-0 items-center gap-1 rounded px-1.5 font-semibold text-[var(--text-muted)] hover:bg-white/5 hover:text-primary">
+            <Database size={10} /> Data Source
+          </button>
+          <button type="button" onClick={() => void handleOpenYaml()} className="flex h-5 shrink-0 items-center gap-1 rounded px-1.5 font-semibold text-[var(--text-muted)] hover:bg-white/5 hover:text-primary">
+            <FileInput size={10} /> Open YAML
+          </button>
+          <button type="button" onClick={() => void handleOpenFlowFolder()} className="flex h-5 shrink-0 items-center gap-1 rounded px-1.5 font-semibold text-[var(--text-muted)] hover:bg-white/5 hover:text-primary">
+            <FolderOpen size={10} /> Open Flow Folder
+          </button>
         </div>
 
         {advancedOpen && (
@@ -408,6 +604,31 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
           </div>
         </div>
       </div>
+
+      {yamlEditorMode && (
+        <MaestroYamlEditorDialog
+          key={yamlEditorMode}
+          mode={yamlEditorMode}
+          initialName={yamlEditorMode === 'new' ? 'New YAML Flow' : builder.flow.name}
+          initialYaml={
+            yamlEditorMode === 'new'
+              ? `appId: "${builder.flow.appId || packageName || 'com.example.app'}"\n---\n- launchApp\n`
+              : builder.yaml
+          }
+          onClose={() => setYamlEditorMode(null)}
+          onApply={handleApplyYaml}
+        />
+      )}
+      {dataSource && (
+        <MaestroDataSourceDialog
+          source={dataSource}
+          yamlTemplate={builder.yaml}
+          running={dataRunning}
+          canRun={Boolean(activeDevice) && builder.isValid}
+          onClose={() => { if (!dataRunning) setDataSource(null) }}
+          onRun={(records) => void handleRunDataRecords(records)}
+        />
+      )}
     </div>
   )
 }

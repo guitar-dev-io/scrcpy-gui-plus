@@ -6,6 +6,7 @@ mod apk_optional_tools;
 mod apk_toolkit;
 mod app_manager;
 mod auto_capture;
+mod automation_data;
 mod bug_report;
 mod commands;
 mod companion;
@@ -233,9 +234,13 @@ pub fn run() {
             maestro::check_maestro_available,
             maestro::prepare_washxpress_maestro_flow,
             maestro::save_maestro_flow,
+            maestro::save_maestro_flow_as,
+            maestro::get_maestro_flow_directory,
+            maestro::read_maestro_flow,
             maestro::run_maestro_test,
             maestro::cancel_maestro_run,
             maestro::get_foreground_app_package,
+            automation_data::read_automation_data_source,
             custom_command::run_custom_command,
             file_manager::fm_list_dir,
             file_manager::fm_pull,

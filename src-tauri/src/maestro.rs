@@ -423,6 +423,63 @@ pub async fn save_maestro_flow(
 }
 
 #[tauri::command]
+pub async fn get_maestro_flow_directory(app_handle: tauri::AppHandle) -> Result<String, String> {
+    let directory = app_handle
+        .path()
+        .app_local_data_dir()
+        .map_err(|error| error.to_string())?
+        .join("maestro-flows");
+    std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+    Ok(directory.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn save_maestro_flow_as(content: String, path: String) -> Result<String, String> {
+    if content.is_empty() || content.len() > MAX_FLOW_BYTES {
+        return Err("Maestro flow must be between 1 byte and 1 MB".to_string());
+    }
+    let target = PathBuf::from(path.trim());
+    if !target.is_absolute() {
+        return Err("Maestro flow path must be absolute".to_string());
+    }
+    let extension = target
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default();
+    if !extension.eq_ignore_ascii_case("yaml") && !extension.eq_ignore_ascii_case("yml") {
+        return Err("Maestro flow must use a .yaml or .yml extension".to_string());
+    }
+    let parent = target
+        .parent()
+        .ok_or_else(|| "Maestro flow path has no parent directory".to_string())?;
+    if !parent.is_dir() {
+        return Err("Selected Maestro flow directory does not exist".to_string());
+    }
+    std::fs::write(&target, content).map_err(|error| error.to_string())?;
+    Ok(target.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn read_maestro_flow(path: String) -> Result<String, String> {
+    let target = PathBuf::from(path.trim());
+    if !target.is_absolute() || !target.is_file() {
+        return Err("Maestro flow file does not exist".to_string());
+    }
+    let extension = target
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default();
+    if !extension.eq_ignore_ascii_case("yaml") && !extension.eq_ignore_ascii_case("yml") {
+        return Err("Maestro flow must use a .yaml or .yml extension".to_string());
+    }
+    let metadata = std::fs::metadata(&target).map_err(|error| error.to_string())?;
+    if metadata.len() == 0 || metadata.len() > MAX_FLOW_BYTES as u64 {
+        return Err("Maestro flow must be between 1 byte and 1 MB".to_string());
+    }
+    std::fs::read_to_string(target).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub fn cancel_maestro_run(state: State<'_, MaestroState>, run_id: String) -> Result<bool, String> {
     let run_id = validate_run_id(&run_id)?;
     state.cancel(run_id)
@@ -748,6 +805,48 @@ mod tests {
             parse_foreground_package("random com.example/.NotForeground"),
             None
         );
+    }
+
+    #[tokio::test]
+    async fn saves_maestro_yaml_to_a_selected_path() {
+        let directory = TempDir::new("save_as");
+        let path = directory.0.join("custom-flow.yaml");
+        let content = "appId: \"com.example.app\"\n---\n- launchApp\n";
+
+        let saved = save_maestro_flow_as(content.to_string(), path.to_string_lossy().to_string())
+            .await
+            .unwrap();
+
+        assert_eq!(saved, path.to_string_lossy());
+        assert_eq!(std::fs::read_to_string(path).unwrap(), content);
+    }
+
+    #[tokio::test]
+    async fn save_as_rejects_non_yaml_files() {
+        let directory = TempDir::new("save_as_extension");
+        let path = directory.0.join("custom-flow.txt");
+        let result = save_maestro_flow_as(
+            "appId: \"com.example.app\"\n---\n- launchApp\n".to_string(),
+            path.to_string_lossy().to_string(),
+        )
+        .await;
+
+        assert!(result.is_err());
+        assert!(!path.exists());
+    }
+
+    #[tokio::test]
+    async fn reads_a_selected_maestro_yaml_file() {
+        let directory = TempDir::new("read_flow");
+        let path = directory.0.join("source.yaml");
+        let content = "appId: \"com.hip.iot\"\n---\n- launchApp\n";
+        std::fs::write(&path, content).unwrap();
+
+        let loaded = read_maestro_flow(path.to_string_lossy().to_string())
+            .await
+            .unwrap();
+
+        assert_eq!(loaded, content);
     }
 
     #[test]
