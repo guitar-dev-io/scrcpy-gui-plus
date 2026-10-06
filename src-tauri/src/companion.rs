@@ -5,10 +5,12 @@
 //! same bounded, length-prefixed JSON application protocol and method allow-list.
 
 use qrcode::{render::svg, EcLevel, QrCode};
-use rand::RngCore;
+use rand::Rng;
 use rusb::{Device, DeviceHandle, Direction, Error as RusbError, GlobalContext, TransferType};
 use serde::Serialize;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 use std::io::{ErrorKind as IoErrorKind, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -62,6 +64,7 @@ const HELLO_ATTEMPT_TIMEOUT: Duration = Duration::from_millis(1_500);
 const ACCESSORY_RESCAN_DELAY: Duration = Duration::from_millis(250);
 const SCAN_TIMEOUT: Duration = Duration::from_secs(45);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(8);
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
 // Keep the authenticated LAN listener alive long enough for Android to retry a
 // dropped control or screen socket without requiring another QR scan.
 const LAN_PAIRING_TIMEOUT: Duration = Duration::from_secs(30 * 60);
@@ -87,6 +90,21 @@ const REMOTE_MAX_CLIPBOARD_TEXT_BYTES: usize = 2 * 1024;
 const REMOTE_MAX_REJECTED_CLIENTS: usize = 8;
 const LAN_TOKEN_BYTES: usize = 32;
 const LAN_MAX_REJECTED_CLIENTS: usize = 8;
+// LAN auto-discovery. The Agent broadcasts a probe to this fixed UDP port and the
+// desktop answers with the addresses it is reachable on plus the pairing port.
+// A discovery reply never carries the pairing token: an Agent that arrives this
+// way has to be approved by the desktop user instead (see `LanHelloAuth`).
+const DISCOVERY_PORT: u16 = 47653;
+const DISCOVERY_MAGIC: &str = "scrcpy-gui-plus-discovery";
+const DISCOVERY_PROTOCOL: u64 = 1;
+const DISCOVERY_MAX_DATAGRAM_BYTES: usize = 2 * 1024;
+const DISCOVERY_POLL_TIMEOUT: Duration = Duration::from_millis(250);
+// How long a token-less Agent may hold its socket open waiting for the desktop
+// user to decide before it is dropped and has to ask again.
+const LAN_APPROVAL_TIMEOUT: Duration = Duration::from_secs(90);
+const LAN_APPROVAL_POLL_DELAY: Duration = Duration::from_millis(100);
+const MIN_APPROVAL_NONCE_CHARS: usize = 16;
+const MAX_APPROVAL_NONCE_CHARS: usize = 64;
 const USB_READ_CHUNK_BYTES: usize = 16 * 1024;
 const AOA_INTERFACE_CLASS: u8 = 0xff;
 const AOA_INTERFACE_SUBCLASS: u8 = 0xff;
@@ -286,6 +304,15 @@ pub struct CompanionDevice {
     pub protocol: u64,
     pub transport: String,
     pub capabilities: Vec<String>,
+    /// Stable identity persisted by the Agent app itself (SharedPreferences UUID),
+    /// independent of `id` (which is connection-scoped: `lan-<generation>-<ip>` /
+    /// `aoa-<bus>-<addr>`). Absent for Agent builds older than this field.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_device_id: Option<String>,
+    /// The LAN peer's IP address, captured from the accepted TCP socket. Used to
+    /// auto-match this Agent against an ADB wifi device on the desktop side.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peer_ip: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -325,10 +352,33 @@ impl CompanionScanResult {
 pub struct CompanionLanOffer {
     pub generation: u64,
     pub host: String,
+    /// Every LAN address this desktop is reachable on, best first. `host` is just
+    /// the first entry, kept as its own field for Agent builds that only read it.
+    pub hosts: Vec<String>,
     pub port: u16,
+    /// UDP port the Agent can broadcast to when the QR addresses are unreachable.
+    /// `None` when the port was already taken, in which case QR pairing still works.
+    pub discovery_port: Option<u16>,
     pub expires_at: u64,
     pub payload: String,
     pub svg: String,
+}
+
+/// An Agent that reached this desktop through LAN discovery and is waiting for the
+/// user to approve it, emitted on the `companion-pairing-approval` channel.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompanionApprovalEvent {
+    pub request_id: u64,
+    pub pairing_generation: u64,
+    pub device_name: String,
+    pub peer_ip: String,
+    /// Six digits both sides derive from the Agent's nonce, so the user can tell
+    /// the phone in their hand apart from any other client on the network.
+    pub code: String,
+    /// True once the request has been answered, timed out, or been superseded, so
+    /// the UI can take its prompt down without tracking timers of its own.
+    pub resolved: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -406,6 +456,23 @@ struct CompanionRemoteStatusEvent {
     video_ready: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     embedded_auto_started: Option<bool>,
+}
+
+/// Periodic telemetry polled from the connected Agent's `get_device_info`
+/// response (battery/wifi/screen). Not a push frame from Android — see
+/// `spawn_agent_heartbeat`, which reuses the existing request/response
+/// protocol rather than adding a new unsolicited frame type.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CompanionTelemetryEvent {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    agent_device_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    battery: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    wifi_connected: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    screen_on: Option<bool>,
 }
 
 #[derive(Clone)]
@@ -558,9 +625,96 @@ fn emit_status_event(
     );
 }
 
+fn emit_telemetry(window: &Window, agent_device_id: Option<String>, info: &Value) {
+    let _ = window.emit(
+        "companion-telemetry",
+        CompanionTelemetryEvent {
+            agent_device_id,
+            battery: info.get("battery").and_then(Value::as_i64),
+            wifi_connected: info.get("wifiConnected").and_then(Value::as_bool),
+            screen_on: info.get("screenOn").and_then(Value::as_bool),
+        },
+    );
+}
+
+/// Poll the connected Agent's `get_device_info` on a fixed interval and emit
+/// `companion-telemetry`. Reuses the existing desktop-initiated request/response
+/// protocol (`perform_request`) rather than adding a new unsolicited push-frame
+/// type, since the wire protocol today is strictly request/response. Stops
+/// itself once the connection slot no longer holds this same connection (a new
+/// pairing, a disconnect, or app shutdown all replace/clear it).
+fn spawn_agent_heartbeat(
+    window: Window,
+    connection: Arc<Mutex<Option<CompanionConnection>>>,
+    cancellation: CancellationToken,
+    connection_id: String,
+    agent_device_id: Option<String>,
+) {
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(HEARTBEAT_INTERVAL).await;
+            if cancellation.check().is_err() {
+                return;
+            }
+
+            let task_connection = connection.clone();
+            let task_cancellation = cancellation.clone();
+            let task_connection_id = connection_id.clone();
+            let outcome = task::spawn_blocking(move || {
+                let deadline = OperationDeadline::after(REQUEST_TIMEOUT, "Companion heartbeat");
+                let mut guard = match lock_connection(&task_connection) {
+                    Ok(guard) => guard,
+                    Err(_) => return None,
+                };
+                let active = match guard.as_mut() {
+                    Some(active) if active.device.id == task_connection_id => active,
+                    _ => return None,
+                };
+                let result = perform_request(
+                    active,
+                    0,
+                    "get_device_info",
+                    json!({}),
+                    deadline,
+                    &task_cancellation,
+                );
+                if let Err(error) = &result {
+                    if error.loses_session() {
+                        *guard = None;
+                    }
+                }
+                Some(result)
+            })
+            .await;
+
+            match outcome {
+                Ok(Some(Ok(value))) => emit_telemetry(&window, agent_device_id.clone(), &value),
+                // A stale/non-fatal error is skipped; a session-losing error or a
+                // connection slot that no longer matches ends the loop.
+                Ok(Some(Err(error))) if !error.loses_session() => continue,
+                _ => return,
+            }
+        }
+    });
+}
+
 /// Runtime state for one active companion session and one pending LAN offer.
 /// Requests are serialized by `connection`; cancellation epochs invalidate
 /// stale USB/TCP work before the connection slot is synchronously cleared.
+/// The single Agent currently awaiting approval. One slot is enough: the pairing
+/// listener only ever holds one token-less socket at a time, and a newer request
+/// replaces an older one the user never answered.
+#[derive(Debug, Clone)]
+struct PendingApproval {
+    request_id: u64,
+    pairing_generation: u64,
+    device_name: String,
+    peer_ip: String,
+    code: String,
+    /// `None` while the prompt is still open; `Some(true)` once approved.
+    decision: Option<bool>,
+}
+
 pub struct CompanionState {
     connection: Arc<Mutex<Option<CompanionConnection>>>,
     cancellation_epoch: Arc<AtomicU64>,
@@ -568,7 +722,9 @@ pub struct CompanionState {
     screen_epoch: Arc<AtomicU64>,
     remote_epoch: Arc<AtomicU64>,
     remote_session: Arc<Mutex<Option<RemoteSessionMetadata>>>,
+    pending_approval: Arc<Mutex<Option<PendingApproval>>>,
     next_request_id: AtomicU64,
+    next_approval_id: Arc<AtomicU64>,
 }
 
 impl Default for CompanionState {
@@ -580,7 +736,9 @@ impl Default for CompanionState {
             screen_epoch: Arc::new(AtomicU64::new(1)),
             remote_epoch: Arc::new(AtomicU64::new(1)),
             remote_session: Arc::new(Mutex::new(None)),
+            pending_approval: Arc::new(Mutex::new(None)),
             next_request_id: AtomicU64::new(1),
+            next_approval_id: Arc::new(AtomicU64::new(1)),
         }
     }
 }
@@ -603,6 +761,10 @@ impl CompanionState {
             Err(poisoned) => *poisoned.into_inner() = None,
         }
         match self.remote_session.lock() {
+            Ok(mut guard) => *guard = None,
+            Err(poisoned) => *poisoned.into_inner() = None,
+        }
+        match self.pending_approval.lock() {
             Ok(mut guard) => *guard = None,
             Err(poisoned) => *poisoned.into_inner() = None,
         }
@@ -822,6 +984,8 @@ fn empty_device(id: String, transport: &str) -> CompanionDevice {
         protocol: PROTOCOL_VERSION,
         transport: transport.to_string(),
         capabilities: Vec::new(),
+        agent_device_id: None,
+        peer_ip: None,
     }
 }
 
@@ -1219,6 +1383,13 @@ fn parse_hello(
         ));
     }
 
+    let agent_device_id = value
+        .get("deviceId")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && value.len() <= 128)
+        .map(str::to_string);
+
     Ok(CompanionDevice {
         id: device_id.to_string(),
         name: app.to_string(),
@@ -1227,6 +1398,8 @@ fn parse_hello(
         protocol,
         transport: transport.to_string(),
         capabilities,
+        agent_device_id,
+        peer_ip: None,
     })
 }
 
@@ -1399,11 +1572,22 @@ fn constant_time_token_eq(actual: &str, expected: &str) -> bool {
         == 0
 }
 
+/// How an accepted LAN socket proved it is allowed to drive this desktop.
+#[derive(Debug)]
+enum LanHelloAuth {
+    /// The Agent presented the one-time token carried by the pairing QR.
+    Token,
+    /// The Agent found this desktop through LAN discovery, so it has no token and
+    /// the desktop user has to approve it. Carries the digits both sides display.
+    NeedsApproval { code: String },
+}
+
 fn parse_lan_hello(
     device_id: &str,
     payload: &[u8],
     expected_token: &str,
-) -> CompanionResult<CompanionDevice> {
+    peer_ip: &str,
+) -> CompanionResult<(CompanionDevice, LanHelloAuth)> {
     let value: Value = serde_json::from_slice(payload).map_err(|_| {
         CompanionError::new(
             CompanionErrorKind::Protocol,
@@ -1411,13 +1595,37 @@ fn parse_lan_hello(
         )
     })?;
     let token = value.get("token").and_then(Value::as_str).unwrap_or("");
-    if !constant_time_token_eq(token, expected_token) {
+    let auth = if constant_time_token_eq(token, expected_token) {
+        LanHelloAuth::Token
+    } else if token.is_empty() {
+        // Discovery path: no token was ever handed out, so the nonce is all this
+        // Agent can offer and approval has to come from the desktop user.
+        let nonce = value
+            .get("nonce")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .unwrap_or_default();
+        let nonce_is_valid = (MIN_APPROVAL_NONCE_CHARS..=MAX_APPROVAL_NONCE_CHARS)
+            .contains(&nonce.len())
+            && nonce.bytes().all(|byte| byte.is_ascii_hexdigit());
+        if !nonce_is_valid {
+            return Err(CompanionError::new(
+                CompanionErrorKind::Permission,
+                "LAN companion hello carried neither a pairing token nor a valid approval nonce",
+            ));
+        }
+        LanHelloAuth::NeedsApproval {
+            code: approval_code(nonce),
+        }
+    } else {
         return Err(CompanionError::new(
             CompanionErrorKind::Permission,
             "LAN companion pairing token was rejected",
         ));
-    }
-    parse_hello(device_id, "lan-tcp", payload)
+    };
+    let mut device = parse_hello(device_id, "lan-tcp", payload)?;
+    device.peer_ip = Some(peer_ip.to_string());
+    Ok((device, auth))
 }
 
 fn is_allowed_lan_address(address: IpAddr) -> bool {
@@ -1435,29 +1643,158 @@ fn is_allowed_lan_address(address: IpAddr) -> bool {
     }
 }
 
-fn detect_lan_ipv4() -> CompanionResult<Ipv4Addr> {
-    let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))
-        .map_err(|error| network_error("Could not inspect local network interfaces", error))?;
-    socket
-        .connect((Ipv4Addr::new(8, 8, 8, 8), 80))
-        .map_err(|error| network_error("Could not select a local network interface", error))?;
-    let address = socket
-        .local_addr()
-        .map_err(|error| network_error("Could not read the local network address", error))?
-        .ip();
-    match address {
-        IpAddr::V4(address) if is_allowed_lan_address(IpAddr::V4(address)) => Ok(address),
-        _ => Err(CompanionError::new(
-            CompanionErrorKind::Network,
-            "No private IPv4 LAN address is available. Connect both devices to the same Wi-Fi network.",
-        )),
+/// Interface names that never carry the network a phone can dial: VPN and tunnel
+/// devices, Apple's AWDL/link-local helpers, and hypervisor or container bridges.
+/// Putting one of these in the pairing QR hands the Agent an address it can never
+/// reach, which is the most common reason a scanned QR silently goes nowhere.
+const NON_LAN_INTERFACE_PREFIXES: &[&str] = &[
+    "utun", "tun", "tap", "ppp", "ipsec", "gif", "stf", "awdl", "llw", "bridge", "vmnet",
+    "vboxnet", "docker", "veth", "zt", "wg",
+];
+
+/// Windows names adapters with friendly strings rather than short interface names,
+/// so tunnels there have to be matched on substrings instead of prefixes.
+const NON_LAN_ADAPTER_MARKERS: &[&str] = &[
+    "vpn",
+    "virtual",
+    "tailscale",
+    "zerotier",
+    "wireguard",
+    "hyper-v",
+    "loopback",
+    "pseudo",
+];
+
+fn is_lan_interface_name(name: &str) -> bool {
+    let lowered = name.to_ascii_lowercase();
+    !NON_LAN_INTERFACE_PREFIXES
+        .iter()
+        .any(|prefix| lowered.starts_with(prefix))
+        && !NON_LAN_ADAPTER_MARKERS
+            .iter()
+            .any(|marker| lowered.contains(marker))
+}
+
+/// The local address the default route would pick. It is the best single guess when
+/// it really is a LAN address, but a full-tunnel VPN makes it a tunnel address the
+/// phone cannot reach, so it only ever ranks the list rather than defining it.
+fn default_route_ipv4() -> Option<Ipv4Addr> {
+    let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).ok()?;
+    socket.connect((Ipv4Addr::new(8, 8, 8, 8), 80)).ok()?;
+    match socket.local_addr().ok()?.ip() {
+        IpAddr::V4(address) => Some(address),
+        IpAddr::V6(_) => None,
     }
+}
+
+/// Every IPv4 address a phone on the same network could dial, best first.
+///
+/// Ranking a list instead of committing to one address is what makes pairing
+/// survive a multi-homed desktop: the QR carries all of them and the Agent tries
+/// each in turn, so a VPN owning the default route or a second active network no
+/// longer produces an unreachable pairing code.
+fn lan_host_candidates() -> Vec<Ipv4Addr> {
+    let mut preferred: Vec<Ipv4Addr> = Vec::new();
+    let mut fallback: Vec<Ipv4Addr> = Vec::new();
+
+    if let Some(address) = default_route_ipv4().filter(Ipv4Addr::is_private) {
+        preferred.push(address);
+    }
+
+    for interface in if_addrs::get_if_addrs().unwrap_or_default() {
+        let IpAddr::V4(address) = interface.ip() else {
+            continue;
+        };
+        if address.is_loopback() || !is_lan_interface_name(&interface.name) {
+            continue;
+        }
+        if address.is_private() {
+            preferred.push(address);
+        } else if is_allowed_lan_address(IpAddr::V4(address)) {
+            // Link-local and carrier-grade-NAT addresses do reach a directly
+            // attached phone, but only once every routable LAN address has failed.
+            fallback.push(address);
+        }
+    }
+
+    let mut ordered: Vec<Ipv4Addr> = Vec::with_capacity(preferred.len() + fallback.len());
+    for address in preferred.into_iter().chain(fallback) {
+        if !ordered.contains(&address) {
+            ordered.push(address);
+        }
+    }
+    ordered
+}
+
+/// Reorder host candidates so the ones sharing a /24 with the asking phone come
+/// first. A desktop on both Wi-Fi and Ethernet must not answer a discovery probe
+/// with the address on the network that phone cannot see.
+fn order_hosts_for_peer(hosts: &[Ipv4Addr], peer: IpAddr) -> Vec<Ipv4Addr> {
+    let peer_prefix = match peer {
+        IpAddr::V4(address) => {
+            let octets = address.octets();
+            Some([octets[0], octets[1], octets[2]])
+        }
+        IpAddr::V6(_) => None,
+    };
+    let mut ordered: Vec<Ipv4Addr> = Vec::with_capacity(hosts.len());
+    let shares_subnet = |host: &Ipv4Addr| match peer_prefix {
+        Some(prefix) => host.octets()[..3] == prefix,
+        None => false,
+    };
+    ordered.extend(hosts.iter().copied().filter(shares_subnet));
+    ordered.extend(hosts.iter().copied().filter(|host| !shares_subnet(host)));
+    ordered
+}
+
+/// The address to advertise to an Agent that is already connected, preferring the
+/// one on that Agent's own subnet. The screen-share and remote-control listeners
+/// hand their address to the phone the same way the pairing QR does, so they hit
+/// the same multi-homed failure and need the same ranking.
+fn preferred_lan_host(peer_ip: Option<&str>) -> CompanionResult<Ipv4Addr> {
+    let hosts = lan_host_candidates();
+    let ordered = match peer_ip.and_then(|value| value.parse::<IpAddr>().ok()) {
+        Some(peer) => order_hosts_for_peer(&hosts, peer),
+        None => hosts,
+    };
+    ordered.first().copied().ok_or_else(|| {
+        CompanionError::new(
+            CompanionErrorKind::Network,
+            "No private IPv4 LAN address is available. Connect this computer to the same Wi-Fi \
+             network as the phone, and turn off any VPN that captures all traffic.",
+        )
+    })
+}
+
+/// Six digits derived from the Agent's nonce. Not a secret — it exists so the user
+/// approving a discovered Agent can confirm it is the phone showing the same digits.
+fn approval_code(nonce: &str) -> String {
+    let digest = Sha256::digest(nonce.as_bytes());
+    let value = u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]]) % 1_000_000;
+    format!("{value:06}")
 }
 
 fn generate_pairing_token() -> String {
     let mut bytes = [0u8; LAN_TOKEN_BYTES];
     rand::rng().fill_bytes(&mut bytes);
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// Minimal percent-encoding for one query value (RFC 3986 unreserved set kept
+/// literal, everything else escaped as UTF-8 bytes). Avoids pulling in a
+/// dedicated URL crate for the one optional, user-supplied field (studio name)
+/// that needs it.
+fn percent_encode_query(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.as_bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(*byte as char);
+            }
+            _ => encoded.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    encoded
 }
 
 fn is_valid_stream_token(token: &str) -> bool {
@@ -1967,17 +2304,177 @@ fn pairing_is_current(
     pairing_epoch.load(Ordering::SeqCst) == pairing_generation && cancellation.check().is_ok()
 }
 
+fn emit_approval(window: &Window, request: &PendingApproval, resolved: bool) {
+    let _ = window.emit(
+        "companion-pairing-approval",
+        CompanionApprovalEvent {
+            request_id: request.request_id,
+            pairing_generation: request.pairing_generation,
+            device_name: request.device_name.clone(),
+            peer_ip: request.peer_ip.clone(),
+            code: request.code.clone(),
+            resolved,
+        },
+    );
+}
+
+/// How an approval request ended. The distinction matters for the anti-abuse counter:
+/// a user deliberately turning a device away must not also end their pairing session,
+/// while a request nobody answered is an Agent holding a socket for nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ApprovalOutcome {
+    Approved,
+    Rejected,
+    Expired,
+}
+
+/// Hold a discovered Agent's socket open until the desktop user answers.
+///
+/// The socket stays silent for the whole wait, so no extra protocol frame is
+/// involved: the Agent is already blocked reading, and simply sees the first real
+/// request once approved or a closed socket if not.
+#[allow(clippy::too_many_arguments)]
+fn await_pairing_approval(
+    device: &CompanionDevice,
+    code: &str,
+    peer_ip: &str,
+    pending_approval: &Arc<Mutex<Option<PendingApproval>>>,
+    next_approval_id: &AtomicU64,
+    pairing_generation: u64,
+    pairing_epoch: &AtomicU64,
+    cancellation: &CancellationToken,
+    window: &Window,
+) -> ApprovalOutcome {
+    let request_id = next_approval_id.fetch_add(1, Ordering::SeqCst);
+    let request = PendingApproval {
+        request_id,
+        pairing_generation,
+        device_name: device.name.clone(),
+        peer_ip: peer_ip.to_string(),
+        code: code.to_string(),
+        decision: None,
+    };
+    match pending_approval.lock() {
+        Ok(mut guard) => *guard = Some(request.clone()),
+        Err(_) => return ApprovalOutcome::Expired,
+    }
+    emit_approval(window, &request, false);
+
+    let deadline = Instant::now() + LAN_APPROVAL_TIMEOUT;
+    let outcome = loop {
+        if !pairing_is_current(pairing_epoch, pairing_generation, cancellation) {
+            break ApprovalOutcome::Expired;
+        }
+        if Instant::now() >= deadline {
+            break ApprovalOutcome::Expired;
+        }
+        let observed = match pending_approval.lock() {
+            Ok(guard) => guard.clone(),
+            Err(_) => break ApprovalOutcome::Expired,
+        };
+        match observed {
+            // A newer request took the slot, so this older socket loses the race.
+            Some(current) if current.request_id != request_id => break ApprovalOutcome::Expired,
+            Some(current) => match current.decision {
+                Some(true) => break ApprovalOutcome::Approved,
+                Some(false) => break ApprovalOutcome::Rejected,
+                None => {}
+            },
+            None => break ApprovalOutcome::Expired,
+        }
+        thread::sleep(LAN_APPROVAL_POLL_DELAY);
+    };
+
+    if let Ok(mut guard) = pending_approval.lock() {
+        if guard.as_ref().map(|current| current.request_id) == Some(request_id) {
+            *guard = None;
+        }
+    }
+    emit_approval(window, &request, true);
+    outcome
+}
+
+/// Answer LAN discovery probes for as long as this pairing generation is current.
+///
+/// Replies carry addresses and the pairing port only. The token is deliberately
+/// withheld so that overhearing a probe reply grants nothing on its own.
+#[allow(clippy::too_many_arguments)]
+fn run_discovery_responder(
+    socket: UdpSocket,
+    tcp_port: u16,
+    hosts: Vec<Ipv4Addr>,
+    studio_id: Option<String>,
+    studio_name: Option<String>,
+    pairing_generation: u64,
+    pairing_epoch: Arc<AtomicU64>,
+    cancellation: CancellationToken,
+) {
+    let deadline = Instant::now() + LAN_PAIRING_TIMEOUT;
+    let mut buffer = [0u8; DISCOVERY_MAX_DATAGRAM_BYTES];
+
+    while pairing_is_current(&pairing_epoch, pairing_generation, &cancellation) {
+        if Instant::now() >= deadline {
+            return;
+        }
+        let (length, peer) = match socket.recv_from(&mut buffer) {
+            Ok(received) => received,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    IoErrorKind::WouldBlock | IoErrorKind::TimedOut | IoErrorKind::Interrupted
+                ) =>
+            {
+                continue
+            }
+            Err(_) => return,
+        };
+        if !is_allowed_lan_address(peer.ip()) {
+            continue;
+        }
+        let Ok(probe) = serde_json::from_slice::<Value>(&buffer[..length]) else {
+            continue;
+        };
+        if probe.get("magic").and_then(Value::as_str) != Some(DISCOVERY_MAGIC)
+            || probe.get("type").and_then(Value::as_str) != Some("discover")
+        {
+            continue;
+        }
+        let ordered: Vec<String> = order_hosts_for_peer(&hosts, peer.ip())
+            .iter()
+            .map(Ipv4Addr::to_string)
+            .collect();
+        let reply = json!({
+            "magic": DISCOVERY_MAGIC,
+            "type": "studio",
+            "v": DISCOVERY_PROTOCOL,
+            "port": tcp_port,
+            "hosts": ordered,
+            "studioId": studio_id,
+            "studioName": studio_name,
+            "requiresApproval": true,
+        });
+        let _ = socket.send_to(reply.to_string().as_bytes(), peer);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn run_lan_pairing_listener(
     listener: TcpListener,
     token: String,
     pairing_generation: u64,
     pairing_epoch: Arc<AtomicU64>,
     connection: Arc<Mutex<Option<CompanionConnection>>>,
+    pending_approval: Arc<Mutex<Option<PendingApproval>>>,
+    next_approval_id: Arc<AtomicU64>,
     cancellation: CancellationToken,
     window: Window,
 ) {
     let deadline = OperationDeadline::after(LAN_PAIRING_TIMEOUT, "LAN pairing");
     let mut rejected_clients = 0usize;
+    // Agents the user already approved during this pairing generation. Keeping them
+    // here lets a Wi-Fi blip reconnect straight away instead of re-prompting, while
+    // an app restart (a new generation) still asks again.
+    let mut approved_agents: HashSet<String> = HashSet::new();
 
     loop {
         if !pairing_is_current(&pairing_epoch, pairing_generation, &cancellation) {
@@ -2001,18 +2498,83 @@ fn run_lan_pairing_listener(
                 if !is_allowed_lan_address(peer.ip()) {
                     rejected_clients += 1;
                 } else {
-                    let attempt: CompanionResult<(CompanionConnection, CompanionDevice)> = (|| {
+                    let attempt: CompanionResult<(
+                        CompanionConnection,
+                        CompanionDevice,
+                        LanHelloAuth,
+                    )> = (|| {
                         let mut candidate =
                             CompanionConnection::open_tcp(stream, peer, pairing_generation)?;
                         let hello = candidate.read_frame(
                             deadline.capped(LAN_HELLO_TIMEOUT, "LAN companion hello"),
                             &cancellation,
                         )?;
-                        let device = parse_lan_hello(&candidate.device.id, &hello, &token)?;
+                        let (device, auth) = parse_lan_hello(
+                            &candidate.device.id,
+                            &hello,
+                            &token,
+                            &peer.ip().to_string(),
+                        )?;
                         candidate.device = device.clone();
-                        Ok((candidate, device))
-                    })(
-                    );
+                        Ok((candidate, device, auth))
+                    })();
+
+                    // A discovered Agent has no token, so hold its socket until the
+                    // user answers the prompt. Dropping it here is a plain rejection:
+                    // the Agent sees a closed socket and reports it.
+                    // A rejection is the user exercising the gate, not an attack, so it
+                    // must not push this listener toward its abuse cut-off and end a
+                    // pairing session the user is still in the middle of.
+                    let mut user_rejected = false;
+                    let attempt = match attempt {
+                        Ok((candidate, device, LanHelloAuth::NeedsApproval { code })) => {
+                            let agent_key = device
+                                .agent_device_id
+                                .clone()
+                                .unwrap_or_else(|| peer.ip().to_string());
+                            let outcome = if approved_agents.contains(&agent_key) {
+                                ApprovalOutcome::Approved
+                            } else {
+                                await_pairing_approval(
+                                    &device,
+                                    &code,
+                                    &peer.ip().to_string(),
+                                    &pending_approval,
+                                    &next_approval_id,
+                                    pairing_generation,
+                                    &pairing_epoch,
+                                    &cancellation,
+                                    &window,
+                                )
+                            };
+                            if !pairing_is_current(
+                                &pairing_epoch,
+                                pairing_generation,
+                                &cancellation,
+                            ) {
+                                return;
+                            }
+                            match outcome {
+                                ApprovalOutcome::Approved => {
+                                    approved_agents.insert(agent_key);
+                                    Ok((candidate, device))
+                                }
+                                ApprovalOutcome::Rejected => {
+                                    user_rejected = true;
+                                    Err(CompanionError::new(
+                                        CompanionErrorKind::Permission,
+                                        "Pairing request was rejected",
+                                    ))
+                                }
+                                ApprovalOutcome::Expired => Err(CompanionError::new(
+                                    CompanionErrorKind::Timeout,
+                                    "Pairing request was not answered",
+                                )),
+                            }
+                        }
+                        Ok((candidate, device, LanHelloAuth::Token)) => Ok((candidate, device)),
+                        Err(error) => Err(error),
+                    };
 
                     match attempt {
                         Ok((candidate, device)) => match lock_connection(&connection) {
@@ -2038,6 +2600,13 @@ fn run_lan_pairing_listener(
                                 // slot until the next desktop request observes the failure.
                                 *guard = Some(candidate);
                                 rejected_clients = 0;
+                                spawn_agent_heartbeat(
+                                    window.clone(),
+                                    connection.clone(),
+                                    cancellation.clone(),
+                                    device.id.clone(),
+                                    device.agent_device_id.clone(),
+                                );
                                 emit_pairing_status(
                                     &window,
                                     "connected",
@@ -2065,6 +2634,7 @@ fn run_lan_pairing_listener(
                                 return;
                             }
                         },
+                        Err(_) if user_rejected => {}
                         Err(_) => rejected_clients += 1,
                     }
                 }
@@ -3159,6 +3729,8 @@ fn lock_connection(
 pub async fn companion_lan_start(
     window: Window,
     state: tauri::State<'_, CompanionState>,
+    studio_id: Option<String>,
+    studio_name: Option<String>,
 ) -> Result<CompanionLanOffer, String> {
     match state.connection.try_lock() {
         Ok(guard) if guard.is_some() => {
@@ -3191,7 +3763,12 @@ pub async fn companion_lan_start(
         }
     }
 
-    let host = detect_lan_ipv4().map_err(|error| error.message)?;
+    let hosts = lan_host_candidates();
+    let host = *hosts.first().ok_or_else(|| {
+        "No private IPv4 LAN address is available. Connect this computer to the same Wi-Fi \
+         network as the phone, and turn off any VPN that captures all traffic."
+            .to_string()
+    })?;
     let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, 0))
         .map_err(|error| network_error("Could not open the LAN pairing listener", error).message)?;
     listener.set_nonblocking(true).map_err(|error| {
@@ -3203,7 +3780,37 @@ pub async fn companion_lan_start(
         .port();
 
     let token = generate_pairing_token();
-    let payload = format!("scrcpy-gui-plus://pair?v=1&host={host}&port={port}&token={token}");
+    let mut payload = format!("scrcpy-gui-plus://pair?v=1&host={host}&port={port}&token={token}");
+    // Additive, since the QR only ever carried one address: Agents that understand
+    // `hosts` walk the whole list, older builds ignore it and still use `host`.
+    if hosts.len() > 1 {
+        payload.push_str("&hosts=");
+        payload.push_str(&percent_encode_query(
+            &hosts
+                .iter()
+                .map(Ipv4Addr::to_string)
+                .collect::<Vec<_>>()
+                .join(","),
+        ));
+    }
+    // Trusted Studios identity (doc §5/§12): optional, additive query params.
+    // Older Agent builds that don't recognize them simply ignore extra params.
+    if let Some(studio_id) = studio_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        payload.push_str("&studioId=");
+        payload.push_str(&percent_encode_query(studio_id));
+    }
+    if let Some(studio_name) = studio_name
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        payload.push_str("&studioName=");
+        payload.push_str(&percent_encode_query(studio_name));
+    }
     let svg = render_pairing_qr(&payload).map_err(|error| error.message)?;
     let expires_at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -3219,8 +3826,43 @@ pub async fn companion_lan_start(
         pairing_generation,
     );
 
+    // Discovery is a best-effort convenience. If the fixed port is already taken (a
+    // second instance, or an unrelated app) QR pairing still works on its own.
+    let discovery_socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, DISCOVERY_PORT))
+        .ok()
+        .filter(|socket| {
+            socket.set_broadcast(true).is_ok()
+                && socket
+                    .set_read_timeout(Some(DISCOVERY_POLL_TIMEOUT))
+                    .is_ok()
+        });
+    let discovery_port = discovery_socket.as_ref().map(|_| DISCOVERY_PORT);
+
     let pairing_epoch = state.pairing_epoch.clone();
     let connection = state.connection.clone();
+    let pending_approval = state.pending_approval.clone();
+    let next_approval_id = state.next_approval_id.clone();
+
+    if let Some(socket) = discovery_socket {
+        let discovery_hosts = hosts.clone();
+        let discovery_epoch = pairing_epoch.clone();
+        let discovery_cancellation = cancellation.clone();
+        let discovery_studio_id = studio_id.clone();
+        let discovery_studio_name = studio_name.clone();
+        task::spawn_blocking(move || {
+            run_discovery_responder(
+                socket,
+                port,
+                discovery_hosts,
+                discovery_studio_id,
+                discovery_studio_name,
+                pairing_generation,
+                discovery_epoch,
+                discovery_cancellation,
+            );
+        });
+    }
+
     task::spawn_blocking(move || {
         run_lan_pairing_listener(
             listener,
@@ -3228,6 +3870,8 @@ pub async fn companion_lan_start(
             pairing_generation,
             pairing_epoch,
             connection,
+            pending_approval,
+            next_approval_id,
             cancellation,
             window,
         );
@@ -3236,11 +3880,35 @@ pub async fn companion_lan_start(
     Ok(CompanionLanOffer {
         generation: pairing_generation,
         host: host.to_string(),
+        hosts: hosts.iter().map(Ipv4Addr::to_string).collect(),
         port,
+        discovery_port,
         expires_at,
         payload,
         svg,
     })
+}
+
+/// Answer the prompt raised by a discovered Agent that connected without a token.
+#[tauri::command]
+pub async fn companion_pairing_approve(
+    state: tauri::State<'_, CompanionState>,
+    request_id: u64,
+    approve: bool,
+) -> Result<(), String> {
+    let mut guard = state
+        .pending_approval
+        .lock()
+        .map_err(|_| "Companion state is unavailable".to_string())?;
+    match guard.as_mut() {
+        Some(pending) if pending.request_id == request_id => {
+            pending.decision = Some(approve);
+            Ok(())
+        }
+        // The Agent gave up, the pairing was cancelled, or a newer request replaced
+        // this one. Saying so lets the UI drop a prompt it should no longer show.
+        _ => Err("This pairing request is no longer waiting for an answer".to_string()),
+    }
 }
 
 /// Start a separate authenticated LAN socket for JPEG screen frames, then ask the
@@ -3252,6 +3920,7 @@ pub async fn companion_screen_start(
     state: tauri::State<'_, CompanionState>,
     on_frame: Channel<InvokeResponseBody>,
 ) -> Result<CompanionRequestResult, String> {
+    let peer_ip;
     {
         let guard = state
             .connection
@@ -3265,10 +3934,11 @@ pub async fn companion_screen_start(
                 "Screen streaming currently requires a QR / LAN companion connection".to_string(),
             );
         }
+        peer_ip = active.device.peer_ip.clone();
     }
 
     let generation = state.next_screen_generation();
-    let host = detect_lan_ipv4().map_err(|error| error.message)?;
+    let host = preferred_lan_host(peer_ip.as_deref()).map_err(|error| error.message)?;
     let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, 0)).map_err(|error| {
         network_error("Could not open the screen stream listener", error).message
     })?;
@@ -3550,6 +4220,15 @@ pub async fn companion_scan(
     };
 
     if result.success {
+        if let Some(device) = result.devices.first() {
+            spawn_agent_heartbeat(
+                window.clone(),
+                state.connection.clone(),
+                state.cancellation_token(),
+                device.id.clone(),
+                device.agent_device_id.clone(),
+            );
+        }
         emit_status(&window, "connected", "Android companion connected");
     } else {
         let stage = if result.error_code.as_deref() == Some("cancelled") {
@@ -3582,6 +4261,7 @@ pub async fn companion_remote_start(
 ) -> Result<CompanionRequestResult, String> {
     let target_serial = target_serial.trim().to_string();
     crate::adb::validate_serial(&target_serial).map_err(|error| error.message())?;
+    let peer_ip;
     {
         let guard = state
             .connection
@@ -3606,6 +4286,7 @@ pub async fn companion_remote_start(
                     .to_string(),
             );
         }
+        peer_ip = active.device.peer_ip.clone();
     }
 
     let permissions_are_explicit = permissions.is_some();
@@ -3619,7 +4300,7 @@ pub async fn companion_remote_start(
         *guard = None;
     }
     let session_id = format!("remote-{}", generate_pairing_token());
-    let host = detect_lan_ipv4().map_err(|error| error.message)?;
+    let host = preferred_lan_host(peer_ip.as_deref()).map_err(|error| error.message)?;
     let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, 0)).map_err(|error| {
         network_error("Could not open the remote controller listener", error).message
     })?;
@@ -4410,6 +5091,253 @@ mod tests {
             .capabilities
             .iter()
             .any(|capability| capability == "start_remote_control"));
+    }
+
+    #[test]
+    fn parses_optional_agent_device_id_from_hello() {
+        let hello = json!({
+            "type": "hello",
+            "protocol": 1,
+            "app": "Companion",
+            "package": EXPECTED_PACKAGE,
+            "version": "1.0.0",
+            "capabilities": ["ping"],
+            "deviceId": "agent-uuid-123",
+        });
+        let device =
+            parse_hello("lan-test", "lan-tcp", &serde_json::to_vec(&hello).unwrap()).unwrap();
+        assert_eq!(device.agent_device_id.as_deref(), Some("agent-uuid-123"));
+    }
+
+    #[test]
+    fn hello_without_device_id_leaves_agent_device_id_absent() {
+        let hello = json!({
+            "type": "hello",
+            "protocol": 1,
+            "app": "Companion",
+            "package": EXPECTED_PACKAGE,
+            "version": "1.0.0",
+            "capabilities": ["ping"],
+        });
+        let device =
+            parse_hello("lan-test", "lan-tcp", &serde_json::to_vec(&hello).unwrap()).unwrap();
+        assert!(device.agent_device_id.is_none());
+    }
+
+    #[test]
+    fn lan_hello_captures_the_peer_ip() {
+        let token = "ab".repeat(LAN_TOKEN_BYTES);
+        let hello = json!({
+            "type": "hello",
+            "protocol": 1,
+            "app": "Companion",
+            "package": EXPECTED_PACKAGE,
+            "version": "1.0.0",
+            "capabilities": ["ping"],
+            "token": token,
+        });
+        let (device, auth) = parse_lan_hello(
+            "lan-test",
+            &serde_json::to_vec(&hello).unwrap(),
+            &token,
+            "192.168.1.50",
+        )
+        .unwrap();
+        assert_eq!(device.peer_ip.as_deref(), Some("192.168.1.50"));
+        assert!(matches!(auth, LanHelloAuth::Token));
+    }
+
+    fn approval_hello(nonce: &str) -> Vec<u8> {
+        serde_json::to_vec(&json!({
+            "type": "hello",
+            "protocol": 1,
+            "app": "Companion",
+            "package": EXPECTED_PACKAGE,
+            "version": "1.0.0",
+            "capabilities": ["ping"],
+            "nonce": nonce,
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_token_less_hello_asks_for_approval_instead_of_being_rejected() {
+        let token = "ab".repeat(LAN_TOKEN_BYTES);
+        let nonce = "0123456789abcdef";
+        let (device, auth) =
+            parse_lan_hello("lan-test", &approval_hello(nonce), &token, "192.168.1.50").unwrap();
+
+        assert_eq!(device.peer_ip.as_deref(), Some("192.168.1.50"));
+        match auth {
+            LanHelloAuth::NeedsApproval { code } => {
+                // Both sides derive the digits from the nonce alone, so the code the
+                // desktop shows has to match what the phone computes for itself.
+                assert_eq!(code, approval_code(nonce));
+                assert_eq!(code.len(), 6);
+                assert!(code.bytes().all(|byte| byte.is_ascii_digit()));
+            }
+            LanHelloAuth::Token => panic!("a hello with no token must require approval"),
+        }
+    }
+
+    #[test]
+    fn a_wrong_token_is_still_rejected_outright() {
+        let token = "ab".repeat(LAN_TOKEN_BYTES);
+        let hello = json!({
+            "type": "hello",
+            "protocol": 1,
+            "app": "Companion",
+            "package": EXPECTED_PACKAGE,
+            "version": "1.0.0",
+            "capabilities": ["ping"],
+            "token": "cd".repeat(LAN_TOKEN_BYTES),
+            "nonce": "0123456789abcdef",
+        });
+        let error = parse_lan_hello(
+            "lan-test",
+            &serde_json::to_vec(&hello).unwrap(),
+            &token,
+            "192.168.1.50",
+        )
+        .expect_err("a presented-but-wrong token must not fall back to approval");
+        assert_eq!(error.kind, CompanionErrorKind::Permission);
+    }
+
+    #[test]
+    fn a_token_less_hello_without_a_usable_nonce_is_rejected() {
+        let token = "ab".repeat(LAN_TOKEN_BYTES);
+        for nonce in ["", "short", "zzzzzzzzzzzzzzzz", &"a".repeat(65)] {
+            let error = parse_lan_hello("lan-test", &approval_hello(nonce), &token, "192.168.1.50")
+                .expect_err("nonce should be rejected");
+            assert_eq!(error.kind, CompanionErrorKind::Permission);
+        }
+    }
+
+    #[test]
+    fn tunnel_and_virtual_interfaces_never_become_pairing_hosts() {
+        for name in [
+            "utun40",
+            "tun0",
+            "ppp0",
+            "awdl0",
+            "bridge100",
+            "vmnet8",
+            "docker0",
+            "wg0",
+            "Tailscale Tunnel",
+            "Hyper-V Virtual Adapter",
+            "Corporate VPN",
+        ] {
+            assert!(!is_lan_interface_name(name), "{name} must be skipped");
+        }
+        for name in ["en0", "en1", "eth0", "wlan0", "Wi-Fi", "Ethernet"] {
+            assert!(is_lan_interface_name(name), "{name} must be usable");
+        }
+    }
+
+    #[test]
+    fn candidate_hosts_are_lan_addresses_without_duplicates() {
+        let hosts = lan_host_candidates();
+        let mut seen = HashSet::new();
+        for host in &hosts {
+            assert!(
+                is_allowed_lan_address(IpAddr::V4(*host)),
+                "{host} is not a private-network address"
+            );
+            assert!(!host.is_loopback(), "{host} is a loopback address");
+            assert!(seen.insert(*host), "{host} appears twice");
+        }
+    }
+
+    #[test]
+    fn discovery_prefers_the_address_on_the_asking_phones_subnet() {
+        let hosts = [
+            Ipv4Addr::new(10, 0, 0, 5),
+            Ipv4Addr::new(192, 168, 1, 43),
+            Ipv4Addr::new(172, 16, 9, 9),
+        ];
+        let ordered = order_hosts_for_peer(&hosts, IpAddr::V4(Ipv4Addr::new(192, 168, 1, 41)));
+
+        assert_eq!(ordered[0], Ipv4Addr::new(192, 168, 1, 43));
+        // The rest are kept as fallbacks rather than dropped: a /24 guess can be
+        // wrong on a network with a wider prefix.
+        assert_eq!(ordered.len(), hosts.len());
+    }
+
+    #[test]
+    fn discovery_answers_a_valid_probe_and_ignores_foreign_traffic() {
+        let responder = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        responder
+            .set_read_timeout(Some(DISCOVERY_POLL_TIMEOUT))
+            .unwrap();
+        let responder_address = responder.local_addr().unwrap();
+        let epoch = Arc::new(AtomicU64::new(7));
+        let cancellation = CancellationToken {
+            epoch: epoch.clone(),
+            expected: 7,
+        };
+        let responder_epoch = epoch.clone();
+        let worker = thread::spawn(move || {
+            run_discovery_responder(
+                responder,
+                44_100,
+                vec![Ipv4Addr::new(192, 168, 1, 43)],
+                Some("studio-1".to_string()),
+                Some("Desk".to_string()),
+                7,
+                responder_epoch,
+                cancellation,
+            );
+        });
+
+        let probe = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        probe
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+
+        // Traffic that is not a discovery probe must not draw a reply at all.
+        probe.send_to(b"not json", responder_address).unwrap();
+        probe
+            .send_to(
+                json!({ "magic": "someone-else", "type": "discover" })
+                    .to_string()
+                    .as_bytes(),
+                responder_address,
+            )
+            .unwrap();
+        probe
+            .send_to(
+                json!({ "magic": DISCOVERY_MAGIC, "type": "discover" })
+                    .to_string()
+                    .as_bytes(),
+                responder_address,
+            )
+            .unwrap();
+
+        let mut buffer = [0u8; DISCOVERY_MAX_DATAGRAM_BYTES];
+        let (length, _) = probe.recv_from(&mut buffer).expect("a reply is expected");
+        let reply: Value = serde_json::from_slice(&buffer[..length]).unwrap();
+
+        assert_eq!(reply["magic"], DISCOVERY_MAGIC);
+        assert_eq!(reply["type"], "studio");
+        assert_eq!(reply["port"], 44_100);
+        assert_eq!(reply["hosts"], json!(["192.168.1.43"]));
+        assert_eq!(reply["requiresApproval"], true);
+        // Overhearing a reply must not be enough to pair.
+        assert!(reply.get("token").is_none());
+
+        epoch.fetch_add(1, Ordering::SeqCst);
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn percent_encode_query_keeps_unreserved_chars_and_escapes_the_rest() {
+        assert_eq!(percent_encode_query("MacBook Pro"), "MacBook%20Pro");
+        assert_eq!(percent_encode_query("studio-1_2.3~4"), "studio-1_2.3~4");
+        assert_eq!(
+            percent_encode_query("โน้ตบุ๊ก"),
+            "%E0%B9%82%E0%B8%99%E0%B9%89%E0%B8%95%E0%B8%9A%E0%B8%B8%E0%B9%8A%E0%B8%81"
+        );
     }
 
     #[test]

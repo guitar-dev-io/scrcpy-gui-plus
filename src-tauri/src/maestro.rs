@@ -609,13 +609,15 @@ pub async fn run_maestro_test(
                 }
                 let _ = window.emit(
                     "maestro-run-progress",
-                    json!({ "runId": event_run_id, "line": line }),
+                    json!({ "runId": event_run_id, "line": line, "stream": "stdout" }),
                 );
             }
         })
     };
     let stderr_task = {
         let buffer = stderr_buffer.clone();
+        let window = window.clone();
+        let event_run_id = run_id.clone();
         tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = lines.next_line().await {
@@ -625,6 +627,10 @@ pub async fn run_maestro_test(
                     }
                     buffer.push_str(&line);
                 }
+                let _ = window.emit(
+                    "maestro-run-progress",
+                    json!({ "runId": event_run_id, "line": line, "stream": "stderr" }),
+                );
             }
         })
     };

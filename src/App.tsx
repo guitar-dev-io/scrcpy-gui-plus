@@ -12,6 +12,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open } from '@tauri-apps/plugin-dialog'
 import { ChevronLeft, Home, RotateCw, Smartphone, SquareStack, X } from 'lucide-react'
 import Sidebar from './components/Sidebar'
+import CompanionPanel from './components/companion/CompanionPanel'
 import ControlPanel from './components/ControlPanel'
 import LogPanel from './components/LogPanel'
 import Header from './components/Header'
@@ -22,6 +23,7 @@ import AppNavigation from './components/app-shell/AppNavigation'
 import AppShell from './components/app-shell/AppShell'
 import DashboardLayout from './components/dashboard/DashboardLayout'
 import DashboardEmbeddedStage from './components/dashboard/DashboardEmbeddedStage'
+import { ActionRail } from './components/device-rail'
 import CompanionWorkspaceStage from './components/dashboard/CompanionWorkspaceStage'
 import IosWorkspaceStage from './components/dashboard/IosWorkspaceStage'
 import WorkspaceTabBar from './components/workspace-tabs'
@@ -44,7 +46,6 @@ import UiInspector from './components/ui-inspector'
 import DeviceStatus from './components/device-status'
 import DeviceWorkspace from './components/device-workspace'
 import EmbeddedDeviceWorkspace from './components/embedded-workspace'
-import WirelessPairingWizard from './components/wireless-pairing-wizard'
 import ConnectionHealth from './components/connection-health'
 import PresetProfiles from './components/preset-profiles'
 import MacroRecorder from './components/macro-recorder'
@@ -58,6 +59,7 @@ import DevicesBatchActions from './components/devices/DevicesBatchActions'
 import { DEFAULT_SCRCPY_CONFIG, useScrcpy } from './hooks/useScrcpy'
 import { useDeviceSelection } from './hooks/useDeviceSelection'
 import { useCompanion } from './hooks/useCompanion'
+import { useAgentBridge } from './hooks/useAgentBridge'
 import {
   screenshotHistoryEntryFromResult,
   useScreenshot,
@@ -112,6 +114,10 @@ import {
 
 const OtherPages = lazy(() => import('./components/pages/OtherPages'))
 const DevicesPage = lazy(() => import('./components/pages/DevicesPage'))
+const DeviceWallPage = lazy(() => import('./components/pages/DeviceWallPage'))
+const ConnectDevicePage = lazy(
+  () => import('./components/pages/ConnectDevicePage'),
+)
 const SessionsPage = lazy(() => import('./components/pages/SessionsPage'))
 const ScreenshotsPage = lazy(() => import('./components/pages/ScreenshotsPage'))
 const RecordingsPage = lazy(() => import('./components/pages/RecordingsPage'))
@@ -119,7 +125,6 @@ const SettingsPage = lazy(() => import('./components/pages/SettingsPage'))
 const FileExplorerPage = lazy(
   () => import('./components/pages/FileExplorerPage'),
 )
-const WirelessAdbPage = lazy(() => import('./components/pages/WirelessAdbPage'))
 const AppManagerPage = lazy(() => import('./components/pages/AppManagerPage'))
 const LocalApkToolkitPage = lazy(
   () => import('./components/pages/LocalApkToolkitPage'),
@@ -216,6 +221,8 @@ function AppContent() {
     isOnboardingOpen,
     setIsOnboardingOpen,
     completeOnboarding,
+    applyAgentStatus,
+    applyAgentDisconnected,
   } = useScrcpy()
   const registeredDeviceIds = useMemo(
     () => registeredDevices.map((device) => device.id),
@@ -269,6 +276,12 @@ function AppContent() {
     previousDeviceStatesRef.current = next
   }, [activity.append, registeredDevices])
   const companion = useCompanion()
+  useAgentBridge({
+    status: companion.status,
+    telemetry: companion.telemetry,
+    applyAgentStatus,
+    applyAgentDisconnected,
+  })
   const physicalAndroidDevices = useMemo(
     () => devices.filter((serial) => !/^emulator-\d+$/.test(serial)),
     [devices],
@@ -761,7 +774,6 @@ function AppContent() {
         : devices,
     [devices, workspaceDeviceScope],
   )
-  const [isPairingOpen, setIsPairingOpen] = useState(false)
   const [isConnHealthOpen, setIsConnHealthOpen] = useState(false)
   const [isPresetsOpen, setIsPresetsOpen] = useState(false)
   const [isMacroOpen, setIsMacroOpen] = useState(false)
@@ -1292,6 +1304,36 @@ function AppContent() {
     setTimeout(() => checkScrcpy(undefined), 100)
   }
 
+  const companionPanelNode = (
+    <CompanionPanel
+      devices={companion.devices}
+      isScanning={companion.isScanning}
+      isPairing={companion.isPairing}
+      lanOffer={companion.lanOffer}
+      error={companion.error}
+      status={companion.status}
+      screenStatus={companion.screenStatus}
+      screenFrame={companion.screenFrame}
+      isScreenStarting={companion.isScreenStarting}
+      isScreenStreaming={companion.isScreenStreaming}
+      onScan={companion.scan}
+      onStartLanPairing={companion.startLanPairing}
+      onStartScreen={companion.startScreen}
+      onStopScreen={companion.stopScreen}
+      onDisconnect={companion.disconnect}
+      onRequest={companion.request}
+      androidTargets={devices}
+      embeddedConnections={embeddedConnections}
+      selectedAndroidTarget={activeDevice}
+      customPath={config.scrcpyPath}
+      remoteStatus={companion.remoteStatus}
+      isRemoteStarting={companion.isRemoteStarting}
+      isRemoteActive={companion.isRemoteActive}
+      onStartRemote={companion.startRemote}
+      onStopRemote={companion.stopRemote}
+    />
+  )
+
   const deviceSidebar = (
     <Sidebar
       devices={devices}
@@ -1334,7 +1376,7 @@ function AppContent() {
         setWorkspaceDeviceScope(null)
         setWorkspaceModal((current) => openWorkspaceModal(current, 'embedded'))
       }}
-      onOpenPairing={() => setIsPairingOpen(true)}
+      onOpenPairing={() => handleNavigate('pair-device')}
       historyDevices={historyDevices}
       clearHistory={clearHistory}
       iosSupported={ios.support.supported}
@@ -1400,11 +1442,6 @@ function AppContent() {
     <ControlPanel
       config={config}
       setConfig={setConfig}
-      onStart={handleStart}
-      onStop={() => {
-        if (embeddedDashboardConnected) requestEmbeddedSession('stop')
-        if (sessionRunning) void handleStop()
-      }}
       isRunning={sessionRunning || embeddedDashboardConnected}
       detectedCameras={detectedCameras}
       renderDriverSupport={renderDriverSupport}
@@ -2003,7 +2040,7 @@ function AppContent() {
                 closeIosWorkspace(workspaceId)
               else closeDeviceWorkspace(workspaceId)
             }}
-            onAddDevice={() => setIsPairingOpen(true)}
+            onAddDevice={() => handleNavigate('pair-device')}
             multiDeviceView={multiDeviceView}
             onToggleMultiDeviceView={() => {
               const androidWorkspaceIds = dashboardWorkspaceIds.filter(
@@ -2128,55 +2165,55 @@ function AppContent() {
                         outputDir={screenshot.screenshotDir}
                         notify={notify}
                         actionRail={
-                          <div className="flex flex-col gap-1.5">
-                            {(
-                              [
-                                ['back', 'Back', ChevronLeft],
-                                ['home', 'Home', Home],
-                                ['recents', 'Recents', SquareStack],
-                                ['rotate', 'Rotate', RotateCw],
-                              ] as const
-                            ).map(([action, label, Icon]) => (
-                              <button
-                                key={action}
-                                type="button"
-                                title={label}
-                                aria-label={`${label} on ${serial}`}
-                                onClick={() => {
-                                  void runDeviceAction(
-                                    serial,
-                                    action,
-                                    config.scrcpyPath,
-                                  )
-                                    .then((result) => {
-                                      if (!result.success) {
+                          <ActionRail
+                            ariaLabel={`Device actions for ${serial}`}
+                            groups={[
+                              {
+                                label: 'Navigation',
+                                actions: (
+                                  [
+                                    ['back', 'Back', ChevronLeft],
+                                    ['home', 'Home', Home],
+                                    ['recents', 'Recents', SquareStack],
+                                    ['rotate', 'Rotate', RotateCw],
+                                  ] as const
+                                ).map(([action, label, Icon]) => ({
+                                  id: action,
+                                  label,
+                                  icon: Icon,
+                                  onClick: () => {
+                                    void runDeviceAction(
+                                      serial,
+                                      action,
+                                      config.scrcpyPath,
+                                    )
+                                      .then((result) => {
+                                        if (!result.success) {
+                                          notify(
+                                            `${label} failed`,
+                                            result.error || 'Unknown error',
+                                            'error',
+                                          )
+                                        }
+                                      })
+                                      .catch((error) =>
                                         notify(
                                           `${label} failed`,
-                                          result.error || 'Unknown error',
+                                          String(error),
                                           'error',
-                                        )
-                                      }
-                                    })
-                                    .catch((error) =>
-                                      notify(
-                                        `${label} failed`,
-                                        String(error),
-                                        'error',
-                                      ),
-                                    )
-                                }}
-                                className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--text-muted)] transition-colors hover:bg-primary/15 hover:text-primary"
-                              >
-                                <Icon size={14} />
-                              </button>
-                            ))}
-                          </div>
+                                        ),
+                                      )
+                                  },
+                                })),
+                              },
+                            ]}
+                          />
                         }
                         onScreenshot={() =>
                           void handleScreenshotCapture(serial)
                         }
                         screenshotBusy={captureBusy}
-                        onAddDevice={() => setIsPairingOpen(true)}
+                        onAddDevice={() => handleNavigate('pair-device')}
                         onClose={() => closeDeviceWorkspace(serial)}
                         onMetricsChange={({ connected }) => {
                           setEmbeddedConnections((current) =>
@@ -2198,11 +2235,10 @@ function AppContent() {
                       config={{ ...config, device: serial }}
                       setConfig={setConfig}
                       onSelectDevice={openDeviceWorkspace}
-                      onAddDevice={() => setIsPairingOpen(true)}
+                      onAddDevice={() => handleNavigate('pair-device')}
                       onInstallApk={handleInstallApkBrowse}
                       onOpenSettings={() => handleNavigate('settings')}
                       onOpenFileExplorer={() => handleNavigate('file-explorer')}
-                      onOpenWirelessAdb={() => handleNavigate('wireless-adb')}
                       onStart={() =>
                         void runScrcpy({ ...config, device: serial })
                       }
@@ -2321,7 +2357,7 @@ function AppContent() {
                     customPath={config.scrcpyPath}
                     isRefreshing={isRefreshing}
                     onRefresh={handleRefresh}
-                    onAddDevice={() => setIsPairingOpen(true)}
+                    onAddDevice={() => handleNavigate('pair-device')}
                     onSelectDevice={setActiveDevice}
                     selectedDeviceIds={selectedDeviceIds}
                     onToggleDeviceSelection={toggleDeviceSelection}
@@ -2370,6 +2406,45 @@ function AppContent() {
                     iosDevices={ios.devices}
                     iosReady={ios.support.supported && ios.support.found}
                     onViewIos={openIosWorkspace}
+                  />
+                }
+                pairDevice={
+                  <ConnectDevicePage
+                    customPath={config.scrcpyPath}
+                    pairDevice={pairDevice}
+                    connectDevice={connectDevice}
+                    discoverConnectAddress={discoverConnectAddress}
+                    devices={devices}
+                    historyDevices={historyDevices}
+                    clearHistory={clearHistory}
+                    isAutoConnect={isAutoConnect}
+                    onToggleAuto={toggleAutoConnect}
+                    notify={notify}
+                    companionPanel={companionPanelNode}
+                  />
+                }
+                deviceWall={
+                  <DeviceWallPage
+                    devices={devices}
+                    registeredDevices={registeredDevices}
+                    runningDevices={allRunningAndroidDevices}
+                    activeDevice={activeDevice}
+                    customPath={config.scrcpyPath}
+                    outputDir={screenshot.screenshotDir}
+                    baseConfig={config}
+                    launchDevice={runScrcpy}
+                    notify={notify}
+                    onFocusDevice={setActiveDevice}
+                    onOpenLiveControl={(serial) => openDeviceWorkspace(serial)}
+                    onOpenShell={(serial) => {
+                      setActiveDevice(serial)
+                      selectWorkspaceTool('shell')
+                    }}
+                    onOpenInfo={(serial) => {
+                      setActiveDevice(serial)
+                      setIsDeviceStatusOpen(true)
+                    }}
+                    onSetupAdb={() => handleNavigate('pair-device')}
                   />
                 }
                 sessions={
@@ -2594,16 +2669,6 @@ function AppContent() {
                         />
                       )
                     }
-                  />
-                }
-                wirelessAdb={
-                  <WirelessAdbPage
-                    activeDevice={activeDevice}
-                    historyDevices={historyDevices}
-                    isAutoConnect={isAutoConnect}
-                    onToggleAuto={toggleAutoConnect}
-                    onConnect={(address) => connectDevice(address)}
-                    onOpenAdvanced={() => setIsPairingOpen(true)}
                   />
                 }
                 appManager={
@@ -2943,19 +3008,6 @@ function AppContent() {
         stageRef={embeddedMirror.stageRef}
         onClose={handleCloseMirrorStage}
         onRedock={handleRedock}
-      />
-
-      <WirelessPairingWizard
-        isOpen={isPairingOpen}
-        onClose={() => setIsPairingOpen(false)}
-        customPath={config.scrcpyPath}
-        pairDevice={pairDevice}
-        connectDevice={connectDevice}
-        discoverConnectAddress={discoverConnectAddress}
-        historyDevices={historyDevices}
-        isAutoConnect={isAutoConnect}
-        onToggleAuto={toggleAutoConnect}
-        notify={notify}
       />
 
       <ConnectionHealth

@@ -105,12 +105,31 @@ class ProtocolJsonTest {
         assertEquals("Companion", hello.getString("app"))
         assertEquals("example.package", hello.getString("package"))
         assertEquals("1.2.3", hello.getString("version"))
+        assertFalse(hello.has("deviceId"))
         val capabilities = hello.getJSONArray("capabilities")
         assertEquals(ProtocolJson.CAPABILITIES.size, capabilities.length())
         assertEquals(
             ProtocolJson.CAPABILITIES,
             (0 until capabilities.length()).map { index -> capabilities.getString(index) },
         )
+    }
+
+    @Test
+    fun helloIncludesDeviceIdWhenProvided() {
+        val hello = JSONObject(
+            String(
+                ProtocolJson.helloFrame(
+                    "Companion",
+                    "example.package",
+                    "1.2.3",
+                    pairingToken = null,
+                    deviceId = "agent-uuid-123",
+                ),
+                StandardCharsets.UTF_8,
+            ),
+        )
+
+        assertEquals("agent-uuid-123", hello.getString("deviceId"))
     }
 
     @Test

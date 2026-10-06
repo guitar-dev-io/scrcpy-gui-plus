@@ -12,8 +12,12 @@ import java.net.Socket
 /**
  * Owns one authenticated private-LAN stream and runs protocol I/O off the main thread.
  *
- * The QR offer is the session identity, not a one-shot socket. Once a connection drops, this
+ * The offer is the session identity, not a one-shot socket. Once a connection drops, this
  * worker closes the broken socket and retries the same offer with bounded exponential backoff.
+ *
+ * The offer names several candidate addresses, not one: a desktop on more than one network
+ * cannot know which of its addresses this phone can see, so every candidate is dialed in turn
+ * and the one that answered is remembered for later retries.
  */
 class LanConnection(
     private val offer: LanPairingOffer,
@@ -34,6 +38,18 @@ class LanConnection(
 
     @Volatile
     private var socket: Socket? = null
+
+    /** The candidate that last answered, tried first on every later attempt. */
+    @Volatile
+    private var lastGoodHost: String? = null
+
+    /**
+     * Whether this offer has ever been let through by the desktop. Retrying is right once
+     * it has (a Wi-Fi blip should heal itself), and wrong before: an unapproved socket that
+     * reconnects raises the approval prompt again, over and over.
+     */
+    @Volatile
+    private var everApproved = false
 
     private val resilientRequestHandler = ResilientRequestHandler(
         delegate = requestHandler,
@@ -63,9 +79,6 @@ class LanConnection(
         while (!stopRequested) {
             var activeSocket: Socket? = null
             try {
-                val address = InetAddress.getByName(offer.host)
-                requirePrivateIpv4(address)
-
                 if (reconnectAttempt > 0) {
                     val delayMs = reconnectDelayMs(reconnectAttempt)
                     safeReconnecting(
@@ -76,22 +89,35 @@ class LanConnection(
                     if (!sleepBeforeReconnect(delayMs)) break
                 }
 
-                val connectedSocket = Socket()
+                val connectedSocket = connectToAnyCandidate()
                 activeSocket = connectedSocket
                 socket = connectedSocket
-                connectedSocket.tcpNoDelay = true
-                connectedSocket.keepAlive = true
-                connectedSocket.connect(InetSocketAddress(address, offer.port), CONNECT_TIMEOUT_MS)
 
                 val input = BufferedInputStream(connectedSocket.getInputStream())
                 val output = BufferedOutputStream(connectedSocket.getOutputStream())
                 FrameCodec.writeFrame(output, helloPayload)
-                safeConnected()
+
+                // Without a token the desktop deliberately sends nothing until its user
+                // approves this device, so an open socket does not yet mean a session.
+                // Reporting "connected" only once the first request arrives keeps the UI
+                // honest about which of the two states it is in.
+                var announcedConnected = false
+                if (!offer.requiresApproval) {
+                    safeConnected()
+                    announcedConnected = true
+                } else {
+                    safeAwaitingApproval(offer.approvalCode)
+                }
                 reconnectAttempt = 0
 
                 while (!stopRequested) {
                     val payload = FrameCodec.readFrame(input)
                         ?: throw EOFException("Desktop closed the LAN connection")
+                    if (!announcedConnected) {
+                        announcedConnected = true
+                        everApproved = true
+                        safeConnected()
+                    }
                     val response = resilientRequestHandler.handle(payload)
                     FrameCodec.writeFrame(output, response.payload)
                     runAfterWrite(response.afterWrite)
@@ -119,11 +145,80 @@ class LanConnection(
             }
 
             if (stopRequested) break
+            if (offer.requiresApproval && !everApproved) {
+                // The desktop closed the socket without ever sending a request, which means
+                // it answered: rejected, or nobody answered in time. Reconnecting would just
+                // put another prompt on their screen, so surface it and let the user retry.
+                disconnectReason =
+                    "The desktop did not approve this device. Pick the studio again to retry."
+                break
+            }
             reconnectAttempt = (reconnectAttempt + 1).coerceAtMost(MAX_RECONNECT_ATTEMPT)
         }
 
         if (stopRequested) disconnectReason = stopReason
         safeDisconnected(disconnectReason)
+    }
+
+    /**
+     * Dial each candidate address until one accepts, starting from whichever answered
+     * last. Throws the final failure if none of them do.
+     */
+    private fun connectToAnyCandidate(): Socket {
+        val candidates = orderedCandidates()
+        var lastError: Exception? = null
+
+        for ((index, host) in candidates.withIndex()) {
+            if (stopRequested) throw IOException(stopReason)
+            val address = try {
+                InetAddress.getByName(host).also(::requirePrivateIpv4)
+            } catch (error: Exception) {
+                lastError = error
+                safeLog("Skipping pairing address $host: ${error.safeMessage("unusable address")}")
+                continue
+            }
+            val candidateSocket = Socket()
+            try {
+                candidateSocket.tcpNoDelay = true
+                candidateSocket.keepAlive = true
+                // A reachable host on the same network answers in milliseconds, so give the
+                // earlier candidates a short budget: waiting the full timeout on each one
+                // would make a list of addresses slower than the single address it replaces.
+                val timeoutMs = if (index == candidates.lastIndex) {
+                    CONNECT_TIMEOUT_MS
+                } else {
+                    CANDIDATE_PROBE_TIMEOUT_MS
+                }
+                candidateSocket.connect(InetSocketAddress(address, offer.port), timeoutMs)
+                lastGoodHost = host
+                if (candidates.size > 1) {
+                    safeLog("Reached the desktop at $host:${offer.port}")
+                }
+                return candidateSocket
+            } catch (error: Exception) {
+                runCatching { candidateSocket.close() }
+                lastError = error
+                safeLog(
+                    "Could not reach $host:${offer.port}: ${error.safeMessage("connect failed")}",
+                )
+            }
+        }
+
+        throw IOException(
+            "None of the desktop addresses (${candidates.joinToString(", ")}) could be reached " +
+                "on port ${offer.port}",
+            lastError,
+        )
+    }
+
+    private fun orderedCandidates(): List<String> {
+        val candidates = offer.hosts.ifEmpty { listOf(offer.host) }
+        val preferred = lastGoodHost
+        return if (preferred != null && candidates.contains(preferred)) {
+            listOf(preferred) + candidates.filter { host -> host != preferred }
+        } else {
+            candidates
+        }
     }
 
     private fun sleepBeforeReconnect(delayMs: Long): Boolean {
@@ -174,6 +269,14 @@ class LanConnection(
         }
     }
 
+    private fun safeAwaitingApproval(code: String?) {
+        try {
+            listener.onAwaitingApproval(code)
+        } catch (error: Exception) {
+            safeLog("Approval callback failed: ${error.safeMessage()}")
+        }
+    }
+
     private fun safeReconnecting(reason: String, attempt: Int, delayMs: Long) {
         try {
             listener.onReconnecting(reason, attempt, delayMs)
@@ -206,6 +309,7 @@ class LanConnection(
 
     private companion object {
         const val CONNECT_TIMEOUT_MS = 5_000
+        const val CANDIDATE_PROBE_TIMEOUT_MS = 1_200
         const val INITIAL_RECONNECT_DELAY_MS = 250L
         const val MAX_RECONNECT_DELAY_MS = 10_000L
         const val MAX_RECONNECT_ATTEMPT = 1_000

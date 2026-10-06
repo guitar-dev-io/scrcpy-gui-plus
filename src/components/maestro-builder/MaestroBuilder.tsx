@@ -10,9 +10,11 @@ import { validateMaestroBuilderFlow } from '../../utils/maestroBuilderValidator'
 import { findMaestroFlowAction } from '../../utils/maestroBuilderFlow'
 import { findMaestroCommandDefinition } from '../../utils/maestroCommandRegistry'
 import { recommendMaestroSelectors } from '../../utils/maestroSelectorRecommendation'
-import { cancelMaestroRun, getForegroundAppPackage, getMaestroFlowDirectory, readMaestroFlow, runMaestroTest, saveMaestroFlow, saveMaestroFlowAs } from '../../services/maestroService'
+import { cancelMaestroRun, getForegroundAppPackage, getMaestroFlowDirectory, onMaestroRunProgress, readMaestroFlow, runMaestroTest, saveMaestroFlow, saveMaestroFlowAs } from '../../services/maestroService'
 import { openPath, revealInFolder } from '../../services/screenshotService'
-import { readAutomationDataSource } from '../../services/automationDataService'
+import { exportAutomationBatchReport, readAutomationDataSource, saveAutomationBatchReport, writeAutomationDataResults } from '../../services/automationDataService'
+import { AUTOMATION_DATA_CHECKPOINT_KEY, createAutomationDataJobs, jobsForResultSubset, loadAutomationDataCheckpoint, runAutomationDataBatch, type AutomationDataBatchControl, type AutomationDataBatchProgress } from '../../services/automationDataBatchService'
+import { loadSequentialCheckpoint, runSequentialFallback, type SequentialProgress } from '../../services/automationSequentialRunner'
 import { runAutomationBatch } from '../../services/automationBatchRunService'
 import { resolveAutomationTarget } from '../../services/automationTargetService'
 import { useDeviceGroups } from '../../hooks/useDeviceGroups'
@@ -20,8 +22,9 @@ import type { AutomationBatchRunRecord } from '../../types/automationBatchRun'
 import type { AutomationTarget } from '../../types/automationTarget'
 import type { MaestroBuilderSelector, MaestroCommandId, MaestroFlowAction } from '../../types/maestroBuilder'
 import type { UiNode } from '../../types/uiInspector'
-import type { AutomationDataRecord, AutomationDataSource } from '../../types/automationData'
+import type { AutomationDataCheckpoint, AutomationDataRecord, AutomationDataRunOptions, AutomationDataSource, AutomationSequentialCheckpoint, AutomationSequentialOptions } from '../../types/automationData'
 import { applyAutomationRecord } from '../../utils/automationData'
+import { combineAutomationDataSources, normalizeRememberedDataSourcePaths } from '../../utils/automationDataSources'
 import { formatRunDuration } from '../test-runner/testRunnerModel'
 import type { ToolbarNotifier } from '../device-control-toolbar'
 import MaestroCliStatusBanner from './MaestroCliStatusBanner'
@@ -52,10 +55,19 @@ function slugForFilename(name: string): string {
 }
 
 const FLOW_FILE_PATHS_KEY = 'scrcpy_maestro_builder_file_paths'
+const DATA_SOURCE_PATHS_KEY = 'scrcpy_maestro_builder_data_source_paths'
 
 function loadFlowFilePaths(): Record<string, string> {
   try {
     return JSON.parse(localStorage.getItem(FLOW_FILE_PATHS_KEY) || '{}') as Record<string, string>
+  } catch {
+    return {}
+  }
+}
+
+function loadDataSourcePaths(): Record<string, unknown> {
+  try {
+    return JSON.parse(localStorage.getItem(DATA_SOURCE_PATHS_KEY) || '{}') as Record<string, unknown>
   } catch {
     return {}
   }
@@ -91,14 +103,76 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
   const [failedActionId, setFailedActionId] = useState<string | null>(null)
   const [yamlEditorMode, setYamlEditorMode] = useState<MaestroYamlEditorMode | null>(null)
   const [flowFilePath, setFlowFilePath] = useState(() => loadFlowFilePaths()[builder.flow.id] || '')
-  const [dataSource, setDataSource] = useState<AutomationDataSource | null>(null)
+  const [dataSources, setDataSources] = useState<AutomationDataSource[]>([])
+  const dataSource = useMemo(() => combineAutomationDataSources(dataSources), [dataSources])
+  const [dataSourceDialogOpen, setDataSourceDialogOpen] = useState(false)
   const [dataRunning, setDataRunning] = useState(false)
+  const [dataProgress, setDataProgress] = useState<(AutomationDataBatchProgress & { paused: boolean }) | undefined>()
+  const [dataCheckpoint, setDataCheckpoint] = useState<AutomationDataCheckpoint | null>(null)
+  const [sequentialCheckpoint, setSequentialCheckpoint] = useState<AutomationSequentialCheckpoint | null>(null)
+  const [sequentialProgress, setSequentialProgress] = useState<SequentialProgress | undefined>()
+  const [liveMaestroLog, setLiveMaestroLog] = useState<string[]>([])
   const searchInputRef = useRef<HTMLInputElement | null>(null)
+  const liveLogRef = useRef<HTMLPreElement | null>(null)
   const batchAbortRef = useRef<AbortController | null>(null)
   const activeBatchRunsRef = useRef(new Set<string>())
+  const dataControlRef = useRef<AutomationDataBatchControl>({ paused: false, stopped: false })
+  const runCaptureRef = useRef(false)
+
+  const appendLiveLog = useCallback((line: string) => {
+    if (!line.trim()) return
+    setLiveMaestroLog((current) => [...current.slice(-1_999), line])
+  }, [])
+
+  useEffect(() => {
+    let disposed = false
+    let unlisten: (() => void) | undefined
+    void onMaestroRunProgress((payload) => {
+      if (disposed || !runCaptureRef.current) return
+      appendLiveLog(`${payload.stream === 'stderr' ? '[stderr] ' : ''}${payload.line}`)
+    }).then((cleanup) => {
+      if (disposed) cleanup()
+      else unlisten = cleanup
+    })
+    return () => { disposed = true; unlisten?.() }
+  }, [appendLiveLog])
+
+  useEffect(() => {
+    const element = liveLogRef.current
+    if (element) element.scrollTop = element.scrollHeight
+  }, [liveMaestroLog])
 
   useEffect(() => {
     setFlowFilePath(loadFlowFilePaths()[builder.flow.id] || '')
+  }, [builder.flow.id])
+
+  useEffect(() => {
+    const rememberedPaths = normalizeRememberedDataSourcePaths(loadDataSourcePaths()[builder.flow.id])
+    if (rememberedPaths.length === 0) {
+      setDataSources([])
+      setDataProgress(undefined)
+      setDataCheckpoint(null)
+      setDataSourceDialogOpen(false)
+      return
+    }
+    let cancelled = false
+    void Promise.all(rememberedPaths.map(readAutomationDataSource)).then((sources) => {
+      if (cancelled) return
+      setDataSources(sources)
+      const checkpoint = loadAutomationDataCheckpoint()
+      const matching = checkpoint?.sourcePath === sources[0]?.path && checkpoint.flowId === builder.flow.id ? checkpoint : null
+      setDataCheckpoint(matching)
+      const sequential = loadSequentialCheckpoint()
+      setSequentialCheckpoint(sequential?.flowId === builder.flow.id && rememberedPaths.every((path) => sequential.sourcePaths.includes(path)) ? sequential : null)
+      setDataProgress(matching ? { current: matching.results.filter((item) => item.status !== 'notRun').length, total: matching.results.length, elapsedMs: matching.results.reduce((sum, item) => sum + item.durationMs, 0), results: matching.results, paused: false } : undefined)
+    }).catch(() => {
+      if (cancelled) return
+      const paths = loadDataSourcePaths()
+      delete paths[builder.flow.id]
+      localStorage.setItem(DATA_SOURCE_PATHS_KEY, JSON.stringify(paths))
+      setDataSources([])
+    })
+    return () => { cancelled = true }
   }, [builder.flow.id])
 
   const rememberFlowFilePath = (path: string, flowId = builder.flow.id) => {
@@ -201,54 +275,197 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
     }
   }
 
-  const handleOpenDataSource = async () => {
+  const rememberDataSources = (sources: AutomationDataSource[]) => {
+    const paths = loadDataSourcePaths()
+    if (sources.length > 0) paths[builder.flow.id] = sources.map((source) => source.path)
+    else delete paths[builder.flow.id]
+    localStorage.setItem(DATA_SOURCE_PATHS_KEY, JSON.stringify(paths))
+  }
+
+  const handleChooseDataSource = async (mode: 'replaceAll' | 'add' | 'replace' = 'replaceAll', replaceIndex = 0) => {
     try {
       const selected = await openDialog({
         title: 'Open Automation Data',
         multiple: false,
         directory: false,
-        filters: [{ name: 'Automation Data', extensions: ['xlsx', 'csv', 'tsv', 'json'] }],
+        filters: [{ name: 'Automation Data', extensions: ['xlsx', 'xls', 'csv', 'tsv', 'json', 'yaml', 'yml'] }],
       })
       if (!selected || Array.isArray(selected)) return
       const source = await readAutomationDataSource(selected)
       if (source.datasets.length === 0) throw new Error('No datasets were found in this file.')
-      setDataSource(source)
+      const nextSources = mode === 'add'
+        ? [...dataSources.filter((item) => item.path !== source.path), source]
+        : mode === 'replace'
+          ? dataSources.map((item, index) => index === replaceIndex ? source : item)
+          : [source]
+      setDataSources(nextSources)
+      setDataSourceDialogOpen(true)
+      rememberDataSources(nextSources)
+      const checkpoint = loadAutomationDataCheckpoint()
+      setDataCheckpoint(checkpoint?.sourcePath === source.path && checkpoint.flowId === builder.flow.id ? checkpoint : null)
+      if (checkpoint?.sourcePath === source.path && checkpoint.flowId === builder.flow.id) {
+        setDataProgress({ current: checkpoint.results.filter((item) => item.status !== 'notRun').length, total: checkpoint.results.length, elapsedMs: checkpoint.results.reduce((sum, item) => sum + item.durationMs, 0), results: checkpoint.results, paused: false })
+      } else setDataProgress(undefined)
+      const sequential = loadSequentialCheckpoint()
+      setSequentialCheckpoint(sequential?.flowId === builder.flow.id && nextSources.every((item) => sequential.sourcePaths.includes(item.path)) ? sequential : null)
     } catch (cause) {
       notify('Could not open automation data', String(cause), 'error')
     }
   }
 
-  const handleRunDataRecords = async (records: AutomationDataRecord[]) => {
+  const handleRemoveDataSource = (index: number) => {
+    if (dataRunning) return
+    const nextSources = dataSources.filter((_, sourceIndex) => sourceIndex !== index)
+    setDataSources(nextSources)
+    rememberDataSources(nextSources)
+    setDataCheckpoint(null)
+    setSequentialCheckpoint(null)
+    setDataProgress(undefined)
+    setSequentialProgress(undefined)
+    if (nextSources.length === 0) setDataSourceDialogOpen(false)
+  }
+
+  const handleReloadDataSource = async (index: number) => {
+    if (dataRunning || !dataSources[index]) return
+    try {
+      const reloaded = await readAutomationDataSource(dataSources[index].path)
+      const nextSources = dataSources.map((source, sourceIndex) => sourceIndex === index ? reloaded : source)
+      setDataSources(nextSources)
+      rememberDataSources(nextSources)
+      notify('Data source reloaded', reloaded.path, 'success')
+    } catch (cause) {
+      notify('Could not reload automation data', String(cause), 'error')
+    }
+  }
+
+  const handleOpenDataSource = async () => {
+    if (dataSource) {
+      setDataSourceDialogOpen(true)
+      return
+    }
+    await handleChooseDataSource()
+  }
+
+  const handleRunDataRecords = async (records: AutomationDataRecord[], options: AutomationDataRunOptions = { errorPolicy: 'stop', retryCount: 0, retryDelayMs: 0 }, subset: 'all' | 'failed' | 'notRun' = 'all') => {
     if (!activeDevice || dataRunning || records.length === 0) return
+    setLiveMaestroLog([])
+    runCaptureRef.current = true
     setDataRunning(true)
     setLowerRightTab('logs')
-    let passed = 0
-    let failed = 0
+    const allJobs = createAutomationDataJobs(records)
+    const jobs = jobsForResultSubset(allJobs, dataCheckpoint, subset)
+    const control: AutomationDataBatchControl = { paused: false, stopped: false }
+    dataControlRef.current = control
     try {
-      for (let index = 0; index < records.length; index += 1) {
-        const yaml = applyAutomationRecord(builder.yaml, records[index])
-        const name = `${slugForFilename(builder.flow.name)}-row-${index + 1}`
-        const path = await saveMaestroFlow(yaml, name)
-        const result = await maestro.run(path, {
-          flowId: `${builder.flow.id}-row-${index + 1}`,
-          flowName: `${builder.flow.name} · Row ${index + 1}`,
-          appId: builder.flow.appId,
-          yaml,
-        })
-        if (result?.success) passed += 1
-        else {
-          failed += 1
-          break
+      let checkpoint = await runAutomationDataBatch(jobs, async (job) => {
+        appendLiveLog(`\n=== Row ${job.rowId} · starting ===`)
+        try {
+          const yaml = applyAutomationRecord(builder.yaml, job.record)
+          const name = `${slugForFilename(builder.flow.name)}-row-${job.rowId}`
+          const path = await saveMaestroFlow(yaml, name)
+          const result = await maestro.run(path, {
+            flowId: `${builder.flow.id}-row-${job.rowId}`,
+            flowName: `${builder.flow.name} · Row ${job.rowId}`,
+            appId: builder.flow.appId,
+            yaml,
+          })
+          appendLiveLog(`=== Row ${job.rowId} · ${result?.success ? 'passed' : result?.cancelled ? 'stopped' : 'failed'} ===`)
+          return { success: Boolean(result?.success), error: result?.success ? undefined : result ? (result.stderr || result.stdout || 'Maestro run failed') : (maestro.error || 'Maestro run failed') }
+        } catch (cause) {
+          appendLiveLog(`=== Row ${job.rowId} · failed before launch: ${String(cause)} ===`)
+          throw cause
         }
+      }, options, {
+        id: dataCheckpoint?.id ?? `data-${Date.now()}`,
+        sourcePath: dataSource?.path ?? '',
+        flowId: builder.flow.id,
+        control,
+        previous: subset === 'all' ? null : dataCheckpoint,
+        onProgress: (progress) => setDataProgress({ ...progress, paused: control.paused }),
+      })
+      if (subset !== 'all' && dataCheckpoint) {
+        const updated = new Map(checkpoint.results.map((item) => [item.jobId, item]))
+        checkpoint = { ...checkpoint, results: dataCheckpoint.results.map((item) => updated.get(item.jobId) ?? item), updatedAt: new Date().toISOString() }
+        localStorage.setItem(AUTOMATION_DATA_CHECKPOINT_KEY, JSON.stringify(checkpoint))
       }
+      setDataCheckpoint(checkpoint)
+      const passed = checkpoint.results.filter((item) => item.status === 'passed').length
+      const failed = checkpoint.results.filter((item) => item.status === 'failed').length
       setRunHistoryToken((token) => token + 1)
-      notify('Data run finished', `${passed} passed · ${failed} failed · ${records.length - passed - failed} not run`, failed === 0 ? 'success' : 'error')
-      if (failed === 0) setDataSource(null)
+      notify('Data run finished', `${passed} passed · ${failed} failed · ${checkpoint.results.length - passed - failed} not run`, failed === 0 ? 'success' : 'error')
     } catch (cause) {
       notify('Data run failed', String(cause), 'error')
     } finally {
+      runCaptureRef.current = false
       setDataRunning(false)
     }
+  }
+
+  const handleRunSequentialFallback = async (primary: AutomationDataRecord[], fallback: AutomationDataRecord[], options: AutomationSequentialOptions) => {
+    if (!activeDevice || dataRunning || !dataSource || primary.length === 0 || fallback.length === 0) return
+    setLiveMaestroLog([])
+    runCaptureRef.current = true
+    setDataRunning(true)
+    setDataProgress(undefined)
+    setLowerRightTab('logs')
+    const control: AutomationDataBatchControl = { paused: false, stopped: false }
+    dataControlRef.current = control
+    try {
+      const checkpoint = await runSequentialFallback(primary, fallback, async (attempt) => {
+        appendLiveLog(`\n=== Primary ${attempt.primaryIndex + 1}/${primary.length} · Fallback ${attempt.fallbackIndex + 1}/${fallback.length} ===`)
+        try {
+          const yaml = applyAutomationRecord(builder.yaml, attempt.resolvedVariables)
+          const name = `${slugForFilename(builder.flow.name)}-primary-${attempt.primaryIndex + 1}-fallback-${attempt.fallbackIndex + 1}`
+          const path = await saveMaestroFlow(yaml, name)
+          const result = await maestro.run(path, {
+            flowId: `${builder.flow.id}-primary-${attempt.primaryIndex + 1}-fallback-${attempt.fallbackIndex + 1}`,
+            flowName: `${builder.flow.name} · Primary ${attempt.primaryIndex + 1} · Fallback ${attempt.fallbackIndex + 1}`,
+            appId: builder.flow.appId,
+            yaml,
+          })
+          if (!result) return { outcome: 'systemError', error: maestro.error || 'Maestro did not return a result.' }
+          appendLiveLog(`=== Attempt ${result.success ? 'passed' : result.cancelled ? 'stopped' : 'failed'} ===`)
+          return { outcome: result.success ? 'passed' : 'failed', error: result.success ? undefined : result.stderr || result.stdout || 'Maestro attempt failed.' }
+        } catch (cause) {
+          appendLiveLog(`=== System error: ${String(cause)} ===`)
+          return { outcome: 'systemError', error: String(cause) }
+        }
+      }, options, {
+        id: sequentialCheckpoint?.id ?? `sequential-${Date.now()}`,
+        sourcePaths: dataSources.map((source) => source.path),
+        flowId: builder.flow.id,
+        control,
+        previous: sequentialCheckpoint,
+        onProgress: setSequentialProgress,
+      })
+      setSequentialCheckpoint(checkpoint)
+      const passed = checkpoint.primaryResults.filter((item) => item.status === 'passed').length
+      const exhausted = checkpoint.primaryResults.filter((item) => item.status === 'exhausted').length
+      notify('Sequential fallback finished', `${passed} passed · ${exhausted} exhausted · ${checkpoint.primaryResults.flatMap((item) => item.attempts).length} attempts`, exhausted === 0 ? 'success' : 'error')
+    } catch (cause) {
+      notify('Sequential fallback failed', String(cause), 'error')
+    } finally {
+      runCaptureRef.current = false
+      setDataRunning(false)
+    }
+  }
+
+  const handleWriteDataResults = async (updateSource: boolean) => {
+    if (!dataSource || !dataCheckpoint) return
+    try {
+      const path = await writeAutomationDataResults(dataSource.path, 0, dataCheckpoint.results, updateSource)
+      notify('Automation results saved', path, 'success')
+    } catch (cause) { notify('Could not save results', String(cause), 'error') }
+  }
+
+  const handleExportDataReport = async (format: 'json' | 'csv') => {
+    if (!dataCheckpoint) return
+    const selected = await saveDialog({ title: 'Export batch report', defaultPath: `automation-results.${format}`, filters: [{ name: format.toUpperCase(), extensions: [format] }] })
+    if (!selected) return
+    try {
+      const path = await saveAutomationBatchReport(selected, exportAutomationBatchReport(dataCheckpoint.results, format))
+      notify('Batch report exported', path, 'success')
+    } catch (cause) { notify('Could not export report', String(cause), 'error') }
   }
 
   const handleImport = (yaml: string) => {
@@ -299,6 +516,8 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
 
   const handleRun = async () => {
     if (!builder.isValid || maestro.running || batchRunning || !targetResolution.isValid) return
+    setLiveMaestroLog([])
+    runCaptureRef.current = true
     setFailedActionId(null)
     if (target.mode !== 'current' || targetResolution.serials.length > 1) {
       const controller = new AbortController()
@@ -318,6 +537,7 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
           async (serial, context) => {
             const runId = `${parentId}-${context.index}`
             activeBatchRunsRef.current.add(runId)
+            appendLiveLog(`\n=== Device ${serial} · starting ===`)
             context.log(`Starting ${builder.flow.name} on ${serial}`)
             try {
               const result = await runMaestroTest(path, serial, runId)
@@ -326,6 +546,7 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
               if (result.stderr.trim()) context.log(result.stderr.trim(), 'error')
               if (!result.success) throw new Error(result.stderr.trim() || (result.cancelled ? 'Maestro run cancelled' : 'Maestro flow failed'))
             } finally {
+              appendLiveLog(`=== Device ${serial} · finished ===`)
               activeBatchRunsRef.current.delete(runId)
             }
           },
@@ -337,6 +558,7 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
       } catch (cause) {
         notify('Multi-device run failed', String(cause), 'error')
       } finally {
+        runCaptureRef.current = false
         batchAbortRef.current = null
         activeBatchRunsRef.current.clear()
         setBatchRunning(false)
@@ -347,11 +569,13 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
     try {
       path = await writeFlowFile()
     } catch (cause) {
+      runCaptureRef.current = false
       notify('Could not save YAML for run', String(cause), 'error')
       return
     }
     let lastResult = null
     for (let index = 0; index < repeatCount; index += 1) {
+      if (repeatCount > 1) appendLiveLog(`\n=== Repeat ${index + 1}/${repeatCount} ===`)
       lastResult = await maestro.run(path, {
         flowId: builder.flow.id,
         flowName: builder.flow.name,
@@ -360,6 +584,7 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
       })
       if (!lastResult?.success) break
     }
+    runCaptureRef.current = false
     if (!lastResult) return
     setRunHistoryToken((token) => token + 1)
     setLowerRightTab(lastResult.success ? 'history' : 'logs')
@@ -411,6 +636,7 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
     if (!maestro.result) return ''
     return [maestro.result.stdout, maestro.result.stderr].filter((value) => value.trim()).join('\n')
   }, [maestro.error, maestro.result])
+  const displayedRunOutput = liveMaestroLog.length > 0 ? liveMaestroLog.join('\n') : lastRunOutput
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -539,6 +765,20 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
           </button>
         </div>
 
+        {dataSource && (dataRunning || dataProgress) && (
+          <div className="flex min-h-8 items-center gap-2 border-t border-primary/20 bg-primary/5 px-3 text-[8px]">
+            <Database size={10} className="text-primary" />
+            <button type="button" onClick={() => setDataSourceDialogOpen(true)} className="max-w-56 truncate font-semibold text-primary hover:underline" title={dataSource.path}>{dataSource.path.split(/[\\/]/).pop()}</button>
+            <span className="text-[var(--text-muted)]">{dataRunning ? (dataProgress?.paused ? 'Paused' : 'Running') : 'Last run'} {dataProgress ? `${dataProgress.current}/${dataProgress.total}` : ''}</span>
+            {dataProgress?.currentJob && <span className="min-w-0 flex-1 truncate font-mono text-[var(--text-subtle)]">Row {dataProgress.currentJob.rowId}</span>}
+            {dataRunning && (dataProgress?.paused
+              ? <button type="button" onClick={() => { dataControlRef.current.paused = false; setDataProgress((value) => value ? { ...value, paused: false } : value) }} className="rounded border border-[var(--border-base)] px-2 py-1 text-primary">Resume</button>
+              : <button type="button" onClick={() => { dataControlRef.current.paused = true; setDataProgress((value) => value ? { ...value, paused: true } : value) }} className="rounded border border-[var(--border-base)] px-2 py-1 text-[var(--text-muted)]">Pause</button>)}
+            {dataRunning && <button type="button" onClick={() => { dataControlRef.current.stopped = true; void maestro.cancel() }} className="rounded bg-red-500/15 px-2 py-1 text-red-300">Stop</button>}
+            <button type="button" onClick={() => setDataSourceDialogOpen(true)} className="rounded border border-[var(--border-base)] px-2 py-1 text-[var(--text-muted)]">Open monitor</button>
+          </div>
+        )}
+
         {advancedOpen && (
           <div className="grid gap-2 border-t border-[var(--border-subtle)] px-3 py-2 sm:grid-cols-[minmax(220px,1fr)_auto]">
             <label className="text-[8px] text-[var(--text-subtle)]">Application package
@@ -585,7 +825,7 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
             {lowerRightTab === 'history' ? <MaestroRunHistoryPanel refreshToken={runHistoryToken} showHeader={false} /> : (
               <div className="flex h-full min-h-0 flex-col">
                 <div className="flex h-7 shrink-0 items-center gap-2 border-b border-[var(--border-subtle)] px-3 text-[8px] text-[var(--text-subtle)]">
-                  <span>{maestro.result ? (maestro.result.success ? 'Passed' : maestro.result.cancelled ? 'Cancelled' : 'Failed') : 'No run selected'}</span>
+                  <span>{dataRunning ? `Running row ${dataProgress?.currentJob?.rowId ?? dataProgress?.current ?? '…'} of ${dataProgress?.total ?? '…'}` : maestro.running ? (runProgress.totalCount > 0 ? `Running step ${Math.min(runProgress.completedCount + 1, runProgress.totalCount)}/${runProgress.totalCount}` : 'Running Maestro…') : maestro.result ? (maestro.result.success ? 'Passed' : maestro.result.cancelled ? 'Cancelled' : 'Failed') : 'No run selected'}</span>
                   {failedActionId && <button type="button" onClick={() => builder.selectAction(failedActionId)} className="ml-auto text-red-300 hover:underline">Edit failed step</button>}
                 </div>
                 {lastBatch && (
@@ -598,7 +838,7 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
                     ))}
                   </div>
                 )}
-                <pre id="maestro-last-run-logs" className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-[8px] leading-relaxed text-[var(--text-subtle)]">{lastRunOutput || 'Run the flow to inspect live Maestro output.'}</pre>
+                <pre ref={liveLogRef} id="maestro-last-run-logs" aria-live="polite" className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-[8px] leading-relaxed text-[var(--text-subtle)]">{displayedRunOutput || 'Run the flow to inspect live Maestro output.'}</pre>
               </div>
             )}
           </div>
@@ -621,12 +861,29 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
       )}
       {dataSource && (
         <MaestroDataSourceDialog
+          key={`${builder.flow.id}:${dataSource.path}`}
           source={dataSource}
+          open={dataSourceDialogOpen}
+          persistenceKey={`${builder.flow.id}:${dataSource.path}`}
           yamlTemplate={builder.yaml}
           running={dataRunning}
           canRun={Boolean(activeDevice) && builder.isValid}
-          onClose={() => { if (!dataRunning) setDataSource(null) }}
+          onClose={() => setDataSourceDialogOpen(false)}
+          onChangeSource={() => void handleChooseDataSource()}
+          onAddSource={() => void handleChooseDataSource('add')}
+          onReplaceSource={(index) => void handleChooseDataSource('replace', index)}
+          onRemoveSource={handleRemoveDataSource}
+          onReloadSource={(index) => void handleReloadDataSource(index)}
           onRun={(records) => void handleRunDataRecords(records)}
+          onRunConfigured={(records, options, subset) => void handleRunDataRecords(records, options, subset)}
+          onRunSequential={(primary, fallback, options) => void handleRunSequentialFallback(primary, fallback, options)}
+          progress={dataProgress}
+          sequentialProgress={sequentialProgress}
+          onPause={() => { dataControlRef.current.paused = true; setDataProgress((value) => value ? { ...value, paused: true } : value) }}
+          onResume={() => { dataControlRef.current.paused = false; setDataProgress((value) => value ? { ...value, paused: false } : value) }}
+          onStop={() => { dataControlRef.current.stopped = true; void maestro.cancel() }}
+          onWriteResults={(updateSource) => void handleWriteDataResults(updateSource)}
+          onExportReport={(format) => void handleExportDataReport(format)}
         />
       )}
     </div>

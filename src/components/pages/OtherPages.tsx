@@ -6,11 +6,12 @@ type OtherPageRoute = Exclude<AppRouteId, 'dashboard'>
 interface OtherPagesProps {
   route: OtherPageRoute
   devices: ReactNode
+  pairDevice: ReactNode
+  deviceWall: ReactNode
   sessions: ReactNode
   screenshots: ReactNode
   recordings: ReactNode
   fileExplorer: ReactNode
-  wirelessAdb: ReactNode
   appManager: ReactNode
   apkToolkit: ReactNode
   simulators: ReactNode
@@ -27,11 +28,12 @@ interface OtherPagesProps {
 export default function OtherPages({
   route,
   devices,
+  pairDevice,
+  deviceWall,
   sessions,
   screenshots,
   recordings,
   fileExplorer,
-  wirelessAdb,
   appManager,
   apkToolkit,
   simulators,
@@ -46,11 +48,12 @@ export default function OtherPages({
 }: OtherPagesProps) {
   const content: Record<OtherPageRoute, ReactNode> = {
     devices,
+    'pair-device': pairDevice,
+    'device-wall': deviceWall,
     sessions,
     screenshots,
     recordings,
     'file-explorer': fileExplorer,
-    'wireless-adb': wirelessAdb,
     'app-manager': appManager,
     'apk-toolkit': apkToolkit,
     simulators,

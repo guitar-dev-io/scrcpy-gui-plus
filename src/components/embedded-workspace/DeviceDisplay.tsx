@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { EmbeddedSessionState } from '../../hooks/useEmbeddedSession'
 import DeviceStatusOverlay, { type OverlayKind } from './DeviceStatusOverlay'
 
@@ -36,6 +37,7 @@ export default function DeviceDisplay({
   onRetry,
   onStop,
 }: DeviceDisplayProps) {
+  const [focused, setFocused] = useState(false)
   const connected = state === 'connected'
   const hasImage = Boolean(imageSrc)
   const displayConnected = connected || hasImage
@@ -56,8 +58,15 @@ export default function DeviceDisplay({
     <div
       ref={containerRef}
       tabIndex={0}
-      className={`relative min-h-0 min-w-0 flex-1 overflow-hidden outline-none focus:border-primary/40 ${
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      aria-label="Device screen"
+      className={`relative min-h-0 min-w-0 flex-1 overflow-hidden outline-none ${
         bare ? 'bg-transparent' : 'rounded-xl border border-zinc-800 bg-black'
+      } ${
+        focused && displayConnected
+          ? 'shadow-[inset_0_0_0_2px_var(--focus-ring)]'
+          : ''
       }`}
       style={{
         userSelect: 'none',
@@ -95,6 +104,15 @@ export default function DeviceDisplay({
         />
       )}
 
+      {/* Keyboard input follows DOM focus. Say so, rather than letting the
+          keystrokes disappear with no explanation. */}
+      {displayConnected && !focused && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center pb-2">
+          <span className="rounded-full bg-black/65 px-2.5 py-1 text-[9px] font-medium text-white/75 backdrop-blur">
+            Click the screen to send keyboard input
+          </span>
+        </div>
+      )}
     </div>
   )
 }

@@ -71,6 +71,8 @@ object ProtocolJson {
         packageName: String,
         version: String,
         pairingToken: String? = null,
+        deviceId: String? = null,
+        approvalNonce: String? = null,
     ): ByteArray {
         val capabilities = JSONArray()
         CAPABILITIES.forEach { capability -> capabilities.put(capability) }
@@ -81,7 +83,13 @@ object ProtocolJson {
             .put("package", packageName)
             .put("version", version)
             .put("capabilities", capabilities)
-        if (pairingToken != null) hello.put("token", pairingToken)
+        if (!pairingToken.isNullOrEmpty()) hello.put("token", pairingToken)
+        // Sent in place of a token by a device found through LAN discovery. The desktop
+        // derives the digits it shows its user from this value.
+        if (!approvalNonce.isNullOrEmpty()) hello.put("nonce", approvalNonce)
+        // Stable identity persisted by this app (SharedPreferences UUID), independent
+        // of the desktop's connection-scoped id. See AgentIdentity.
+        if (deviceId != null) hello.put("deviceId", deviceId)
         return encode(hello)
     }
 

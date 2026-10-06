@@ -10,6 +10,8 @@ describe('app route registry', () => {
     expect(APP_ROUTES.map((route) => route.id)).toEqual([
       'dashboard',
       'devices',
+      'pair-device',
+      'device-wall',
       'sessions',
       'screenshots',
       'recordings',
@@ -24,7 +26,6 @@ describe('app route registry', () => {
       'performance',
       'input-control',
       'qr-studio',
-      'wireless-adb',
       'settings',
     ])
   })
@@ -36,7 +37,9 @@ describe('app route registry', () => {
   })
 
   it('resolves hashes and falls back to the dashboard', () => {
-    expect(appRouteFromHash('#/wireless-adb')).toBe('wireless-adb')
+    expect(appRouteFromHash('#/pair-device')).toBe('pair-device')
+    // Retired path, aliased so old hashes still resolve.
+    expect(appRouteFromHash('#/wireless-adb')).toBe('pair-device')
     expect(appRouteFromHash('#/settings/')).toBe('settings')
     expect(appRouteFromHash('#/unknown')).toBe('dashboard')
     expect(appRouteFromHash('')).toBe('dashboard')

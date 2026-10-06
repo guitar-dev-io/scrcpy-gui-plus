@@ -1,16 +1,16 @@
 import {
   AppWindow,
+  Code2,
   Coffee,
   Folder,
-  Github,
   Image,
   LayoutDashboard,
   MonitorPlay,
+  PlaySquare,
   Settings,
   Smartphone,
   Video,
   Wifi,
-  Youtube,
 } from 'lucide-react'
 import type { AppRouteId } from '../navigation/appRoutes'
 import { useShellUi } from '../contexts/ShellUiContext'
@@ -30,7 +30,7 @@ const dockItems: Array<{
   { route: 'screenshots', label: 'Screenshots', icon: Image },
   { route: 'recordings', label: 'Recordings', icon: Video },
   { route: 'file-explorer', label: 'File Explorer', icon: Folder },
-  { route: 'wireless-adb', label: 'Wireless ADB', icon: Wifi },
+  { route: 'pair-device', label: 'Connect', icon: Wifi },
   { route: 'app-manager', label: 'App Manager', icon: AppWindow },
   { route: 'settings', label: 'Settings', icon: Settings },
 ]
@@ -70,8 +70,8 @@ export default function Footer({ version }: FooterProps) {
       </nav>
 
       <div className="hidden w-[180px] items-center justify-end gap-3 text-[var(--text-subtle)] xl:flex">
-        <a href="https://github.com/kil0bit-kb" target="_blank" rel="noopener noreferrer" aria-label="GitHub" className="hover:text-[var(--text-base)]"><Github size={13} /></a>
-        <a href="https://www.youtube.com/@kilObit" target="_blank" rel="noopener noreferrer" aria-label="YouTube" className="hover:text-[var(--text-base)]"><Youtube size={13} /></a>
+        <a href="https://github.com/kil0bit-kb" target="_blank" rel="noopener noreferrer" aria-label="GitHub" className="hover:text-[var(--text-base)]"><Code2 size={13} /></a>
+        <a href="https://www.youtube.com/@kilObit" target="_blank" rel="noopener noreferrer" aria-label="YouTube" className="hover:text-[var(--text-base)]"><PlaySquare size={13} /></a>
         <a href="https://www.patreon.com/cw/KB_kilObit" target="_blank" rel="noopener noreferrer" aria-label="Support" className="hover:text-primary"><Coffee size={13} /></a>
       </div>
     </footer>

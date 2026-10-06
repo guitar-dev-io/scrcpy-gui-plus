@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Play, Square, Monitor, Camera, LayoutGrid, ChevronDown, Lock, Unlock, Settings2, Video, ExternalLink, Keyboard, Mouse } from 'lucide-react';
+import { ChevronDown, Lock, Unlock, Settings2, Video, ExternalLink, Keyboard, Mouse } from 'lucide-react';
 import { RenderDriverSupport, ScrcpyConfig } from '../../hooks/useScrcpy';
 import Tooltip from '../Tooltip';
 import { buildRendererOptions, mapRendererSelection } from './rendererOptions';
@@ -8,41 +8,11 @@ import { useI18n } from '../../i18n';
 interface ControlPanelProps {
     config: ScrcpyConfig;
     setConfig: (c: ScrcpyConfig) => void;
-    onStart: () => void;
-    onStop: () => void;
     isRunning: boolean;
     onListOptions: (arg: string) => void;
     detectedCameras?: { id: string, name: string }[];
     renderDriverSupport?: RenderDriverSupport;
 }
-
-const BitrateControl = ({ label, value, onChange }: { label: string, value: number, onChange: (val: number) => void }) => {
-    const [localValue, setLocalValue] = useState(value);
-
-    // Sync from parent if parent changes externally (e.g. preset load)
-    useEffect(() => {
-        setLocalValue(value);
-    }, [value]);
-
-    return (
-        <div className="space-y-1">
-            <div className="flex justify-between items-center h-4">
-                <label className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">{label}</label>
-                <span className="text-[10px] font-black text-primary tabular-nums">{localValue}M</span>
-            </div>
-            <input
-                type="range"
-                min="1"
-                max="50"
-                value={localValue}
-                onChange={(e) => setLocalValue(parseInt(e.target.value))}
-                onMouseUp={() => onChange(localValue)}
-                onTouchEnd={() => onChange(localValue)}
-                className="w-full h-1 accent-primary bg-zinc-800 rounded-full appearance-none cursor-pointer hover:bg-zinc-700 transition-colors"
-            />
-        </div>
-    );
-};
 
 const VDSlider = ({ label, value, min, max, unit = "", onChange }: { label: string, value: number, min: number, max: number, unit?: string, onChange: (val: number) => void }) => {
     const [localValue, setLocalValue] = useState(value);
@@ -67,11 +37,18 @@ const VDSlider = ({ label, value, min, max, unit = "", onChange }: { label: stri
     );
 };
 
+/**
+ * The deep session configuration, shown in the dashboard's Advanced drawer.
+ *
+ * Controls with an owner elsewhere in the dashboard deliberately do not appear
+ * here: session mode and Start/Stop belong to the header command bar, and
+ * FPS / bitrate / VSync belong to SessionControlPanel's Performance section.
+ * Rendering a second copy of them in this drawer left two differently-styled
+ * widgets writing the same `config` key, so neither read as authoritative.
+ */
 export default function ControlPanel({
     config,
     setConfig,
-    onStart,
-    onStop,
     isRunning,
     onListOptions,
     detectedCameras = [],
@@ -84,6 +61,18 @@ export default function ControlPanel({
     };
 
     const rendererOptions = buildRendererOptions(renderDriverSupport, t('controlPanel.rendererAuto'));
+
+    const osHwdecOption: { value: string, label: string } | null = {
+        windows: { value: 'd3d11va', label: 'D3D11VA' },
+        macos: { value: 'videotoolbox', label: 'VideoToolbox' },
+        linux: { value: 'vaapi', label: 'VA-API' },
+    }[renderDriverSupport.hostOs] || null;
+
+    const hwdecOptions = [
+        { value: 'auto', label: t('controlPanel.rendererAuto') },
+        { value: 'disabled', label: t('controlPanel.hwdecDisabled') },
+        ...(osHwdecOption ? [osHwdecOption] : []),
+    ];
 
     const CustomSelect = ({ value, onChange, options, label, className = "" }: { value: any, onChange: (val: any) => void, options: { value: any, label: string }[], label?: string, className?: string }) => {
         const [isOpen, setIsOpen] = useState(false);
@@ -132,8 +121,6 @@ export default function ControlPanel({
         );
     };
 
-    // BitrateControl removed from here
-
     const PerformanceGrid = ({ showResolution = true }: { showResolution?: boolean }) => (
         <>
         <div className={`grid ${showResolution ? 'grid-cols-3' : 'grid-cols-2'} gap-2`}>
@@ -155,18 +142,6 @@ export default function ControlPanel({
                 />
             )}
             <CustomSelect
-                label={t('controlPanel.fps')}
-                value={config.fps === undefined || config.fps === null ? 0 : config.fps}
-                onChange={(val) => handleChange('fps', parseInt(val) === 0 ? undefined : parseInt(val))}
-                options={[
-                    { value: 0, label: t('controlPanel.rendererAuto') || "Auto" },
-                    { value: 30, label: "30" },
-                    { value: 60, label: "60" },
-                    { value: 90, label: "90" },
-                    { value: 120, label: "120" },
-                ]}
-            />
-            <CustomSelect
                 label={t('controlPanel.rotation')}
                 value={config.rotation || "0"}
                 onChange={(val) => handleChange('rotation', val)}
@@ -184,54 +159,19 @@ export default function ControlPanel({
                 options={rendererOptions}
             />
         </div>
-        <Tooltip text={t('controlPanel.vsyncTooltip')}>
-            <div
-                className="flex items-center justify-between gap-2 cursor-pointer group px-2 py-1.5 rounded-lg border border-zinc-800/60 bg-zinc-950/20 hover:border-primary/40 transition-colors"
-                onClick={() => handleChange('vsync', config.vsync === false)}
-            >
-                <div className="flex items-center gap-2">
-                    <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-colors ${config.vsync !== false ? 'bg-primary border-primary' : 'border-zinc-700 group-hover:border-primary'}`}>
-                        {config.vsync !== false && <div className="w-1.5 h-1.5 bg-black rounded-[1px]" />}
-                    </div>
-                    <span className="text-[10px] font-bold uppercase text-zinc-300 tracking-wide group-hover:text-primary transition-colors">{t('controlPanel.vsync')}</span>
-                </div>
-                <span className="text-[8px] font-black uppercase tracking-tighter text-zinc-600 group-hover:text-primary/70 transition-colors">{t('controlPanel.vsyncHint')}</span>
-            </div>
-        </Tooltip>
+        <div className="grid grid-cols-1 gap-2 mt-2">
+            <CustomSelect
+                label={t('controlPanel.hwdec')}
+                value={config.hwdec || 'auto'}
+                onChange={(val) => handleChange('hwdec', val === 'auto' ? undefined : val)}
+                options={hwdecOptions}
+            />
+        </div>
         </>
     );
 
     return (
         <div className="space-y-4 lg:col-span-6">
-            <div className="glass p-3.5 rounded-2xl border border-zinc-800 bg-zinc-900/50 backdrop-blur-md">
-                <div className="flex items-center gap-2 mb-1.5">
-                    <label className="text-[10px] font-black uppercase text-zinc-400 tracking-widest">{t('controlPanel.captureSource')}</label>
-                </div>
-                <div className="grid grid-cols-3 gap-1.5 bg-zinc-950/50 p-1 rounded-xl border border-zinc-800">
-                    <button
-                        onClick={() => handleChange('sessionMode', 'mirror')}
-                        className={`flex flex-col items-center gap-1.5 py-2.5 rounded-lg transition-all ${config.sessionMode === 'mirror' ? 'bg-primary text-on-primary shadow-lg shadow-primary/20' : 'text-zinc-500 hover:text-primary hover:bg-zinc-950 transition-all'}`}
-                    >
-                        <Monitor size={18} strokeWidth={2.5} />
-                        <span className="text-[9px] font-black uppercase tracking-wider">{t('controlPanel.screen')}</span>
-                    </button>
-                    <button
-                        onClick={() => handleChange('sessionMode', 'camera')}
-                        className={`flex flex-col items-center gap-1.5 py-2.5 rounded-lg transition-all ${config.sessionMode === 'camera' ? 'bg-primary text-on-primary shadow-lg shadow-primary/20' : 'text-zinc-500 hover:text-primary hover:bg-zinc-950 transition-all'}`}
-                    >
-                        <Camera size={18} strokeWidth={2.5} />
-                        <span className="text-[9px] font-black uppercase tracking-wider">{t('controlPanel.camera')}</span>
-                    </button>
-                    <button
-                        onClick={() => handleChange('sessionMode', 'desktop')}
-                        className={`flex flex-col items-center gap-1.5 py-2.5 rounded-lg transition-all ${config.sessionMode === 'desktop' ? 'bg-primary text-on-primary shadow-lg shadow-primary/20' : 'text-zinc-500 hover:text-primary hover:bg-zinc-950 transition-all'}`}
-                    >
-                        <LayoutGrid size={18} strokeWidth={2.5} />
-                        <span className="text-[9px] font-black uppercase tracking-wider">{t('controlPanel.desktop')}</span>
-                    </button>
-                </div>
-            </div>
-
             <div className="glass p-3.5 rounded-xl space-y-3 transition-all duration-300 border border-zinc-800 bg-zinc-900/40 backdrop-blur-md relative z-20">
                 <div className="flex justify-between items-center border-b border-zinc-800/60 pb-1.5 mb-1">
                     <div className="flex items-center gap-3">
@@ -328,7 +268,6 @@ export default function ControlPanel({
                                     </p>
                                 )}
                                 <PerformanceGrid />
-                                <BitrateControl label={t('controlPanel.bitrate')} value={config.bitrate || 8} onChange={(v) => handleChange('bitrate', v)} />
                             </div>
                         </>
                     )}
@@ -447,7 +386,6 @@ export default function ControlPanel({
 
                             <div className={`space-y-2.5 pt-0.5`}>
                                 <PerformanceGrid />
-                                <BitrateControl label={t('controlPanel.bitrate')} value={config.bitrate || 8} onChange={(v) => handleChange('bitrate', v)} />
                             </div>
                         </div>
                     )}
@@ -560,7 +498,6 @@ export default function ControlPanel({
 
                             <div className="space-y-2.5 pt-0.5">
                                 <PerformanceGrid showResolution={false} />
-                                <BitrateControl label={t('controlPanel.bitrate')} value={config.bitrate || 8} onChange={(v) => handleChange('bitrate', v)} />
                                 {/* v4: Background Color for Desktop mode */}
                                 <div className="space-y-1">
                                     <div className="flex items-center gap-1.5">
@@ -592,38 +529,6 @@ export default function ControlPanel({
                 </div>
             </div>
 
-            <div className="pt-2 relative z-10">
-                {!isRunning ? (
-                    <button
-                        onClick={onStart}
-                        className="w-full py-3.5 rounded-2xl text-base font-black uppercase tracking-[0.2em] transition-all relative overflow-hidden group active:scale-[0.98]"
-                    >
-                        {/* Pulse Glow Layer */}
-                        <div className="absolute inset-0 bg-primary opacity-80 group-hover:opacity-100 transition-opacity" />
-                        <div className="absolute inset-0 bg-primary animate-ping opacity-20 group-hover:opacity-40 pointer-events-none" />
-
-                        <span className="relative z-10 flex items-center justify-center gap-3 text-on-primary">
-                            <Play fill="currentColor" size={18} className="group-hover:scale-110 transition-transform" />
-                            {config.sessionMode === 'mirror'
-                                ? ((config.hidKeyboard || config.hidMouse) && config.otgPure ? t('controlPanel.initializeOtg') : t('controlPanel.startMission'))
-                                : config.sessionMode === 'camera' ? t('controlPanel.engageCamera') : t('controlPanel.ejectToDesktop')}
-                        </span>
-                    </button>
-                ) : (
-                    <button
-                        onClick={onStop}
-                        className="w-full py-3.5 rounded-2xl text-base font-black uppercase tracking-[0.2em] transition-all relative overflow-hidden group active:scale-[0.98] border border-red-500/50"
-                    >
-                        {/* Dark Red Gradient Background */}
-                        <div className="absolute inset-0 bg-gradient-to-r from-red-600 to-red-900 group-hover:from-red-500 group-hover:to-red-800 transition-all" />
-
-                        <span className="relative z-10 flex items-center justify-center gap-3 text-white">
-                            <Square fill="white" size={18} className="group-hover:rotate-90 transition-transform duration-500" />
-                            {t('controlPanel.stopSession')}
-                        </span>
-                    </button>
-                )}
-            </div>
         </div>
     );
 }

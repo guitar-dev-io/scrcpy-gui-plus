@@ -1,0 +1,228 @@
+appId: "com.hip.iot"
+
+env:
+  BRANCH_CODE: ""
+  BRANCH_NAME: ""
+  MEMBER_NAME: ""
+  MEMBER_ACCOUNT: ""
+
+---
+
+# ============================================================
+# HIP IoT - Create Member Invite
+#
+# Data Source:
+#   homes:
+#     BRANCH_CODE
+#     BRANCH_NAME
+#
+#   members:
+#     MEMBER_NAME
+#     MEMBER_ACCOUNT
+#
+# Recommended:
+#   Run mode          = Cross join
+#   Primary Dataset   = homes
+#   Additional Dataset = members
+#
+# Example:
+#   homes(1) x members(2) = 2 runs
+# ============================================================
+
+# ------------------------------------------------------------
+# 1. Launch app
+# ------------------------------------------------------------
+
+- launchApp:
+    stopApp: true
+
+- waitForAnimationToEnd:
+    timeout: 3000
+
+
+# ------------------------------------------------------------
+# 2. Enter first WX home if Home Management isn't visible
+# ------------------------------------------------------------
+
+- runFlow:
+    when:
+      notVisible:
+        text: "การจัดการบ้าน|Home Management"
+    commands:
+
+      # Wait until at least one WX home is available
+      - extendedWaitUntil:
+          visible:
+            text: "^WX[0-9]+.*"
+          timeout: 15000
+
+      - tapOn:
+          text: "^WX[0-9]+.*"
+          index: 0
+          retryTapIfNoChange: true
+
+      - waitForAnimationToEnd:
+          timeout: 2000
+
+
+# ------------------------------------------------------------
+# 3. Open Home Management
+# ------------------------------------------------------------
+
+- extendedWaitUntil:
+    visible:
+      text: "การจัดการบ้าน|Home Management"
+    timeout: 15000
+
+- tapOn:
+    text: "การจัดการบ้าน|Home Management"
+    retryTapIfNoChange: true
+
+- waitForAnimationToEnd:
+    timeout: 2000
+
+
+# ------------------------------------------------------------
+# 4. Make sure Home Management list has loaded
+# ------------------------------------------------------------
+
+- extendedWaitUntil:
+    visible:
+      text: "^WX[0-9]+.*"
+    timeout: 15000
+
+
+# ------------------------------------------------------------
+# 5. Reset list to top
+#
+# Important:
+# HIP IoT may remember the previous scroll position.
+# If WX0005 is above the current position,
+# scrollUntilVisible DOWN alone will never find it.
+# ------------------------------------------------------------
+
+- repeat:
+    times: 6
+    commands:
+      - swipe:
+          direction: DOWN
+          duration: 300
+
+- waitForAnimationToEnd:
+    timeout: 1000
+
+
+# ------------------------------------------------------------
+# 6. Find target branch
+#
+# Matches:
+#   WX0007
+#   WX0007 xxxx
+#   WX0007_xxxx
+#   WX0007-xxxx
+#
+# BRANCH_NAME is intentionally NOT used for selector.
+# ------------------------------------------------------------
+
+- scrollUntilVisible:
+    element:
+      text: "^${BRANCH_CODE}([\\s_-]|$).*"
+    direction: DOWN
+    timeout: 60000
+    speed: 35
+    visibilityPercentage: 20
+    centerElement: true
+
+
+# ------------------------------------------------------------
+# 7. Select branch
+# ------------------------------------------------------------
+
+- tapOn:
+    text: "^${BRANCH_CODE}([\\s_-]|$).*"
+    retryTapIfNoChange: true
+
+- waitForAnimationToEnd:
+    timeout: 2000
+
+
+# ------------------------------------------------------------
+# 8. Wait for Home Settings
+# ------------------------------------------------------------
+
+- extendedWaitUntil:
+    visible:
+      text: "การตั้งค่าบ้าน|Home Settings"
+    timeout: 15000
+
+
+# ------------------------------------------------------------
+# 9. Find Add Member
+# ------------------------------------------------------------
+
+- scrollUntilVisible:
+    element:
+      text: "เพิ่มสมาชิก|Add Member"
+    direction: DOWN
+    timeout: 30000
+    speed: 40
+    visibilityPercentage: 20
+    centerElement: true
+
+
+# ------------------------------------------------------------
+# 10. Open Add Member
+# ------------------------------------------------------------
+
+- tapOn:
+    text: "เพิ่มสมาชิก|Add Member"
+    retryTapIfNoChange: true
+
+- waitForAnimationToEnd:
+    timeout: 1000
+
+
+# ------------------------------------------------------------
+# 11. Share / Copy invitation
+#
+# Do NOT enter MEMBER_ACCOUNT here.
+#
+# The App Account field requires HIP internal account number,
+# not an email address.
+# ------------------------------------------------------------
+
+- extendedWaitUntil:
+    visible:
+      text: "คัดลอก|Copy"
+    timeout: 15000
+
+- tapOn:
+    text: "คัดลอก|Copy"
+    retryTapIfNoChange: true
+
+
+# ------------------------------------------------------------
+# 12. Verify pending invitation exists
+# ------------------------------------------------------------
+
+- extendedWaitUntil:
+    visible:
+      text: "รอให้เข้าร่วม|Waiting to join"
+    timeout: 15000
+
+
+# ------------------------------------------------------------
+# 13. Capture evidence
+#
+# MEMBER_NAME / MEMBER_ACCOUNT are reference data only.
+# They are NOT associated with the HIP invitation yet.
+# ------------------------------------------------------------
+
+- takeScreenshot: "invite-created-${BRANCH_CODE}-${MEMBER_NAME}"
+
+
+# ------------------------------------------------------------
+# 14. Finish this Data Source iteration
+# ------------------------------------------------------------
+
+- back

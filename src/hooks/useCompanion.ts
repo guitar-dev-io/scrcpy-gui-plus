@@ -2,10 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Channel } from '@tauri-apps/api/core'
 import { isTauri } from '../utils/tauriEnv'
 import {
+  approveCompanionPairing,
   disconnectCompanion,
   onCompanionRemoteStatus,
   onCompanionScreenStatus,
+  onCompanionPairingApproval,
   onCompanionStatus,
+  onCompanionTelemetry,
   requestCompanion,
   scanCompanionDevices,
   startCompanionLanPairing,
@@ -16,6 +19,7 @@ import {
 } from '../services/companionService'
 import {
   CompanionOperationError,
+  type CompanionApprovalEvent,
   type CompanionDevice,
   type CompanionLanOffer,
   type CompanionMethod,
@@ -26,7 +30,9 @@ import {
   type CompanionScreenState,
   type CompanionScreenStatusEvent,
   type CompanionStatusEvent,
+  type CompanionTelemetryEvent,
 } from '../types/companion'
+import { getOrCreateStudioId, getStudioName } from '../utils/studioIdentity'
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -48,8 +54,12 @@ export function useCompanion() {
   const [isScanning, setIsScanning] = useState(false)
   const [isPairing, setIsPairing] = useState(false)
   const [lanOffer, setLanOffer] = useState<CompanionLanOffer | null>(null)
+  const [pendingApproval, setPendingApproval] =
+    useState<CompanionApprovalEvent | null>(null)
+  const [isApproving, setIsApproving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<CompanionStatusEvent | null>(null)
+  const [telemetry, setTelemetry] = useState<CompanionTelemetryEvent | null>(null)
   const [screenStatus, setScreenStatus] =
     useState<CompanionScreenStatusEvent | null>(null)
   const [screenFrame, setScreenFrame] = useState<string | null>(null)
@@ -137,6 +147,59 @@ export function useCompanion() {
     clearScreenFrame()
   }, [clearScreenFrame, updateScreenState])
 
+  // A discovered Agent has no pairing token, so this prompt is the only thing
+  // standing between a LAN client and a session. It is kept separate from
+  // `status` because it can arrive and be withdrawn without any stage change.
+  useEffect(() => {
+    if (!isTauri()) return
+
+    let disposed = false
+    let unlisten: (() => void) | undefined
+    void onCompanionPairingApproval((payload) => {
+      if (disposed) return
+      setPendingApproval((current) => {
+        if (payload.resolved) {
+          return current?.requestId === payload.requestId ? null : current
+        }
+        return payload
+      })
+      if (payload.resolved) setIsApproving(false)
+    })
+      .then((stopListening) => {
+        if (disposed) stopListening()
+        else unlisten = stopListening
+      })
+      .catch((listenError) => {
+        if (!disposed) {
+          console.warn('Could not listen for pairing approvals', listenError)
+        }
+      })
+
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [])
+
+  const respondToApproval = useCallback(
+    async (requestId: number, approve: boolean) => {
+      setIsApproving(true)
+      try {
+        await approveCompanionPairing(requestId, approve)
+      } catch (approveError) {
+        // The request is already gone (the Agent gave up, or pairing restarted).
+        // Dropping the prompt is the correct outcome either way.
+        console.warn('Could not answer the pairing request', approveError)
+      } finally {
+        setPendingApproval((current) =>
+          current?.requestId === requestId ? null : current,
+        )
+        setIsApproving(false)
+      }
+    },
+    [],
+  )
+
   useEffect(() => {
     if (!isTauri()) return
 
@@ -159,6 +222,7 @@ export function useCompanion() {
         setDevices([payload.device])
         setIsPairing(false)
         setLanOffer(null)
+        setPendingApproval(null)
       } else if (payload.stage === 'reconnecting') {
         // Keep the last device/offer visible while Android retries the socket.
         setIsPairing(false)
@@ -167,6 +231,7 @@ export function useCompanion() {
         resetRemoteState()
         pairingGenerationRef.current += 1
         setDevices([])
+        setTelemetry(null)
         setIsPairing(false)
         // Keep a still-valid LAN offer visible so a retry does not require a
         // second QR scan. Explicit disconnect() clears it below.
@@ -174,6 +239,7 @@ export function useCompanion() {
         pairingGenerationRef.current += 1
         setIsPairing(false)
         setLanOffer(null)
+        setPendingApproval(null)
       }
     })
       .then((stopListening) => {
@@ -218,6 +284,30 @@ export function useCompanion() {
       unlisten?.()
     }
   }, [applyRemoteStatus])
+
+  useEffect(() => {
+    if (!isTauri()) return
+
+    let disposed = false
+    let unlisten: (() => void) | undefined
+    void onCompanionTelemetry((payload) => {
+      if (!disposed) setTelemetry(payload)
+    })
+      .then((stopListening) => {
+        if (disposed) stopListening()
+        else unlisten = stopListening
+      })
+      .catch((listenError) => {
+        if (!disposed) {
+          console.warn('Could not listen for companion telemetry', listenError)
+        }
+      })
+
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [])
 
   useEffect(() => {
     if (!isTauri() || typeof onCompanionScreenStatus !== 'function') return
@@ -318,7 +408,10 @@ export function useCompanion() {
       }
 
       try {
-        const offer = await startCompanionLanPairing()
+        const offer = await startCompanionLanPairing(
+          getOrCreateStudioId(),
+          getStudioName(),
+        )
         if (generation !== pairingGenerationRef.current) return null
         backendPairingGenerationRef.current = Math.max(
           backendPairingGenerationRef.current,
@@ -549,6 +642,7 @@ export function useCompanion() {
     setDevices([])
     setError(null)
     setStatus(null)
+    setTelemetry(null)
 
     if (!isTauri()) return
 
@@ -715,8 +809,12 @@ export function useCompanion() {
     isScanning,
     isPairing,
     lanOffer,
+    pendingApproval,
+    isApproving,
+    respondToApproval,
     error,
     status,
+    telemetry,
     screenStatus,
     screenFrame,
     getScreenFrameData,

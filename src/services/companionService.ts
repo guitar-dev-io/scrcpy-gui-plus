@@ -1,6 +1,7 @@
 import { invoke, Channel } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type {
+  CompanionApprovalEvent,
   CompanionLanOffer,
   CompanionMethod,
   CompanionParams,
@@ -11,14 +12,29 @@ import type {
   CompanionScanResponse,
   CompanionScreenStatusEvent,
   CompanionStatusEvent,
+  CompanionTelemetryEvent,
 } from '../types/companion'
 
 export function scanCompanionDevices(): Promise<CompanionScanResponse> {
   return invoke<CompanionScanResponse>('companion_scan')
 }
 
-export function startCompanionLanPairing(): Promise<CompanionLanOffer> {
-  return invoke<CompanionLanOffer>('companion_lan_start')
+export function startCompanionLanPairing(
+  studioId?: string,
+  studioName?: string,
+): Promise<CompanionLanOffer> {
+  return invoke<CompanionLanOffer>('companion_lan_start', {
+    studioId,
+    studioName,
+  })
+}
+
+/** Answer the prompt raised by an Agent that arrived through LAN discovery. */
+export function approveCompanionPairing(
+  requestId: number,
+  approve: boolean,
+): Promise<void> {
+  return invoke<void>('companion_pairing_approve', { requestId, approve })
 }
 
 export function requestCompanion<T = unknown>(
@@ -80,10 +96,26 @@ export function onCompanionStatus(
   )
 }
 
+export function onCompanionPairingApproval(
+  callback: (payload: CompanionApprovalEvent) => void,
+): Promise<UnlistenFn> {
+  return listen<CompanionApprovalEvent>('companion-pairing-approval', (event) =>
+    callback(event.payload),
+  )
+}
+
 export function onCompanionRemoteStatus(
   callback: (payload: CompanionRemoteStatusEvent) => void,
 ): Promise<UnlistenFn> {
   return listen<CompanionRemoteStatusEvent>('companion-remote-status', (event) =>
+    callback(event.payload),
+  )
+}
+
+export function onCompanionTelemetry(
+  callback: (payload: CompanionTelemetryEvent) => void,
+): Promise<UnlistenFn> {
+  return listen<CompanionTelemetryEvent>('companion-telemetry', (event) =>
     callback(event.payload),
   )
 }

@@ -25,6 +25,22 @@ export interface DiscoveredDeviceRecord {
   detail?: string
 }
 
+/** Mobile Studio Agent identity/telemetry, bridged in from the Companion
+ * connection (`companion-status`/`companion-telemetry`). Independent of
+ * `adbState`/`serial` — a phone can show up here with the Agent connected but
+ * no ADB session yet (see `mergeAgentDevice` / doc §9). */
+export interface AgentInfo {
+  deviceId: string
+  connected: boolean
+  battery?: number
+  wifiConnected?: boolean
+  lastHeartbeatAt?: string
+}
+
+/** Prefix for a Device Wall entry keyed by Agent identity before any matching
+ * ADB serial is known (doc §9: "Agent only" devices still show in the wall). */
+export const AGENT_ONLY_ID_PREFIX = 'agent:'
+
 export interface RegisteredDevice {
   id: string
   serial: string
@@ -37,6 +53,7 @@ export interface RegisteredDevice {
   detail?: string
   health?: DeviceStatus
   healthUpdatedAt?: string
+  agent?: AgentInfo
 }
 
 export type DeviceRegistryMap = Record<string, RegisteredDevice>
@@ -165,6 +182,7 @@ export function mergeDiscoveryRecords(
   )
   const next: DeviceRegistryMap = { ...current }
   const observed = new Set<string>()
+  const mergedPlaceholderIds = new Set<string>()
 
   discovered.forEach((record) => {
     const serial = record.serial.trim()
@@ -172,25 +190,47 @@ export function mergeDiscoveryRecords(
     observed.add(serial)
     const previous = current[serial]
     const adbState = normalizeAdbState(record.adbState)
+    const ipAddress =
+      record.connectionType === 'wifi'
+        ? serial.split(':')[0] || previous?.ipAddress
+        : previous?.ipAddress
+
+    // Auto-match an Agent-only placeholder onto this real ADB serial once we
+    // can see its IP (doc §8) — one RegisteredDevice, never two. Only merge
+    // when exactly one placeholder shares this IP; an ambiguous match is left
+    // alone rather than guessed.
+    let agent = previous?.agent
+    if (!agent && ipAddress) {
+      const placeholders = Object.values(current).filter(
+        (device) =>
+          device.id.startsWith(AGENT_ONLY_ID_PREFIX) &&
+          device.ipAddress === ipAddress,
+      )
+      if (placeholders.length === 1) {
+        agent = placeholders[0].agent
+        delete next[placeholders[0].id]
+        mergedPlaceholderIds.add(placeholders[0].id)
+      }
+    }
+
     next[serial] = {
       ...previous,
       id: serial,
       serial,
       adbState,
       connectionType: record.connectionType,
-      ipAddress:
-        record.connectionType === 'wifi'
-          ? serial.split(':')[0] || previous?.ipAddress
-          : previous?.ipAddress,
+      ipAddress,
       firstSeen: previous?.firstSeen || observedAt,
       lastSeen: observedAt,
       lastOnlineAt:
         adbState === 'device' ? observedAt : previous?.lastOnlineAt,
       detail: record.detail,
+      agent,
     }
   })
 
   Object.values(current).forEach((device) => {
+    if (mergedPlaceholderIds.has(device.id)) return
     if (!observed.has(device.serial)) {
       next[device.serial] = { ...device, adbState: 'disconnected' }
     }
@@ -230,10 +270,116 @@ export function loadDeviceRegistry(storage: Storage): DeviceRegistryMap {
             adbState: 'disconnected' as const,
             connectionType:
               device.connectionType === 'wifi' ? 'wifi' : 'usb',
+            agent: device.agent ? { ...device.agent, connected: false } : undefined,
           },
         ]),
     )
   } catch {
     return {}
+  }
+}
+
+interface CompanionAgentIdentity {
+  agentDeviceId?: string
+  peerIp?: string
+}
+
+interface AgentTelemetrySnapshot {
+  battery?: number
+  wifiConnected?: boolean
+}
+
+/**
+ * Fold a connected Companion Agent's identity/telemetry into the registry
+ * (doc §3/§9). Matches an existing ADB-discovered entry by IP when possible;
+ * otherwise creates an Agent-only placeholder (`agent:<id>`) so the phone
+ * still shows in Device Wall before/without ADB, with ADB-dependent actions
+ * gated off by its `adbState` staying `'disconnected'`. A device with no
+ * `agentDeviceId` (an Agent build older than this field) is left untouched —
+ * there is no stable identity to key a registry entry on.
+ */
+export function mergeAgentDevice(
+  current: DeviceRegistryMap,
+  companionDevice: CompanionAgentIdentity,
+  telemetry: AgentTelemetrySnapshot | null,
+  observedAt: string,
+): DeviceRegistryMap {
+  const agentDeviceId = companionDevice.agentDeviceId
+  if (!agentDeviceId) return current
+
+  // A telemetry-only update (no peerIp) must land on whatever entry already
+  // carries this Agent, real serial or placeholder — otherwise it would spawn
+  // a stray duplicate placeholder every heartbeat tick.
+  const existingEntry = Object.values(current).find(
+    (device) => device.agent?.deviceId === agentDeviceId,
+  )
+
+  const agent: AgentInfo = {
+    deviceId: agentDeviceId,
+    connected: true,
+    battery: telemetry?.battery,
+    wifiConnected: telemetry?.wifiConnected,
+    lastHeartbeatAt: telemetry ? observedAt : existingEntry?.agent?.lastHeartbeatAt,
+  }
+
+  if (existingEntry) {
+    return {
+      ...current,
+      [existingEntry.serial]: {
+        ...existingEntry,
+        agent,
+        ipAddress: companionDevice.peerIp ?? existingEntry.ipAddress,
+      },
+    }
+  }
+
+  const peerIp = companionDevice.peerIp
+  const matched = peerIp
+    ? Object.values(current).find(
+        (device) =>
+          !device.id.startsWith(AGENT_ONLY_ID_PREFIX) && device.ipAddress === peerIp,
+      )
+    : undefined
+
+  if (matched) {
+    return { ...current, [matched.serial]: { ...matched, agent } }
+  }
+
+  const placeholderId = `${AGENT_ONLY_ID_PREFIX}${agentDeviceId}`
+  const previous = current[placeholderId]
+  return {
+    ...current,
+    [placeholderId]: {
+      id: placeholderId,
+      serial: placeholderId,
+      adbState: 'disconnected',
+      connectionType: 'wifi',
+      ipAddress: peerIp ?? previous?.ipAddress,
+      firstSeen: previous?.firstSeen ?? observedAt,
+      lastSeen: observedAt,
+      lastOnlineAt: previous?.lastOnlineAt,
+      detail: previous?.detail,
+      health: previous?.health,
+      healthUpdatedAt: previous?.healthUpdatedAt,
+      agent,
+    },
+  }
+}
+
+/** Mark the Agent matching `agentDeviceId` as disconnected without discarding
+ * its registry entry, mirroring how ADB disconnects are handled. */
+export function markAgentDisconnected(
+  current: DeviceRegistryMap,
+  agentDeviceId: string,
+): DeviceRegistryMap {
+  const entry = Object.entries(current).find(
+    ([, device]) => device.agent?.deviceId === agentDeviceId,
+  )
+  if (!entry) return current
+  const [key, device] = entry
+  if (!device.agent) return current
+  return {
+    ...current,
+    [key]: { ...device, agent: { ...device.agent, connected: false } },
   }
 }

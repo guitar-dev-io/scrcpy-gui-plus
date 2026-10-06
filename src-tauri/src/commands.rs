@@ -19,7 +19,7 @@ const AUDIO_FALLBACK_CHAIN: &[&str] = &["aac", "flac", "raw"];
 /// Highest scrcpy release this GUI has been tested against. When the user's
 /// installed scrcpy is newer than this we surface an "untested" hint so they
 /// know a mismatch is possible, without blocking usage.
-const MAX_TESTED_SCRCPY_VERSION: &str = "4.1";
+const MAX_TESTED_SCRCPY_VERSION: &str = "5.0";
 
 /// Maximum number of distinct CLI flags we are willing to strip while trying to
 /// recover from a future scrcpy that no longer recognises an option. Prevents a
@@ -1124,6 +1124,10 @@ pub struct ScrcpyConfig {
     hid_keyboard: Option<bool>,
     hid_mouse: Option<bool>,
     render_driver: Option<String>,
+    /// GPU-accelerated video decoding on the computer (scrcpy 5.0+). `None`/
+    /// "auto" lets scrcpy decide; older scrcpy that doesn't recognise
+    /// `--hwdec` has the flag auto-stripped by the unknown-option retry.
+    hwdec: Option<String>,
     // v4 features
     flex_display: Option<bool>,
     camera_torch: Option<bool>,
@@ -1203,6 +1207,13 @@ fn build_scrcpy_args(
             if !selected_driver.is_empty() && selected_driver != "auto" {
                 args.push("--render-driver".to_string());
                 args.push(selected_driver.to_string());
+            }
+        }
+
+        if let Some(hwdec) = &config.hwdec {
+            let selected_hwdec = hwdec.trim();
+            if !selected_hwdec.is_empty() && selected_hwdec != "auto" {
+                args.push(format!("--hwdec={}", selected_hwdec));
             }
         }
 
@@ -1946,7 +1957,7 @@ pub async fn run_scrcpy(
 pub fn generate_pairing_qr(_custom_path: Option<String>) -> serde_json::Value {
     use qrcode::render::svg;
     use qrcode::{EcLevel, QrCode};
-    use rand::Rng;
+    use rand::RngExt;
 
     let mut rng = rand::rng();
     let service_name: String = format!("adb-gui-{:06}", rng.random_range(0..999999u32));
@@ -2367,6 +2378,7 @@ mod tests {
             hid_keyboard: None,
             hid_mouse: None,
             render_driver: None,
+            hwdec: None,
             flex_display: None,
             camera_torch: None,
             camera_zoom: None,
@@ -2400,6 +2412,18 @@ mod tests {
         assert!(args.contains(&"--camera-facing=front".to_string()));
         assert!(args.contains(&"--camera-fps".to_string()));
         assert!(args.contains(&"30".to_string()));
+    }
+
+    #[test]
+    fn test_build_scrcpy_args_hwdec() {
+        let mut config = base_config("mirror");
+        config.hwdec = Some("disabled".to_string());
+        let args = build_scrcpy_args(&config, None, None);
+        assert!(args.contains(&"--hwdec=disabled".to_string()));
+
+        config.hwdec = Some("auto".to_string());
+        let args = build_scrcpy_args(&config, None, None);
+        assert!(!args.iter().any(|a| a.starts_with("--hwdec")));
     }
 
     #[test]

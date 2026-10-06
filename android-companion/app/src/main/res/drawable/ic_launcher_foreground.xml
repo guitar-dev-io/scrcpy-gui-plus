@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Adaptive-icon foreground: a bold brand "M" (Mobile Studio) in the accent blue,
+  centered inside the 108x108dp canvas, sized to sit within the adaptive safe zone
+  (roughly the center 72dp) so no launcher mask clips it.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!--
+      Two vertical legs plus a center "V". Coordinates: legs are 6 units wide,
+      spanning y 40..68; the V descends from each top to the middle at y~55.
+    -->
+    <path
+        android:fillColor="#2E6BFF"
+        android:pathData="M38,40
+            L44,40
+            L54,54
+            L64,40
+            L70,40
+            L70,68
+            L63,68
+            L63,52
+            L56,61
+            L52,61
+            L45,52
+            L45,68
+            L38,68
+            Z" />
+</vector>

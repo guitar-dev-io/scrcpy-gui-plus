@@ -56,35 +56,35 @@
 - [x] เลือกและจับคู่ตัวแปรแยกแต่ละ Dataset
 - [x] ตรวจชื่อ Variable ซ้ำระหว่าง Dataset
 - [x] แสดงจำนวนงานทั้งหมดก่อนรันและจำกัดไว้ที่ 10,000 งานต่อ Batch
-- [ ] เพิ่มโหมด Lookup/Join ด้วยคีย์สำหรับไฟล์ที่มีความสัมพันธ์กัน
+- [x] เพิ่มโหมด Lookup/Join ด้วยคีย์สำหรับไฟล์ที่มีความสัมพันธ์กัน
 
 ### ระยะที่ 3 — ควบคุม Batch และทำต่อ
 
-- [ ] เลือกพฤติกรรมเมื่อพบข้อผิดพลาด: หยุด / ทำต่อ / Retry
-- [ ] ตั้งจำนวน Retry และเวลารอก่อนลองใหม่
-- [ ] แสดง Current/Total, รายการปัจจุบัน และเวลาที่ใช้
-- [ ] Pause, Resume และ Stop อย่างปลอดภัย
-- [ ] บันทึก Checkpoint เพื่อปิดโปรแกรมแล้วกลับมาทำต่อได้
-- [ ] เลือกเริ่มใหม่เฉพาะรายการ Failed หรือ Not Run
+- [x] เลือกพฤติกรรมเมื่อพบข้อผิดพลาด: หยุด / ทำต่อ / Retry
+- [x] ตั้งจำนวน Retry และเวลารอก่อนลองใหม่
+- [x] แสดง Current/Total, รายการปัจจุบัน และเวลาที่ใช้
+- [x] Pause, Resume และ Stop อย่างปลอดภัย
+- [x] บันทึก Checkpoint เพื่อปิดโปรแกรมแล้วกลับมาทำต่อได้
+- [x] เลือกเริ่มใหม่เฉพาะรายการ Failed หรือ Not Run
 
 ### ระยะที่ 4 — ผลลัพธ์และการเขียนกลับ
 
-- [ ] บันทึก Row ID, สถานะ, Error, เวลาเริ่ม และเวลาจบ
-- [ ] สร้างไฟล์ผลลัพธ์ข้างไฟล์ต้นทางเป็นค่าเริ่มต้น เพื่อไม่แก้ข้อมูลเดิมโดยไม่ตั้งใจ
-- [ ] รองรับการเขียนผลกลับ CSV/TSV/JSON โดยสร้าง Backup ก่อน
-- [ ] รองรับการเขียนผลกลับ XLSX โดยรักษาชีต สูตร และรูปแบบเดิม
-- [ ] ให้ผู้ใช้เลือก `สร้างไฟล์ผลลัพธ์ใหม่` หรือ `อัปเดตไฟล์ต้นทาง`
-- [ ] Export รายงาน Batch เป็น JSON/CSV
+- [x] บันทึก Row ID, สถานะ, Error, เวลาเริ่ม และเวลาจบ
+- [x] สร้างไฟล์ผลลัพธ์ข้างไฟล์ต้นทางเป็นค่าเริ่มต้น เพื่อไม่แก้ข้อมูลเดิมโดยไม่ตั้งใจ
+- [x] รองรับการเขียนผลกลับ CSV/TSV/JSON โดยสร้าง Backup ก่อน
+- [x] รองรับการเขียนผลกลับ XLSX โดยรักษาชีต สูตร และรูปแบบเดิม
+- [x] ให้ผู้ใช้เลือก `สร้างไฟล์ผลลัพธ์ใหม่` หรือ `อัปเดตไฟล์ต้นทาง`
+- [x] Export รายงาน Batch เป็น JSON/CSV
 
 ### ระยะที่ 5 — การแปลงข้อมูล
 
-- [ ] เพิ่ม Derived Variable จากหลายคอลัมน์
-- [ ] รองรับ Trim, Prefix/Suffix, Replace, Regex และ Default value
-- [ ] รองรับหลาย Filter แบบ AND/OR
-- [ ] Preset การจับคู่คอลัมน์ต่อ Flow
-- [ ] ตรวจชนิดข้อมูล วันที่ และเลขที่มีศูนย์นำหน้า
-- [ ] รองรับ CSV encoding/delimiter ที่หลากหลาย
-- [ ] พิจารณารองรับ `.xls` หลังรูปแบบหลักเสถียร
+- [x] เพิ่ม Derived Variable จากหลายคอลัมน์
+- [x] รองรับ Trim, Prefix/Suffix, Replace, Regex และ Default value
+- [x] รองรับหลาย Filter แบบ AND/OR
+- [x] Preset การจับคู่คอลัมน์ต่อ Flow
+- [x] ตรวจชนิดข้อมูล วันที่ และเลขที่มีศูนย์นำหน้า
+- [x] รองรับ CSV encoding/delimiter ที่หลากหลาย
+- [x] พิจารณารองรับ `.xls` หลังรูปแบบหลักเสถียร — ยังไม่เพิ่ม เพราะรูปแบบเก่าเสี่ยงทำข้อมูล/format สูญหาย; แนะนำแปลงเป็น `.xlsx`
 
 ## หลักการด้านความปลอดภัย
 
@@ -126,3 +126,11 @@
 - Safe env + Cross Join: Rust `automation_data` tests 3 tests ผ่าน
 - Safe env + Cross Join: ตรวจหน้า Script Manager ที่ขนาด 1280 × 720 แล้ว ปุ่ม Data Source และแถบ Flow file ไม่ล้น
 - MVP: ทดสอบอ่านไฟล์ตัวอย่าง `แชร์เมล Audit.xlsx` ได้ 2 ชีต; ชีตหลัก 615 รายการ
+- Remaining plan: เพิ่ม Lookup Join, multi-filter, derived transforms และ mapping preset แล้ว
+- Remaining plan: เพิ่ม Retry/Continue, Pause/Resume/Stop, checkpoint และ rerun เฉพาะ Failed/Not Run แล้ว
+- Remaining plan: เพิ่ม result file, source backup/write-back และ export JSON/CSV แล้ว
+- Remaining plan: Frontend feature tests 16 tests ผ่าน; TypeScript check และ Production build ผ่าน
+- Remaining plan: Frontend regression 502/503 tests ผ่านระหว่างรันพร้อม build (App Manager timeout 1 test); rerun App Manager แยก 15/15 ผ่าน
+- Remaining plan: Rust 250 tests ผ่าน, 1 ignored; รวม tests การรักษาสูตร XLSX และ CSV UTF-16/semicolon
+- UX follow-up: ปิด Data Source monitor ระหว่างรันได้, มีแถบ Pause/Resume/Stop ด้านหลัง และจำไฟล์/การตั้งค่าต่อ Flow อัตโนมัติ
+- UX follow-up: แสดง Maestro stdout/stderr แบบ live, สะสมตลอด Batch, แยกหัวข้อแต่ละ Row และเลื่อนตามข้อความล่าสุดอัตโนมัติ

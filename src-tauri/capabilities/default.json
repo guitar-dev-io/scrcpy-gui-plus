@@ -1,14 +1,24 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
+  "description": "Capability for the main window and the detached mirror windows",
   "windows": [
     "main",
-    "splashscreen"
+    "splashscreen",
+    "mirror-*"
   ],
   "permissions": [
     "core:default",
     "core:window:default",
+    "core:window:allow-close",
+    "core:window:allow-destroy",
+    "core:window:allow-set-title",
+    "core:window:allow-set-focus",
+    "core:window:allow-set-always-on-top",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:webview:default",
+    "core:webview:allow-create-webview-window",
     "dialog:default",
     "shell:default"
   ]

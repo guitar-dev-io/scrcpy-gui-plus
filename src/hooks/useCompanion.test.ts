@@ -1,10 +1,13 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  approveCompanionPairing,
   disconnectCompanion,
+  onCompanionPairingApproval,
   onCompanionRemoteStatus,
   onCompanionScreenStatus,
   onCompanionStatus,
+  onCompanionTelemetry,
   requestCompanion,
   scanCompanionDevices,
   startCompanionScreen,
@@ -14,6 +17,7 @@ import {
 } from '../services/companionService'
 import {
   CompanionOperationError,
+  type CompanionApprovalEvent,
   type CompanionDevice,
   type CompanionRemoteStatusEvent,
   type CompanionScanResponse,
@@ -29,10 +33,13 @@ vi.mock('@tauri-apps/api/core', () => ({
   },
 }))
 vi.mock('../services/companionService', () => ({
+  approveCompanionPairing: vi.fn(),
   disconnectCompanion: vi.fn(),
+  onCompanionPairingApproval: vi.fn(),
   onCompanionScreenStatus: vi.fn(),
   onCompanionRemoteStatus: vi.fn(),
   onCompanionStatus: vi.fn(),
+  onCompanionTelemetry: vi.fn(),
   requestCompanion: vi.fn(),
   scanCompanionDevices: vi.fn(),
   startCompanionScreen: vi.fn(),
@@ -53,20 +60,26 @@ const device: CompanionDevice = {
 
 describe('useCompanion', () => {
   beforeEach(() => {
+    vi.mocked(approveCompanionPairing).mockReset()
     vi.mocked(disconnectCompanion).mockReset()
+    vi.mocked(onCompanionPairingApproval).mockReset()
     vi.mocked(onCompanionScreenStatus).mockReset()
     vi.mocked(onCompanionRemoteStatus).mockReset()
     vi.mocked(onCompanionStatus).mockReset()
+    vi.mocked(onCompanionTelemetry).mockReset()
     vi.mocked(requestCompanion).mockReset()
     vi.mocked(scanCompanionDevices).mockReset()
     vi.mocked(startCompanionScreen).mockReset()
     vi.mocked(startCompanionRemote).mockReset()
     vi.mocked(stopCompanionScreen).mockReset()
     vi.mocked(stopCompanionRemote).mockReset()
+    vi.mocked(approveCompanionPairing).mockResolvedValue(undefined)
     vi.mocked(disconnectCompanion).mockResolvedValue(undefined)
+    vi.mocked(onCompanionPairingApproval).mockResolvedValue(vi.fn())
     vi.mocked(onCompanionScreenStatus).mockResolvedValue(vi.fn())
     vi.mocked(onCompanionRemoteStatus).mockResolvedValue(vi.fn())
     vi.mocked(onCompanionStatus).mockResolvedValue(vi.fn())
+    vi.mocked(onCompanionTelemetry).mockResolvedValue(vi.fn())
   })
 
   it('unwraps a successful scan envelope', async () => {
@@ -569,5 +582,66 @@ describe('useCompanion', () => {
     expect(result.current.remoteStatus?.stage).toBe('stopped')
     expect(result.current.isRemoteActive).toBe(false)
     expect(startCompanionRemote).toHaveBeenCalledTimes(1)
+  })
+
+  it('surfaces a discovery pairing request and clears it once answered', async () => {
+    let emitApproval!: (payload: CompanionApprovalEvent) => void
+    vi.mocked(onCompanionPairingApproval).mockImplementation(async (callback) => {
+      emitApproval = callback
+      return () => {}
+    })
+    const { result } = renderHook(() => useCompanion())
+    await waitFor(() => expect(onCompanionPairingApproval).toHaveBeenCalled())
+
+    const request: CompanionApprovalEvent = {
+      requestId: 4,
+      pairingGeneration: 2,
+      deviceName: 'Pixel Companion',
+      peerIp: '192.168.1.41',
+      code: '018321',
+      resolved: false,
+    }
+    act(() => emitApproval(request))
+    await waitFor(() => expect(result.current.pendingApproval).toEqual(request))
+
+    await act(async () => {
+      await result.current.respondToApproval(4, true)
+    })
+
+    expect(approveCompanionPairing).toHaveBeenCalledWith(4, true)
+    expect(result.current.pendingApproval).toBeNull()
+    expect(result.current.isApproving).toBe(false)
+  })
+
+  it('drops the prompt when the backend reports the request resolved itself', async () => {
+    let emitApproval!: (payload: CompanionApprovalEvent) => void
+    vi.mocked(onCompanionPairingApproval).mockImplementation(async (callback) => {
+      emitApproval = callback
+      return () => {}
+    })
+    const { result } = renderHook(() => useCompanion())
+    await waitFor(() => expect(onCompanionPairingApproval).toHaveBeenCalled())
+
+    const request: CompanionApprovalEvent = {
+      requestId: 9,
+      pairingGeneration: 3,
+      deviceName: 'Pixel Companion',
+      peerIp: '192.168.1.41',
+      code: '424242',
+      resolved: false,
+    }
+    act(() => emitApproval(request))
+    await waitFor(() => expect(result.current.pendingApproval).toEqual(request))
+
+    // The Agent gave up or the wait timed out; the desktop must stop showing a
+    // prompt that can no longer be answered.
+    act(() => emitApproval({ ...request, resolved: true }))
+    await waitFor(() => expect(result.current.pendingApproval).toBeNull())
+
+    // A resolution for some other request must not clear a live prompt.
+    act(() => emitApproval(request))
+    await waitFor(() => expect(result.current.pendingApproval).toEqual(request))
+    act(() => emitApproval({ ...request, requestId: 10, resolved: true }))
+    expect(result.current.pendingApproval).toEqual(request)
   })
 })

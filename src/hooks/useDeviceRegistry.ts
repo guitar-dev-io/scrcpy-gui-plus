@@ -3,6 +3,8 @@ import { getDeviceStatus } from '../services/deviceStatusService'
 import {
   DEVICE_REGISTRY_STORAGE_KEY,
   loadDeviceRegistry,
+  markAgentDisconnected,
+  mergeAgentDevice,
   mergeDiscoveryRecords,
   type DeviceRegistryMap,
   type DiscoveredDeviceRecord,
@@ -78,6 +80,30 @@ export function useDeviceRegistry({ customPath }: UseDeviceRegistryOptions) {
     },
     [],
   )
+
+  const applyAgentStatus = useCallback(
+    (
+      companionDevice: { agentDeviceId?: string; peerIp?: string },
+      telemetry: { battery?: number; wifiConnected?: boolean } | null,
+      observedAt = new Date().toISOString(),
+    ) => {
+      const next = mergeAgentDevice(
+        registryRef.current,
+        companionDevice,
+        telemetry,
+        observedAt,
+      )
+      registryRef.current = next
+      setRegistry(next)
+    },
+    [],
+  )
+
+  const applyAgentDisconnected = useCallback((agentDeviceId: string) => {
+    const next = markAgentDisconnected(registryRef.current, agentDeviceId)
+    registryRef.current = next
+    setRegistry(next)
+  }, [])
 
   const refreshHealth = useCallback(
     async (serials: string[], force = false) => {
@@ -207,5 +233,12 @@ export function useDeviceRegistry({ customPath }: UseDeviceRegistryOptions) {
     [registry],
   )
 
-  return { registry, registeredDevices, applyDiscovery, refreshHealth }
+  return {
+    registry,
+    registeredDevices,
+    applyDiscovery,
+    refreshHealth,
+    applyAgentStatus,
+    applyAgentDisconnected,
+  }
 }

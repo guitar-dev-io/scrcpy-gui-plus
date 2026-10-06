@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { Loader2, CheckCircle2, RefreshCw } from 'lucide-react'
+import { AlertTriangle, Loader2, CheckCircle2, RefreshCw } from 'lucide-react'
 import { useI18n } from '../../i18n'
 
 interface QrPairingDisplayProps {
   customPath?: string
   onPaired: (address: string) => void
   onError: (message: string) => void
+  /** Reports every status/message transition, for callers that surface it elsewhere (e.g. a status card). */
+  onStatusChange?: (status: QrPairingStatus, message: string) => void
+  /** Hides the built-in instructions list and regenerate button so a caller can render its own in a different layout slot. */
+  compact?: boolean
+  /** Increment to force a fresh QR code (e.g. from an external "Refresh QR" button). */
+  regenerateSignal?: number
 }
 
 interface QrData {
@@ -16,7 +22,8 @@ interface QrData {
   svg: string
 }
 
-type Status = 'generating' | 'waiting' | 'pairing' | 'success' | 'error'
+export type QrPairingStatus = 'generating' | 'waiting' | 'pairing' | 'success' | 'error'
+type Status = QrPairingStatus
 
 /**
  * Displays a QR code on screen for the phone to scan.
@@ -34,6 +41,9 @@ export default function QrPairingDisplay({
   customPath,
   onPaired,
   onError,
+  onStatusChange,
+  compact = false,
+  regenerateSignal,
 }: QrPairingDisplayProps) {
   const { t } = useI18n()
   const [qrData, setQrData] = useState<QrData | null>(null)
@@ -41,6 +51,13 @@ export default function QrPairingDisplay({
   const [statusMessage, setStatusMessage] = useState('')
   const abortRef = useRef(false)
   const pollingRef = useRef(false)
+  const onStatusChangeRef = useRef(onStatusChange)
+  useEffect(() => {
+    onStatusChangeRef.current = onStatusChange
+  })
+  useEffect(() => {
+    onStatusChangeRef.current?.(status, statusMessage)
+  }, [status, statusMessage])
 
   // Keep the latest callbacks/props in refs so generateAndPoll stays stable and
   // the effect below only runs once on mount (avoids a re-render loop that would
@@ -127,34 +144,61 @@ export default function QrPairingDisplay({
     }
   }, [generateAndPoll])
 
-  const handleRegenerate = () => {
+  const handleRegenerate = useCallback(() => {
     abortRef.current = true
     setTimeout(() => {
       void generateAndPoll()
     }, 100)
-  }
+  }, [generateAndPoll])
+
+  // Signal-driven regenerate for an external "Refresh QR" button. Skips the
+  // initial mount value so it only fires on subsequent increments.
+  const regenerateSignalRef = useRef(regenerateSignal)
+  useEffect(() => {
+    if (regenerateSignal === undefined) return
+    if (regenerateSignalRef.current === regenerateSignal) return
+    regenerateSignalRef.current = regenerateSignal
+    handleRegenerate()
+  }, [regenerateSignal, handleRegenerate])
+
+  const qrBoxSize = compact ? 260 : 220
 
   return (
     <div className="space-y-4">
-      {/* QR Code Display */}
-      {qrData && status !== 'generating' ? (
-        <div className="flex flex-col items-center gap-3">
-          <div
-            className="rounded-2xl border border-zinc-700 bg-[#09090b] p-3 shadow-lg"
-            dangerouslySetInnerHTML={{ __html: qrData.svg }}
-          />
-          <p className="text-[9px] text-zinc-500 font-mono text-center max-w-[280px] break-all">
+      {/* QR Code Display: always a fixed-size bordered box, whatever the state,
+          so a failed/pending fetch never collapses into bare floating text. */}
+      <div className="flex flex-col items-center gap-3">
+        <div
+          className="flex items-center justify-center rounded-2xl border border-zinc-700 bg-[#09090b] p-4 shadow-lg"
+          style={{ width: qrBoxSize, height: qrBoxSize }}
+        >
+          {qrData && status !== 'generating' ? (
+            <div
+              className="[&_svg]:h-full [&_svg]:w-full"
+              dangerouslySetInnerHTML={{ __html: qrData.svg }}
+            />
+          ) : status === 'error' ? (
+            <div className="flex flex-col items-center gap-2 px-2 text-center">
+              <AlertTriangle size={26} className="text-red-400" />
+              <span className="text-[9px] font-bold uppercase tracking-widest text-red-400">
+                Couldn&apos;t generate QR
+              </span>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-3">
+              <Loader2 size={28} className="animate-spin text-primary" />
+              <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">
+                {t('pairing.qrGenerating')}
+              </span>
+            </div>
+          )}
+        </div>
+        {qrData && status !== 'generating' && (
+          <p className="max-w-[280px] break-all text-center font-mono text-[9px] text-zinc-500">
             {qrData.payload}
           </p>
-        </div>
-      ) : status === 'generating' ? (
-        <div className="flex flex-col items-center gap-3 py-8">
-          <Loader2 size={28} className="animate-spin text-primary" />
-          <span className="text-[10px] text-zinc-400 uppercase tracking-widest font-bold">
-            {t('pairing.qrGenerating')}
-          </span>
-        </div>
-      ) : null}
+        )}
+      </div>
 
       {/* Status indicator */}
       <div className="flex items-center justify-center gap-2">
@@ -185,34 +229,38 @@ export default function QrPairingDisplay({
             </span>
           </>
         )}
-        {status === 'error' && (
+        {status === 'error' && !compact && (
           <span className="text-[10px] font-bold text-red-400">
             {statusMessage}
           </span>
         )}
       </div>
 
-      {/* Instructions */}
-      <div className="bg-zinc-950/60 border border-zinc-800/50 rounded-lg p-3 space-y-1">
-        <p className="text-[9px] font-black uppercase text-zinc-500 tracking-widest">
-          {t('pairing.qrInstructions')}
-        </p>
-        <ol className="text-[10px] text-zinc-400 space-y-0.5 list-decimal list-inside">
-          <li>{t('pairing.qrStep1')}</li>
-          <li>{t('pairing.qrStep2')}</li>
-          <li>{t('pairing.qrStep3')}</li>
-        </ol>
-      </div>
+      {!compact && (
+        <>
+          {/* Instructions */}
+          <div className="bg-zinc-950/60 border border-zinc-800/50 rounded-lg p-3 space-y-1">
+            <p className="text-[9px] font-black uppercase text-zinc-500 tracking-widest">
+              {t('pairing.qrInstructions')}
+            </p>
+            <ol className="text-[10px] text-zinc-400 space-y-0.5 list-decimal list-inside">
+              <li>{t('pairing.qrStep1')}</li>
+              <li>{t('pairing.qrStep2')}</li>
+              <li>{t('pairing.qrStep3')}</li>
+            </ol>
+          </div>
 
-      {/* Regenerate button */}
-      {(status === 'error' || status === 'success') && (
-        <button
-          onClick={handleRegenerate}
-          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-zinc-800 bg-zinc-950/40 text-[10px] font-black uppercase tracking-widest text-zinc-300 hover:border-primary/50 hover:bg-primary/5 transition-all"
-        >
-          <RefreshCw size={12} />
-          {t('pairing.qrRegenerate')}
-        </button>
+          {/* Regenerate button */}
+          {(status === 'error' || status === 'success') && (
+            <button
+              onClick={handleRegenerate}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-zinc-800 bg-zinc-950/40 text-[10px] font-black uppercase tracking-widest text-zinc-300 hover:border-primary/50 hover:bg-primary/5 transition-all"
+            >
+              <RefreshCw size={12} />
+              {t('pairing.qrRegenerate')}
+            </button>
+          )}
+        </>
       )}
     </div>
   )

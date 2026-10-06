@@ -3,53 +3,50 @@ package com.scrcpyguiplus.companion
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.PendingIntent
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import com.scrcpyguiplus.companion.ui.AgentActions
+import com.scrcpyguiplus.companion.ui.AgentConnectionPhase
+import com.scrcpyguiplus.companion.ui.AgentDeviceInfo
+import com.scrcpyguiplus.companion.ui.AgentUiState
+import com.scrcpyguiplus.companion.ui.MobileStudioApp
 import android.content.BroadcastReceiver
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.graphics.Color
-import android.graphics.Typeface
 import android.hardware.usb.UsbAccessory
 import android.hardware.usb.UsbManager
 import android.media.projection.MediaProjectionManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
+import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.os.SystemClock
-import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.SurfaceView
-import android.view.View
-import android.view.ViewGroup
-import android.widget.Button
-import android.widget.EditText
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import java.util.ArrayDeque
 import java.util.Locale
-import kotlin.math.roundToInt
 import org.json.JSONObject
 
-class MainActivity : Activity() {
+class MainActivity : ComponentActivity() {
     private lateinit var usbManager: UsbManager
-    private lateinit var statusView: TextView
-    private lateinit var logView: TextView
-    private lateinit var pairingInput: EditText
-    private lateinit var remoteStatusView: TextView
-    private val remoteButtons = mutableListOf<Button>()
-    private lateinit var remoteVideoView: SurfaceView
-    private lateinit var remoteTextInput: EditText
-    private lateinit var remoteTextButton: Button
-    private lateinit var remoteClipboardButton: Button
+    private val uiState = AgentUiState()
+
+    // Remote-control video rendering has no screen in the current mockup-driven UI. The
+    // SurfaceView is still created and driven so RemoteControlSession/RemoteVideoSession keep
+    // working end to end, but it is never attached to the Compose tree or shown to the user.
+    private val remoteVideoView: SurfaceView by lazy { SurfaceView(this) }
     private val pairingPreferences by lazy {
         getSharedPreferences(PAIRING_PREFERENCES, Context.MODE_PRIVATE)
     }
@@ -69,6 +66,22 @@ class MainActivity : Activity() {
     private var activityStarted = false
     private var connectionGeneration = 0
     private var connection: CompanionSession? = null
+
+    /**
+     * Whether the session in [connection] has actually reached the desktop.
+     *
+     * A non-null [connection] only means a session object exists — the socket may still be
+     * dialing candidate addresses, or (for a discovered studio) holding open while the
+     * desktop user approves it. The UI has to key off this instead, or it announces
+     * "Connected" the instant the user taps.
+     */
+    private var sessionLive = false
+
+    /**
+     * Whether a reusable offer is on disk. Only a token-based offer is: an approval-based one
+     * has no credential to come back with, so the desktop would prompt again either way.
+     */
+    private var lanOfferPersisted = false
     private var remoteSession: RemoteControlSession? = null
     private var remoteVideoSession: RemoteVideoSession? = null
     private var remoteVideoRenderer: RemoteVideoRenderer? = null
@@ -77,6 +90,8 @@ class MainActivity : Activity() {
     private var remoteTouchInFlight = false
     private var pendingRemoteTouch: JSONObject? = null
     private var lastRemoteMoveAt = 0L
+    @Volatile
+    private var discoveryInFlight = false
     private var pendingScreenOffer: ScreenStreamOffer? = null
     private var awaitingScreenPermission = false
     private var screenCaptureGeneration = 0L
@@ -106,7 +121,21 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
-        setContentView(createContentView())
+        setContent {
+            MobileStudioApp(
+                state = uiState,
+                actions = AgentActions(
+                    onScanQr = ::startQrScan,
+                    onConnectWithManualCode = ::connectToLanPayload,
+                    onDiscoverStudios = ::discoverStudios,
+                    onConnectToStudio = ::connectToDiscoveredStudio,
+                    onCheckUsbAccessory = ::discoverAccessory,
+                    onForgetStudio = ::forgetTrustedStudio,
+                    onDisconnect = { disconnectConnection("Cancelled from the scan screen") },
+                ),
+            )
+        }
+        refreshTrustedStudiosList()
         val persistedLanOffer = loadSavedLanOffer()
         val sameProcessRecreation =
             savedInstanceState?.getString(STATE_PROCESS_INSTANCE_ID) == PROCESS_INSTANCE_ID
@@ -122,6 +151,7 @@ class MainActivity : Activity() {
             clearSavedLanOffer()
             appendLog("Discarded a stale LAN pairing offer from an earlier session")
         }
+        configureRemoteVideoView()
         registerUsbReceiver()
         handleAccessoryIntent(intent)
         appendLog("Activity ready; choose QR / LAN or USB accessory")
@@ -155,7 +185,11 @@ class MainActivity : Activity() {
         when {
             launchAccessory != null -> connectToAccessory(launchAccessory)
             savedLanOffer != null -> connectToLan(savedLanOffer!!)
-            else -> discoverAccessory()
+            // Returning from the camera scanner also lands here. Probing for USB then
+            // would overwrite the pairing screen's status with an AOA message and leave
+            // the user reading about a cable they are not using.
+            uiState.connectionPhase.value == AgentConnectionPhase.Idle -> discoverAccessory()
+            else -> Unit
         }
     }
 
@@ -210,199 +244,38 @@ class MainActivity : Activity() {
         handleAccessoryIntent(intent)
     }
 
-    private fun createContentView(): View {
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(20.dp(), 24.dp(), 20.dp(), 20.dp())
-            setBackgroundColor(Color.WHITE)
-        }
-
-        val title = TextView(this).apply {
-            text = getString(R.string.app_name)
-            textSize = 24f
-            setTextColor(Color.rgb(20, 20, 20))
-            setTypeface(Typeface.DEFAULT, Typeface.BOLD)
-        }
-        root.addView(title, LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-
-        val instructions = TextView(this).apply {
-            text = getString(R.string.keep_open_message)
-            textSize = 14f
-            setTextColor(Color.DKGRAY)
-            setPadding(0, 8.dp(), 0, 8.dp())
-        }
-        root.addView(instructions, LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-
-        val aoaGuidance = TextView(this).apply {
-            text = getString(R.string.aoa_permission_guidance)
-            textSize = 13f
-            setTextColor(Color.DKGRAY)
-            setPadding(0, 0, 0, 16.dp())
-        }
-        root.addView(aoaGuidance, LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-
-        val lanGuidance = TextView(this).apply {
-            text = getString(R.string.lan_pairing_guidance)
-            textSize = 13f
-            setTextColor(Color.DKGRAY)
-            setPadding(0, 0, 0, 8.dp())
-        }
-        root.addView(lanGuidance, LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-
-        val scanQrButton = Button(this).apply {
-            text = getString(R.string.scan_desktop_qr)
-            setOnClickListener { startQrScan() }
-        }
-        root.addView(scanQrButton, LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-
-        pairingInput = EditText(this).apply {
-            hint = getString(R.string.manual_pairing_hint)
-            maxLines = 3
-            setTextSize(12f)
-            setTextIsSelectable(true)
-        }
-        root.addView(pairingInput, LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-
-        val connectCodeButton = Button(this).apply {
-            text = getString(R.string.connect_pairing_code)
-            setOnClickListener { connectToLanPayload(pairingInput.text.toString()) }
-        }
-        root.addView(connectCodeButton, LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-
-        val statusCaption = TextView(this).apply {
-            text = getString(R.string.connection_status)
-            textSize = 13f
-            setTextColor(Color.GRAY)
-        }
-        root.addView(statusCaption, LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-
-        statusView = TextView(this).apply {
-            text = getString(R.string.starting)
-            textSize = 18f
-            setTextColor(Color.rgb(21, 101, 192))
-            setPadding(0, 4.dp(), 0, 12.dp())
-        }
-        root.addView(statusView, LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-
-        val checkButton = Button(this).apply {
-            text = getString(R.string.check_accessory)
-            setOnClickListener { discoverAccessory() }
-        }
-        root.addView(checkButton, LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-
-        root.addView(createRemoteControlCard())
-
-        val logsCaption = TextView(this).apply {
-            text = getString(R.string.latest_logs)
-            textSize = 13f
-            setTextColor(Color.GRAY)
-            setPadding(0, 16.dp(), 0, 4.dp())
-        }
-        root.addView(logsCaption, LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-
-        logView = TextView(this).apply {
-            text = getString(R.string.no_events_yet)
-            textSize = 13f
-            typeface = Typeface.MONOSPACE
-            setTextColor(Color.DKGRAY)
-            gravity = Gravity.TOP or Gravity.START
-            setTextIsSelectable(true)
-        }
-        root.addView(
-            logView,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                240.dp(),
-            ),
-        )
-        return ScrollView(this).apply {
-            isFillViewport = true
-            addView(root, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        }
-    }
-
-    private fun createRemoteControlCard(): LinearLayout {
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(12.dp(), 12.dp(), 12.dp(), 12.dp())
-            setBackgroundColor(Color.rgb(238, 242, 247))
-        }
-        card.addView(TextView(this).apply {
-            text = getString(R.string.remote_control_title)
-            textSize = 16f
-            setTextColor(Color.rgb(20, 20, 20))
-            setTypeface(Typeface.DEFAULT, Typeface.BOLD)
-        })
-        remoteStatusView = TextView(this).apply {
-            text = getString(R.string.remote_control_waiting)
-            textSize = 13f
-            setTextColor(Color.DKGRAY)
-            setPadding(0, 4.dp(), 0, 8.dp())
-        }
-        card.addView(remoteStatusView)
-
-        remoteVideoView = SurfaceView(this).apply {
-            setBackgroundColor(Color.BLACK)
-            visibility = View.GONE
+    /**
+     * Keeps the headless remote-control [SurfaceView] driven the same way the old inline card
+     * did (touch/key listeners, focusability) without ever attaching it to a visible layout.
+     * RemoteVideoRenderer only needs a valid Surface to draw into, not screen visibility.
+     */
+    private fun configureRemoteVideoView() {
+        remoteVideoView.apply {
             isFocusable = true
             isFocusableInTouchMode = true
             setOnTouchListener { _, event -> handleRemoteTouch(event) }
             setOnKeyListener { _, keyCode, event -> handleRemoteKey(keyCode, event) }
         }
-        card.addView(
-            remoteVideoView,
-            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 280.dp()),
-        )
+    }
 
-        val actions = listOf(
-            getString(R.string.remote_back) to "back",
-            getString(R.string.remote_home) to "home",
-            getString(R.string.remote_recents) to "recents",
-            getString(R.string.remote_rotate) to "rotate",
-            getString(R.string.remote_screen_on) to "screen_on",
-            getString(R.string.remote_screen_off) to "screen_off",
-        )
-        actions.chunked(3).forEach { rowActions ->
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            rowActions.forEach { (label, method) ->
-                val button = Button(this).apply {
-                    text = label
-                    isEnabled = false
-                    setOnClickListener { sendRemoteAction(method) }
-                }
-                remoteButtons += button
-                row.addView(button, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+    private fun refreshTrustedStudiosList() {
+        uiState.trustedStudios.value = TrustedStudios.list(this)
+    }
+
+    private fun forgetTrustedStudio(studioId: String) {
+        TrustedStudios.forget(this, studioId)
+        refreshTrustedStudiosList()
+        // If the forgotten studio is the one currently connected/saved, revoke
+        // it fully rather than leaving a live session for a studio the user
+        // just said not to trust (doc §12).
+        val active = savedLanOffer
+        if (active != null && (active.studioId ?: "host:${active.host}") == studioId) {
+            clearSavedLanOffer()
+            if (connection?.transport == "lan-tcp") {
+                disconnectConnection("Studio was forgotten")
+                updateStatus("Studio forgotten; scan a new QR code to reconnect")
             }
-            card.addView(row, LinearLayout.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         }
-
-        val textRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            visibility = View.GONE
-        }
-        remoteTextInput = EditText(this).apply {
-            hint = getString(R.string.remote_text_hint)
-            maxLines = 2
-        }
-        textRow.addView(
-            remoteTextInput,
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f),
-        )
-        remoteTextButton = Button(this).apply {
-            text = getString(R.string.remote_send_text)
-            setOnClickListener { sendRemoteText() }
-        }
-        textRow.addView(remoteTextButton)
-        card.addView(textRow)
-        remoteTextInput.tag = textRow
-
-        remoteClipboardButton = Button(this).apply {
-            text = getString(R.string.remote_send_clipboard)
-            visibility = View.GONE
-            setOnClickListener { sendRemoteClipboard() }
-        }
-        card.addView(remoteClipboardButton)
-        return card
     }
 
     private fun startQrScan() {
@@ -411,6 +284,7 @@ class MainActivity : Activity() {
             updateStatus("Disconnect the USB companion before pairing over LAN")
             return
         }
+        uiState.connectionPhase.value = AgentConnectionPhase.Scanning
         updateStatus("Opening QR scanner…")
         barcodeScanner.startScan()
             .addOnSuccessListener { barcode ->
@@ -419,11 +293,11 @@ class MainActivity : Activity() {
                     updateStatus("The QR code did not contain a pairing code")
                     appendLog("QR scan returned no text")
                 } else {
-                    pairingInput.setText(payload)
                     connectToLanPayload(payload)
                 }
             }
             .addOnCanceledListener {
+                uiState.connectionPhase.value = AgentConnectionPhase.Idle
                 updateStatus("QR scan cancelled")
             }
             .addOnFailureListener { error ->
@@ -469,6 +343,8 @@ class MainActivity : Activity() {
                 packageName = packageName,
                 version = BuildConfig.VERSION_NAME,
                 pairingToken = offer.token,
+                deviceId = AgentIdentity.deviceId(this),
+                approvalNonce = offer.approvalNonce,
             ),
             requestHandler = protocolProcessor::prepare,
             listener = object : CompanionSessionListener {
@@ -479,8 +355,38 @@ class MainActivity : Activity() {
                         // normal launches still discard it unless this process or screen share
                         // remains active.
                         saveLanOffer(offer)
+                        TrustedStudios.upsert(
+                            this@MainActivity,
+                            TrustedStudio(
+                                studioId = offer.studioId ?: "host:${offer.host}",
+                                studioName = offer.studioName ?: "Unknown Studio",
+                                host = offer.host,
+                                port = offer.port,
+                                lastConnectedAt = System.currentTimeMillis(),
+                            ),
+                        )
+                        refreshTrustedStudiosList()
+                        sessionLive = true
+                        uiState.approvalCode.value = null
                         updateStatus("Connected over LAN: ${offer.host}:${offer.port}")
                         appendLog("LAN stream opened; authenticated hello sent")
+                    }
+                }
+
+                override fun onAwaitingApproval(code: String?) {
+                    postToUi {
+                        if (generation != connectionGeneration) return@postToUi
+                        uiState.approvalCode.value = code
+                        val studio = offer.studioName ?: offer.host
+                        updateStatus(
+                            if (code != null) {
+                                "Waiting for $studio to approve this device. " +
+                                    "Check that it shows code $code."
+                            } else {
+                                "Waiting for $studio to approve this device"
+                            },
+                        )
+                        appendLog("Reached $studio; waiting for desktop approval")
                     }
                 }
 
@@ -500,11 +406,16 @@ class MainActivity : Activity() {
                     postToUi {
                         if (generation != connectionGeneration) return@postToUi
                         connection = null
+                        sessionLive = false
+                        uiState.approvalCode.value = null
                         updateStatus(
-                            if (activityStarted) {
+                            // Promise a retry only when a reusable offer is actually on disk.
+                            // An approval-based offer is not, so otherwise the promise would
+                            // leave the user waiting on a reconnect that never comes.
+                            if (activityStarted && lanOfferPersisted) {
                                 "LAN disconnected: $reason; retrying the saved pairing offer"
                             } else {
-                                "LAN disconnected: $reason"
+                                reason
                             },
                         )
                         appendLog("LAN session closed: $reason")
@@ -513,9 +424,65 @@ class MainActivity : Activity() {
             },
         )
         connection = session
+        sessionLive = false
+        uiState.approvalCode.value = null
         updateStatus("Connecting over LAN to ${offer.host}:${offer.port}…")
-        appendLog("Connecting to the desktop LAN pairing listener")
+        appendLog(
+            "Connecting to the desktop LAN pairing listener; will try " +
+                offer.hosts.joinToString(", ") { host -> "$host:${offer.port}" },
+        )
         session.start()
+    }
+
+    /**
+     * Broadcast for desktops on this network instead of scanning a QR code.
+     *
+     * This is the path that works when the QR cannot be read at all (no camera, no Play
+     * Services scanner module) or when the addresses inside it are unreachable, because
+     * the reply arrives from an address this phone has just demonstrably received a
+     * packet from.
+     */
+    private fun discoverStudios() {
+        if (!activityStarted || discoveryInFlight) return
+        discoveryInFlight = true
+        uiState.isDiscovering.value = true
+        uiState.discoveredStudios.value = emptyList()
+        updateStatus("Looking for Mobile Studio on this network…")
+
+        Thread({
+            val studios = LanDiscovery.probe(log = { message -> postToUi { appendLog(message) } })
+            postToUi {
+                discoveryInFlight = false
+                uiState.isDiscovering.value = false
+                uiState.discoveredStudios.value = studios
+                updateStatus(
+                    when {
+                        studios.isEmpty() ->
+                            "No Mobile Studio found. Make sure Pair New Device is open on the " +
+                                "computer and both devices are on the same Wi-Fi."
+                        studios.size == 1 -> "Found ${studios.first().label()}. Tap it to connect."
+                        else -> "Found ${studios.size} studios. Tap the one to connect to."
+                    },
+                )
+            }
+        }, "companion-lan-discovery").apply { isDaemon = true }.start()
+    }
+
+    private fun connectToDiscoveredStudio(studio: DiscoveredStudio) {
+        if (!activityStarted) return
+        val offer = try {
+            LanPairing.discoveredOffer(studio)
+        } catch (error: IllegalArgumentException) {
+            updateStatus(error.message ?: "This studio cannot be used")
+            appendLog("Discovered studio rejected: ${error.message ?: "invalid advertisement"}")
+            return
+        }
+        if (connection != null) {
+            disconnectConnection("Replacing the previous studio connection")
+            clearSavedLanOffer()
+        }
+        uiState.discoveredStudios.value = emptyList()
+        connectToLan(offer)
     }
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
@@ -699,12 +666,14 @@ class MainActivity : Activity() {
                 appName = getString(R.string.app_name),
                 packageName = packageName,
                 version = BuildConfig.VERSION_NAME,
+                deviceId = AgentIdentity.deviceId(this),
             ),
             requestHandler = protocolProcessor::prepare,
             listener = object : CompanionSessionListener {
                 override fun onConnected() {
                     postToUi {
                         if (generation != connectionGeneration) return@postToUi
+                        sessionLive = true
                         updateStatus("Connected: ${describeAccessory(accessory)}")
                         appendLog("Accessory stream opened; hello with capabilities sent")
                     }
@@ -718,6 +687,7 @@ class MainActivity : Activity() {
                     postToUi {
                         if (generation != connectionGeneration) return@postToUi
                         connection = null
+                        sessionLive = false
                         updateStatus(
                             if (activityStarted) {
                                 "Disconnected: $reason; tap Check USB accessory"
@@ -731,6 +701,7 @@ class MainActivity : Activity() {
             },
         )
         connection = session
+        sessionLive = false
         updateStatus("Connecting to ${describeAccessory(accessory)}...")
         appendLog("Opening USB accessory stream")
         session.start()
@@ -741,6 +712,8 @@ class MainActivity : Activity() {
         val oldConnection = connection ?: return
         connectionGeneration += 1
         connection = null
+        sessionLive = false
+        uiState.approvalCode.value = null
         oldConnection.stop(reason)
     }
 
@@ -847,9 +820,6 @@ class MainActivity : Activity() {
         pendingRemoteTouch = null
         remoteTouchInFlight = false
         updateRemoteStatus(getString(R.string.remote_control_waiting), false)
-        if (::remoteVideoView.isInitialized) remoteVideoView.visibility = View.GONE
-        if (::remoteTextInput.isInitialized) (remoteTextInput.tag as? View)?.visibility = View.GONE
-        if (::remoteClipboardButton.isInitialized) remoteClipboardButton.visibility = View.GONE
     }
 
     private fun sendRemoteAction(method: String) {
@@ -858,7 +828,6 @@ class MainActivity : Activity() {
             updateRemoteStatus("Remote control is not connected", false)
             return
         }
-        setRemoteButtonsEnabled(false)
         session.requestAsync(method) { result ->
             postToUi {
                 if (remoteSession !== session) return@postToUi
@@ -873,34 +842,19 @@ class MainActivity : Activity() {
         }
     }
 
+    /**
+     * There is no remote-control screen in the current Compose UI (out of scope for the mockup),
+     * so this only mirrors availability into [uiState] for future use; it no longer toggles any
+     * on-screen buttons.
+     */
     private fun updateRemoteStatus(value: String, enabled: Boolean) {
-        if (::remoteStatusView.isInitialized) remoteStatusView.text = value
-        setRemoteButtonsEnabled(enabled)
-    }
-
-    private fun setRemoteButtonsEnabled(enabled: Boolean) {
-        val canControl = remoteSession?.offer?.permissions?.let { permissions ->
-            // Legacy phase-one offers had no explicit permissions and exposed navigation only.
-            permissions.isEmpty() || "control" in permissions
-        } ?: false
-        remoteButtons.forEach { it.isEnabled = enabled && canControl }
-        if (::remoteTextButton.isInitialized) {
-            remoteTextButton.isEnabled = enabled && remoteSession?.offer?.permissions?.contains("keyboard") == true
-        }
-        if (::remoteClipboardButton.isInitialized) {
-            remoteClipboardButton.isEnabled =
-                enabled && remoteSession?.offer?.permissions?.contains("clipboard") == true
-        }
+        uiState.remoteControlStatus.value = value
+        uiState.remoteControlAvailable.value = enabled
     }
 
     private fun applyRemotePermissions(offer: RemoteControlOffer) {
-        remoteVideoView.visibility = if ("view" in offer.permissions) View.VISIBLE else View.GONE
-        (remoteTextInput.tag as? View)?.visibility =
-            if ("keyboard" in offer.permissions) View.VISIBLE else View.GONE
-        remoteClipboardButton.visibility =
-            if ("clipboard" in offer.permissions) View.VISIBLE else View.GONE
-        remoteTextButton.isEnabled = "keyboard" in offer.permissions
-        remoteClipboardButton.isEnabled = "clipboard" in offer.permissions
+        // No remote-control screen currently renders these permission-gated controls; the
+        // session and permissions remain available on remoteSession for a future UI.
     }
 
     private fun startRemoteVideo(offer: RemoteControlOffer) {
@@ -1032,16 +986,15 @@ class MainActivity : Activity() {
         return true
     }
 
-    private fun sendRemoteText() {
-        val text = remoteTextInput.text.toString()
+    /** No text-entry UI currently calls this (out of scope for the mockup); kept for a future
+     * remote-control screen that can supply typed text via [RemoteControlSession.requestAsync]. */
+    private fun sendRemoteText(text: String) {
         if (text.isEmpty()) return
         if (!RemoteInputLimits.isTextAllowed(text)) {
             appendLog("Remote text is limited to ${RemoteInputLimits.TEXT_UTF8_BYTES} UTF-8 bytes")
             return
         }
-        sendRemoteParams("text", JSONObject().put("text", text)) {
-            remoteTextInput.text.clear()
-        }
+        sendRemoteParams("text", JSONObject().put("text", text))
     }
 
     private fun sendRemoteClipboard() {
@@ -1281,7 +1234,33 @@ class MainActivity : Activity() {
         "package" to packageName,
         "version" to BuildConfig.VERSION_NAME,
         "model" to Build.MODEL,
+        "battery" to batteryPercent(),
+        "wifiConnected" to isWifiConnected(),
+        "screenOn" to isScreenOn(),
     )
+
+    /** Heartbeat telemetry (doc §4). No foreground-app field: that needs the
+     * special, manually-granted PACKAGE_USAGE_STATS permission and is out of
+     * scope for this phase. */
+    private fun batteryPercent(): Int? {
+        val batteryManager =
+            getSystemService(Context.BATTERY_SERVICE) as? BatteryManager ?: return null
+        val level = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+        return level.takeIf { it in 0..100 }
+    }
+
+    private fun isWifiConnected(): Boolean {
+        val connectivityManager =
+            getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
+        val network = connectivityManager.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+    }
+
+    private fun isScreenOn(): Boolean {
+        val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return true
+        return powerManager.isInteractive
+    }
 
     private fun clipboardSet(params: JSONObject): JSONObject {
         val text = params.opt("text") as? String
@@ -1330,15 +1309,26 @@ class MainActivity : Activity() {
     }
 
     private fun saveLanOffer(offer: LanPairingOffer) {
+        // An offer that authenticates by desktop approval carries no token, so there is
+        // nothing to persist that would let it reconnect unattended.
+        if (offer.token.isEmpty()) {
+            lanOfferPersisted = false
+            return
+        }
         pairingPreferences.edit()
             .putString(PAIRING_HOST, offer.host)
             .putInt(PAIRING_PORT, offer.port)
             .putString(PAIRING_TOKEN, offer.token)
+            // Keep the fallback addresses too, so a restored offer can still recover from
+            // the desktop having moved to another of its networks.
+            .putString(PAIRING_HOSTS, offer.hosts.joinToString(","))
             .apply()
+        lanOfferPersisted = true
     }
 
     private fun clearSavedLanOffer() {
         savedLanOffer = null
+        lanOfferPersisted = false
         pairingPreferences.edit().clear().apply()
     }
 
@@ -1347,15 +1337,30 @@ class MainActivity : Activity() {
         val port = pairingPreferences.getInt(PAIRING_PORT, 0)
         val token = pairingPreferences.getString(PAIRING_TOKEN, null)
         if (host.isNullOrBlank() || port !in 1..65535 || token.isNullOrBlank()) return null
+        val hosts = pairingPreferences.getString(PAIRING_HOSTS, null)
+            ?.takeIf { it.isNotBlank() }
 
         return runCatching {
             LanPairing.parse(
-                "scrcpy-gui-plus://pair?v=1&host=$host&port=$port&token=$token",
+                buildString {
+                    append("scrcpy-gui-plus://pair?v=1&host=")
+                    append(host)
+                    append("&port=")
+                    append(port)
+                    append("&token=")
+                    append(token)
+                    if (hosts != null) {
+                        append("&hosts=")
+                        append(hosts)
+                    }
+                },
             )
-        }.getOrElse {
-            pairingPreferences.edit().clear().apply()
-            null
-        }
+        }.also { restored -> lanOfferPersisted = restored.isSuccess }
+            .getOrElse {
+                pairingPreferences.edit().clear().apply()
+                lanOfferPersisted = false
+                null
+            }
     }
 
     private fun createPermissionIntent(): PendingIntent {
@@ -1414,7 +1419,10 @@ class MainActivity : Activity() {
             "v${accessory.version ?: "<unknown>"}"
 
     private fun updateStatus(value: String) {
-        if (::statusView.isInitialized) statusView.text = value
+        postToUi {
+            uiState.statusMessage.value = value
+            syncConnectionUiState()
+        }
     }
 
     private fun appendLog(message: String) {
@@ -1423,10 +1431,60 @@ class MainActivity : Activity() {
             .replace('\r', ' ')
             .take(MAX_LOG_MESSAGE_CHARS)
         postToUi {
-            if (!::logView.isInitialized) return@postToUi
             if (logs.size >= MAX_LOG_LINES) logs.removeFirst()
             logs.addLast(compactMessage)
-            logView.text = logs.joinToString("\n")
+            uiState.logs.value = logs.toList()
+        }
+    }
+
+    /**
+     * Derives the Compose-facing connection state from the same fields MainActivity already
+     * tracks for its own logic (`connection`, `savedLanOffer`). Called after every status update
+     * so the UI stays in sync without each call site needing to know about [AgentUiState].
+     */
+    private fun syncConnectionUiState() {
+        val activeConnection = connection
+        // An existing session object is not a connection: it may still be dialing candidate
+        // addresses, or waiting for the desktop user to approve a discovered studio.
+        val live = activeConnection != null && sessionLive
+        uiState.isConnected.value = live
+        uiState.transport.value = activeConnection?.transport
+        val offer = savedLanOffer
+        uiState.studioLabel.value = offer?.studioName
+            ?: offer?.let { "${it.host}:${it.port}" }
+        uiState.agentConnected.value = live
+
+        uiState.connectionPhase.value = when {
+            live && uiState.connectionPhase.value == AgentConnectionPhase.Scanning ->
+                AgentConnectionPhase.JustConnected
+            live -> AgentConnectionPhase.Connected
+            // Only a real session attempt counts as Connecting. Merely sitting on the
+            // pairing screen used to report it, which disabled that screen's own manual
+            // pairing-code and network-search controls — so a phone whose camera scanner
+            // did not work had no way left to pair.
+            activeConnection != null -> AgentConnectionPhase.Connecting
+            uiState.connectionPhase.value == AgentConnectionPhase.Scanning ||
+                uiState.connectionPhase.value == AgentConnectionPhase.Connecting ->
+                AgentConnectionPhase.Scanning
+            else -> AgentConnectionPhase.Idle
+        }
+
+        if (live) {
+            val info = runCatching { deviceInfo() }.getOrNull()
+            if (info != null) {
+                uiState.deviceInfo.value = AgentDeviceInfo(
+                    deviceName = info.optString("model", Build.MODEL),
+                    model = Build.MODEL,
+                    androidVersion = Build.VERSION.RELEASE ?: "Unknown",
+                    // This device's own address. The studio's host is shown separately as
+                    // the connected-studio label.
+                    ipAddress = LanDiscovery.localIpv4() ?: "Unknown",
+                    batteryPercent = info.opt("battery") as? Int,
+                    wifiConnected = info.optBoolean("wifiConnected", false),
+                )
+            }
+        } else {
+            uiState.deviceInfo.value = null
         }
     }
 
@@ -1437,8 +1495,6 @@ class MainActivity : Activity() {
             mainHandler.post(block)
         }
     }
-
-    private fun Int.dp(): Int = (this * resources.displayMetrics.density).roundToInt()
 
     private companion object {
         const val AOA_MANUFACTURER = "Scrcpy GUI Plus"
@@ -1453,6 +1509,7 @@ class MainActivity : Activity() {
         const val PAIRING_HOST = "host"
         const val PAIRING_PORT = "port"
         const val PAIRING_TOKEN = "token"
+        const val PAIRING_HOSTS = "hosts"
         const val STATE_PROCESS_INSTANCE_ID = "process_instance_id"
         val PROCESS_INSTANCE_ID: String = java.util.UUID.randomUUID().toString()
     }

@@ -1,14 +1,41 @@
 package com.scrcpyguiplus.companion
 
 import android.net.Uri
+import java.security.MessageDigest
+import java.security.SecureRandom
 import java.util.Locale
 import org.json.JSONObject
 
 data class LanPairingOffer(
+    /** The address to dial first. Always the head of [hosts]. */
     val host: String,
     val port: Int,
+    /**
+     * The one-time token from a pairing QR, or empty for a studio found through LAN
+     * discovery. An empty token means the desktop user approves this device instead;
+     * see [approvalNonce].
+     */
     val token: String,
-)
+    val studioId: String? = null,
+    val studioName: String? = null,
+    /**
+     * Every address the desktop advertised, in the order to try them. A desktop on
+     * more than one network (Wi-Fi plus Ethernet, or a VPN owning the default route)
+     * cannot tell which of its addresses this phone can see, so it sends them all.
+     */
+    val hosts: List<String> = listOf(host),
+    /**
+     * Random hex this device sends in place of a token when it was found through
+     * discovery. Both sides derive the same six digits from it ([approvalCode]) so the
+     * user approving on the desktop can confirm it is this phone.
+     */
+    val approvalNonce: String? = null,
+) {
+    val requiresApproval: Boolean get() = token.isEmpty()
+
+    /** The digits to show while waiting, matching what the desktop prompt displays. */
+    val approvalCode: String? get() = approvalNonce?.let(LanPairing::approvalCode)
+}
 
 data class ScreenStreamOffer(
     val host: String,
@@ -27,6 +54,9 @@ object LanPairing {
     private const val AUTHORITY = "pair"
     private const val VERSION = "1"
     private const val MAX_PAYLOAD_CHARS = 4096
+    private const val MAX_STUDIO_FIELD_CHARS = 64
+    private const val MAX_HOST_CANDIDATES = 8
+    private const val APPROVAL_NONCE_BYTES = 16
     private val tokenPattern = Regex("^[0-9a-fA-F]{64}$")
 
     fun parse(payload: String): LanPairingOffer {
@@ -49,11 +79,72 @@ object LanPairing {
         require(port != null && port in 1..65535) { "Pairing port is invalid" }
         require(tokenPattern.matches(tokenValue)) { "Pairing token is invalid" }
 
+        // Optional Trusted Studios identity (doc §5/§12): additive, best-effort.
+        // Missing on QR codes from desktop builds older than this field.
+        val studioId = uri.getQueryParameter("studioId")?.trim()?.take(MAX_STUDIO_FIELD_CHARS)
+            ?.takeIf { it.isNotBlank() }
+        val studioName = uri.getQueryParameter("studioName")?.trim()?.take(MAX_STUDIO_FIELD_CHARS)
+            ?.takeIf { it.isNotBlank() }
+
+        // Additive on QR codes from newer desktops. A malformed entry is skipped rather
+        // than failing the scan: `host` on its own is still a complete offer.
+        val extraHosts = uri.getQueryParameter("hosts")
+            ?.split(',')
+            ?.mapNotNull { candidate ->
+                runCatching { normalizeIpv4(candidate.trim()) }.getOrNull()
+            }
+            ?: emptyList()
+
         return LanPairingOffer(
             host = host,
             port = port,
             token = tokenValue.lowercase(Locale.US),
+            studioId = studioId,
+            studioName = studioName,
+            hosts = (listOf(host) + extraHosts).distinct().take(MAX_HOST_CANDIDATES),
         )
+    }
+
+    /**
+     * An offer for a studio found by [LanDiscovery]. Discovery never carries a token, so
+     * this offer authenticates by desktop approval and includes a fresh nonce.
+     */
+    fun discoveredOffer(studio: DiscoveredStudio): LanPairingOffer {
+        val hosts = studio.hosts
+            .mapNotNull { candidate -> runCatching { normalizeIpv4(candidate) }.getOrNull() }
+            .distinct()
+            .take(MAX_HOST_CANDIDATES)
+        require(hosts.isNotEmpty()) { "This studio did not advertise a reachable address" }
+        require(studio.port in 1..65535) { "This studio advertised an invalid port" }
+
+        return LanPairingOffer(
+            host = hosts.first(),
+            port = studio.port,
+            token = "",
+            studioId = studio.studioId?.take(MAX_STUDIO_FIELD_CHARS),
+            studioName = studio.studioName?.take(MAX_STUDIO_FIELD_CHARS),
+            hosts = hosts,
+            approvalNonce = newApprovalNonce(),
+        )
+    }
+
+    fun newApprovalNonce(): String {
+        val bytes = ByteArray(APPROVAL_NONCE_BYTES)
+        SecureRandom().nextBytes(bytes)
+        return bytes.joinToString("") { byte -> "%02x".format(byte) }
+    }
+
+    /**
+     * The six digits the desktop shows for an approval request. Deliberately not a
+     * secret: it only lets the user confirm the request came from the phone they hold.
+     */
+    fun approvalCode(nonce: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(nonce.toByteArray(Charsets.UTF_8))
+        var value = 0L
+        for (index in 0 until 4) {
+            value = (value shl 8) or (digest[index].toLong() and 0xff)
+        }
+        return (value % 1_000_000L).toString().padStart(6, '0')
     }
 
     fun parseScreenOffer(params: JSONObject): ScreenStreamOffer {

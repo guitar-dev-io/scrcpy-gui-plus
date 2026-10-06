@@ -5,15 +5,14 @@ import {
   ChevronLeft,
   ChevronRight,
   Circle,
-  CirclePower,
   Download,
+  ExternalLink,
   Folder,
   Image as ImageIcon,
   LayoutGrid,
   ListChecks,
   Monitor,
-  MoreHorizontal,
-  RotateCw,
+  Play,
   SlidersHorizontal,
   Square,
   Terminal,
@@ -24,6 +23,7 @@ import type { ScrcpyConfig } from '../../hooks/useScrcpy'
 import { useDeviceActions } from '../../hooks/useDeviceActions'
 import { useDeviceStatus } from '../../hooks/useDeviceStatus'
 import type { DeviceActionId } from '../../types/deviceControl'
+import type { RailAction } from '../device-rail'
 import { connectionTypeOf } from '../../types/deviceStatus'
 import type {
   DashboardCompanionFallback,
@@ -32,6 +32,7 @@ import type {
 } from './DashboardEmbeddedStage'
 import DeviceStagePanel from './DeviceStagePanel'
 import DeviceHeader from './DeviceHeader'
+import { openMirrorWindow } from '../../windows/mirrorWindow'
 import SessionControlPanel from './SessionControlPanel'
 import TestRunnerPanel from '../test-runner'
 import { useShellUi } from '../../contexts/ShellUiContext'
@@ -49,7 +50,6 @@ interface DashboardLayoutProps {
   onInstallApk: () => void
   onOpenSettings: () => void
   onOpenFileExplorer: () => void
-  onOpenWirelessAdb: () => void
   onStart: () => void
   onStop: () => void
   isRunning: boolean
@@ -81,6 +81,20 @@ const focusRing =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-base)]'
 
 type DashboardLayoutPreset = 'compact' | 'wide'
+
+/**
+ * The drawer holds what the docked control panel deliberately does not: the
+ * launch-behaviour form and the advanced tool grid. Naming the tabs after that
+ * content keeps them from reading as a second copy of the panel's own
+ * Control / Inspector tabs.
+ */
+type SessionPanelTab = 'behavior' | 'advanced'
+
+const SESSION_MODES = [
+  { id: 'mirror', label: 'Screen', icon: Monitor },
+  { id: 'camera', label: 'Camera', icon: Camera },
+  { id: 'desktop', label: 'Desktop', icon: LayoutGrid },
+] as const
 
 const DASHBOARD_LAYOUT_STORAGE_PREFIX = 'scrcpy-gui-plus:dashboard-layout:v2'
 const CONTROL_PANEL_STORAGE_KEY = 'scrcpy-gui-plus:dashboard-control-panel-open'
@@ -238,7 +252,6 @@ export default function DashboardLayout({
   onInstallApk,
   onOpenSettings,
   onOpenFileExplorer,
-  onOpenWirelessAdb,
   onStart,
   onStop,
   isRunning,
@@ -264,27 +277,16 @@ export default function DashboardLayout({
     activateDeviceWorkspace,
   } = useShellUi()
   const [sessionPanelOpen, setSessionPanelOpen] = useState(false)
-  const [sessionPanelTab, setSessionPanelTab] = useState<
-    'inspector' | 'settings'
-  >('inspector')
+  const [sessionPanelTab, setSessionPanelTab] = useState<SessionPanelTab>(
+    'behavior',
+  )
   const [fullscreenRequest, setFullscreenRequest] = useState(0)
   const [controlPanelOpen, setControlPanelOpen] = useState(loadControlPanelOpen)
   const [activityDrawer, setActivityDrawer] = useState<
     'test-runner' | 'screenshots' | null
   >(null)
-  const [wideLayout, setWideLayout] = useState(
-    () => dashboardLayoutPresetForWidth(window.innerWidth) === 'wide',
-  )
   const [embeddedMetrics, setEmbeddedMetrics] =
     useState<EmbeddedStageMetrics | null>(null)
-
-  useEffect(() => {
-    const media = window.matchMedia('(min-width: 1536px)')
-    const sync = () =>
-      setWideLayout(dashboardLayoutPresetForWidth(window.innerWidth) === 'wide')
-    media.addEventListener('change', sync)
-    return () => media.removeEventListener('change', sync)
-  }, [])
 
   useEffect(() => {
     try {
@@ -316,17 +318,14 @@ export default function DashboardLayout({
     return () => window.removeEventListener('keydown', closeDrawer)
   }, [sessionPanelOpen, activityDrawer])
 
-  const openSessionPanel = (tab: 'inspector' | 'settings') => {
+  const openSessionPanel = (tab: SessionPanelTab) => {
     setSessionPanelTab(tab)
     setSessionPanelOpen(true)
   }
 
-  const sessionPanelTabs: Array<{
-    id: 'inspector' | 'settings'
-    label: string
-  }> = [
-    { id: 'inspector', label: 'Inspector' },
-    { id: 'settings', label: 'Settings' },
+  const sessionPanelTabs: Array<{ id: SessionPanelTab; label: string }> = [
+    { id: 'behavior', label: 'Behavior' },
+    { id: 'advanced', label: 'Advanced' },
   ]
 
   const sessionPanelContent = (
@@ -348,15 +347,19 @@ export default function DashboardLayout({
           </button>
         ))}
       </div>
-      {sessionPanelTab === 'inspector' ? (
-        <>
-          <section className={`${panel} p-4`}>{sessionBehavior}</section>
-          {!wideLayout && <div className="mt-4">{screenshotPanel}</div>}
-        </>
+      {sessionPanelTab === 'behavior' ? (
+        <section className={`${panel} p-4`}>{sessionBehavior}</section>
       ) : (
         <>
           {controlPanel}
           <div className="mt-4">{advancedTools}</div>
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            className={`mt-4 flex items-center gap-1.5 text-[10px] font-medium text-primary hover:underline ${focusRing}`}
+          >
+            <SlidersHorizontal size={12} /> Open app settings
+          </button>
         </>
       )}
     </>
@@ -428,36 +431,12 @@ export default function DashboardLayout({
     }
   }
 
-  // Session mode is a persistent config choice, not an action — always shown
-  // regardless of connection state.
-  const sessionModeActions = [
-    {
-      label: 'Screen',
-      icon: Monitor,
-      active: config.sessionMode === 'mirror',
-      onClick: () => updateConfig('sessionMode', 'mirror'),
-    },
-    {
-      label: 'Camera',
-      icon: Camera,
-      active: config.sessionMode === 'camera',
-      onClick: () => updateConfig('sessionMode', 'camera'),
-    },
-    {
-      label: 'Desktop',
-      icon: LayoutGrid,
-      active: config.sessionMode === 'desktop',
-      onClick: () => updateConfig('sessionMode', 'desktop'),
-    },
-  ]
-  const primarySessionAction =
-    sessionModeActions.find((item) => item.active) ?? sessionModeActions[0]
-  const PrimarySessionIcon = primarySessionAction.icon
-
   // Quick Actions are derived from device/session state per the redesign
   // spec — disconnected / connected / session-running each surface a
   // different, genuinely-available set of actions rather than disabling a
-  // single static list.
+  // single static list. Anything the stage rail or the docked control panel
+  // already owns (Rotate, device settings) stays out of this list so the
+  // command bar is not a second copy of them.
   const embeddedSessionRunning = embeddedMetrics?.connected ?? false
   const effectiveSessionRunning = isRunning || embeddedSessionRunning
   const stopActiveSession = () => {
@@ -475,27 +454,36 @@ export default function DashboardLayout({
         ? 'running'
         : 'connected'
 
-  type QuickAction = {
-    label: string
-    icon: typeof Monitor
-    onClick: () => void
-    disabled?: boolean
-  }
-
-  const quickActionsByState: Record<typeof connectionState, QuickAction[]> = {
+  const quickActionsByState: Record<typeof connectionState, RailAction[]> = {
     disconnected: [
-      { label: 'Pair a Device', icon: Wifi, onClick: onAddDevice },
-      { label: 'Wireless ADB', icon: Wifi, onClick: onOpenWirelessAdb },
+      {
+        id: 'pair',
+        label: 'Connect a Device',
+        icon: Wifi,
+        onClick: onAddDevice,
+      },
     ],
     connected: [
-      { label: 'Install APK', icon: Download, onClick: onInstallApk },
       {
+        id: 'install-apk',
+        label: 'Install APK',
+        icon: Download,
+        onClick: onInstallApk,
+      },
+      {
+        id: 'shell',
         label: 'Shell',
         icon: Terminal,
         onClick: () => selectWorkspaceTool('shell'),
       },
-      { label: 'Files', icon: Folder, onClick: onOpenFileExplorer },
       {
+        id: 'files',
+        label: 'Files',
+        icon: Folder,
+        onClick: onOpenFileExplorer,
+      },
+      {
+        id: 'screenshot',
         label: 'Screenshot',
         icon: ImageIcon,
         onClick: onScreenshot,
@@ -504,23 +492,40 @@ export default function DashboardLayout({
     ],
     running: [
       {
+        id: 'screenshot',
         label: 'Screenshot',
         icon: ImageIcon,
         onClick: onScreenshot,
         disabled: screenshotBusy,
       },
       {
-        label: isRecording ? 'Stop Rec' : 'Record',
+        id: 'record',
+        label: isRecording ? 'Stop Recording' : 'Record',
         icon: isRecording ? Square : Circle,
         onClick: () => void handleRecording(),
         disabled: recordingBusy,
+        tone: isRecording ? ('danger' as const) : undefined,
       },
-      { label: 'Rotate', icon: RotateCw, onClick: () => void action('rotate') },
-      { label: 'Stop', icon: CirclePower, onClick: stopActiveSession },
+      {
+        id: 'install-apk',
+        label: 'Install APK',
+        icon: Download,
+        onClick: onInstallApk,
+      },
+      {
+        id: 'shell',
+        label: 'Shell',
+        icon: Terminal,
+        onClick: () => selectWorkspaceTool('shell'),
+      },
+      {
+        id: 'files',
+        label: 'Files',
+        icon: Folder,
+        onClick: onOpenFileExplorer,
+      },
     ],
   }
-
-  const quickActions = quickActionsByState[connectionState]
 
   const resolutionMatch = status?.resolution?.match(/(\d+)\D+(\d+)/)
   const headerDimensions = resolutionMatch
@@ -531,6 +536,9 @@ export default function DashboardLayout({
       ? embeddedMetrics.dimensions
       : headerDimensions
   const runtimeConnected = embeddedMetrics?.connected ?? false
+  // Companion frames paint the same stage, so the command bar reads as live
+  // even though no embedded session is attached.
+  const runtimeStreaming = embeddedMetrics?.streaming ?? false
   const runtimeBusy = embeddedMetrics?.busy ?? loading
   const runtimeFps = embeddedMetrics?.fps ?? 0
 
@@ -538,85 +546,186 @@ export default function DashboardLayout({
     onEmbeddedSessionChange?.(runtimeConnected)
   }, [onEmbeddedSessionChange, runtimeConnected])
 
+  // Pop the active device out into its own OS window. The detached window
+  // attaches to the session this layout already streams (embed_session
+  // multiplexes subscribers per device), so the in-app stage keeps running.
+  const handlePopOut = async () => {
+    if (!activeDevice) return
+    const result = await openMirrorWindow({
+      serial: activeDevice,
+      deviceName: status?.model || activeDevice,
+      customPath,
+    })
+    if (!result.ok) {
+      notify('Could not open window', result.error || 'Unknown error', 'error')
+    }
+  }
+
+  const startActiveSession = () =>
+    onRequestEmbeddedSession ? onRequestEmbeddedSession('start') : onStart()
+
+  // Quick actions live on the rail beside the screen, not in the command bar:
+  // that is where the hand already is during a session, they stay visible
+  // without opening anything, and the detached mirror window shows the very
+  // same rail.
+  const railQuickActions: RailAction[] = [
+    ...quickActionsByState[connectionState],
+    {
+      id: 'pop-out',
+      label: 'New window',
+      icon: ExternalLink,
+      onClick: () => void handlePopOut(),
+      disabled: !activeDevice,
+    },
+  ]
+
+  // The command bar carries only what is about the session as a whole: which
+  // mode it runs in, and whether it runs. Per-device actions belong to the rail
+  // beside the screen.
   const deviceHeaderActions = (
     <>
+      <div
+        role="group"
+        aria-label="Session mode"
+        className="flex items-center gap-0.5 rounded-md border border-[var(--border-base)] bg-[var(--bg-input)] p-0.5"
+      >
+        {SESSION_MODES.map(({ id, label, icon: Icon }) => {
+          const selected = (config.sessionMode || 'mirror') === id
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => updateConfig('sessionMode', id)}
+              aria-pressed={selected}
+              title={`${label} mode`}
+              className={`flex h-7 items-center gap-1.5 rounded px-2 text-[9px] font-semibold transition-colors ${focusRing} ${
+                selected
+                  ? 'bg-primary text-on-primary'
+                  : 'text-[var(--text-subtle)] hover:text-[var(--text-base)]'
+              }`}
+            >
+              <Icon size={12} />
+              <span className={selected ? '' : 'sr-only'}>{label}</span>
+            </button>
+          )
+        })}
+      </div>
       <button
         type="button"
-        onClick={primarySessionAction.onClick}
-        aria-pressed
-        className={`flex h-8 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[9px] font-semibold text-on-primary ${focusRing}`}
+        onClick={effectiveSessionRunning ? stopActiveSession : startActiveSession}
+        disabled={!activeDevice}
+        className={`flex h-8 items-center gap-1.5 rounded-md px-3 text-[9px] font-semibold transition-colors disabled:opacity-35 ${focusRing} ${
+          effectiveSessionRunning
+            ? 'border border-red-500/40 text-red-400 hover:bg-red-500/10'
+            : 'bg-primary text-on-primary hover:brightness-110'
+        }`}
       >
-        <PrimarySessionIcon size={12} /> {primarySessionAction.label}
-      </button>
-      {quickActions.map(({ label, icon: Icon, onClick, disabled }) => (
-        <button
-          key={label}
-          type="button"
-          onClick={onClick}
-          disabled={disabled}
-          className={`flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-base)] bg-[var(--bg-input)] px-2.5 text-[9px] font-medium text-[var(--text-muted)] hover:border-primary/50 hover:text-[var(--text-base)] disabled:opacity-35 ${focusRing}`}
-        >
-          <Icon size={12} /> {label}
-        </button>
-      ))}
-      <button
-        type="button"
-        onClick={() => openSessionPanel('settings')}
-        className={`flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-base)] bg-[var(--bg-input)] px-2.5 text-[9px] font-medium text-[var(--text-muted)] hover:border-primary/50 hover:text-[var(--text-base)] ${focusRing}`}
-      >
-        <MoreHorizontal size={12} /> More
+        {effectiveSessionRunning ? <Square size={11} /> : <Play size={11} />}
+        {effectiveSessionRunning ? 'Stop Session' : 'Start Session'}
       </button>
     </>
+  )
+
+  const deviceName = status?.model || activeDevice
+  const connectionLabel = activeDevice
+    ? connectionTypeOf(activeDevice).toUpperCase()
+    : ''
+  // A single sentence about the session, shared by both layouts. The stage no
+  // longer prints its own "Live embedded stream" line underneath it.
+  const statusLabel = !activeDevice
+    ? 'Offline'
+    : embeddedMetrics?.source === 'companion'
+      ? 'Companion stream'
+      : runtimeStreaming
+        ? 'Session active'
+        : 'Online'
+
+  const deviceCommandBar = (
+    <DeviceHeader
+      standalone
+      deviceName={deviceName}
+      deviceSerial={activeDevice}
+      androidVersion={status?.androidVersion}
+      connection={connectionLabel}
+      batteryLevel={status?.batteryLevel}
+      connected={runtimeStreaming}
+      busy={runtimeBusy}
+      dimensions={runtimeDimensions}
+      fps={runtimeFps}
+      statusLabel={statusLabel}
+      onFullscreen={() => setFullscreenRequest((request) => request + 1)}
+      actions={deviceHeaderActions}
+    />
+  )
+
+  const renderDeviceStage = (compact: boolean) => (
+    <DeviceStagePanel
+      compact={compact}
+      activeDevice={activeDevice}
+      deviceName={deviceName}
+      androidVersion={status?.androidVersion}
+      connection={connectionLabel}
+      batteryLevel={status?.batteryLevel}
+      customPath={customPath}
+      outputDir={outputDir}
+      fullscreenRequest={fullscreenRequest}
+      pending={pending}
+      screenshotBusy={screenshotBusy}
+      isRecording={isRecording}
+      recordingBusy={recordingBusy}
+      notify={notify}
+      onAction={(id) => void action(id)}
+      onScreenshot={onScreenshot}
+      onToggleRecording={() => void handleRecording()}
+      onAddDevice={onAddDevice}
+      onOpenSettings={() => openSessionPanel('advanced')}
+      onMetricsChange={setEmbeddedMetrics}
+      quickActions={railQuickActions}
+      sessionCommand={embeddedSessionCommand}
+      companion={companion}
+    />
+  )
+
+  const sessionPanel = sessionPanelOpen && (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="session-panel-title"
+      className="fixed inset-0 z-[var(--z-modal)] flex justify-end bg-black/50 backdrop-blur-sm"
+      onMouseDown={() => setSessionPanelOpen(false)}
+    >
+      <aside
+        className="custom-scrollbar h-full w-full max-w-[358px] overflow-y-auto border-l border-[var(--border-base)] bg-[var(--bg-sidebar)] p-4 shadow-2xl"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
+          <div
+            id="session-panel-title"
+            className="flex items-center gap-2 text-sm font-semibold"
+          >
+            <SlidersHorizontal size={15} className="text-primary" /> Session
+            Panel
+          </div>
+          <button
+            type="button"
+            onClick={() => setSessionPanelOpen(false)}
+            className={`rounded-lg p-2 text-[var(--text-muted)] hover:bg-white/5 hover:text-white ${focusRing}`}
+            aria-label="Close session panel"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        {sessionPanelContent}
+      </aside>
+    </div>
   )
 
   if (compactWorkspace) {
     return (
       <div className="flex h-full min-h-[430px] min-w-0 flex-col gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-2">
-        <DeviceHeader
-          standalone
-          deviceName={status?.model || activeDevice}
-          deviceSerial={activeDevice}
-          androidVersion={status?.androidVersion}
-          connection={
-            activeDevice ? connectionTypeOf(activeDevice).toUpperCase() : ''
-          }
-          batteryLevel={status?.batteryLevel}
-          connected={runtimeConnected}
-          busy={runtimeBusy}
-          dimensions={runtimeDimensions}
-          fps={runtimeFps}
-          statusLabel={runtimeConnected ? 'Session active' : 'Online'}
-          onFullscreen={() => setFullscreenRequest((request) => request + 1)}
-          actions={deviceHeaderActions}
-        />
-        <div className="min-h-0 flex-1">
-          <DeviceStagePanel
-            compact
-            activeDevice={activeDevice}
-            deviceName={status?.model || activeDevice}
-            androidVersion={status?.androidVersion}
-            connection={
-              activeDevice ? connectionTypeOf(activeDevice).toUpperCase() : ''
-            }
-            batteryLevel={status?.batteryLevel}
-            customPath={customPath}
-            outputDir={outputDir}
-            fullscreenRequest={fullscreenRequest}
-            pending={pending}
-            screenshotBusy={screenshotBusy}
-            isRecording={isRecording}
-            recordingBusy={recordingBusy}
-            notify={notify}
-            onAction={(id) => void action(id)}
-            onScreenshot={onScreenshot}
-            onToggleRecording={() => void handleRecording()}
-            onAddDevice={onAddDevice}
-            onOpenSettings={onOpenSettings}
-            onMetricsChange={setEmbeddedMetrics}
-            sessionCommand={embeddedSessionCommand}
-            companion={companion}
-          />
-        </div>
+        {deviceCommandBar}
+        <div className="min-h-0 flex-1">{renderDeviceStage(true)}</div>
+        {sessionPanel}
       </div>
     )
   }
@@ -624,55 +733,9 @@ export default function DashboardLayout({
   return (
     <div className="relative flex h-full min-h-[560px] flex-1 bg-[var(--bg-base)]">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-3">
-        <DeviceHeader
-          standalone
-          deviceName={status?.model || activeDevice}
-          deviceSerial={activeDevice}
-          androidVersion={status?.androidVersion}
-          connection={
-            activeDevice ? connectionTypeOf(activeDevice).toUpperCase() : ''
-          }
-          batteryLevel={status?.batteryLevel}
-          connected={runtimeConnected}
-          busy={runtimeBusy}
-          dimensions={runtimeDimensions}
-          fps={runtimeFps}
-          statusLabel={
-            activeDevice
-              ? runtimeConnected
-                ? 'Session active'
-                : 'Online'
-              : 'Offline'
-          }
-          onFullscreen={() => setFullscreenRequest((request) => request + 1)}
-          actions={deviceHeaderActions}
-        />
+        {deviceCommandBar}
         <div className="relative flex min-h-[560px] flex-1 gap-2 overflow-hidden">
-          <div className="min-h-0 min-w-0 flex-1">
-            <DeviceStagePanel
-              activeDevice={activeDevice}
-              deviceName={status?.model || activeDevice}
-              androidVersion={status?.androidVersion}
-              connection={activeDevice ? connectionTypeOf(activeDevice).toUpperCase() : ''}
-              batteryLevel={status?.batteryLevel}
-              customPath={customPath}
-              outputDir={outputDir}
-              fullscreenRequest={fullscreenRequest}
-              pending={pending}
-              screenshotBusy={screenshotBusy}
-              isRecording={isRecording}
-              recordingBusy={recordingBusy}
-              notify={notify}
-              onAction={(id) => void action(id)}
-              onScreenshot={onScreenshot}
-              onToggleRecording={() => void handleRecording()}
-              onAddDevice={onAddDevice}
-              onOpenSettings={onOpenSettings}
-              onMetricsChange={setEmbeddedMetrics}
-              sessionCommand={embeddedSessionCommand}
-              companion={companion}
-            />
-          </div>
+          <div className="min-h-0 min-w-0 flex-1">{renderDeviceStage(false)}</div>
 
           {controlPanelOpen ? (
             <aside className="relative w-[310px] min-w-[270px] shrink-0 max-[1180px]:w-[280px]" aria-label="Session controls">
@@ -681,16 +744,13 @@ export default function DashboardLayout({
               </button>
               <SessionControlPanel
                 activeDevice={activeDevice}
-                connection={activeDevice ? connectionTypeOf(activeDevice).toUpperCase() : undefined}
+                connection={connectionLabel || undefined}
                 status={status}
                 config={config}
                 pending={pending}
-                isRunning={effectiveSessionRunning}
                 onUpdateConfig={updateConfig}
                 onUpdateDeviceSetting={(id) => void updateDeviceDisplaySetting(id)}
-                onOpenSettings={() => openSessionPanel('settings')}
-                onStart={() => onRequestEmbeddedSession ? onRequestEmbeddedSession('start') : onStart()}
-                onStop={stopActiveSession}
+                onOpenSettings={() => openSessionPanel('advanced')}
               />
             </aside>
           ) : (
@@ -732,39 +792,7 @@ export default function DashboardLayout({
         </div>
       </div>
 
-      {sessionPanelOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="session-panel-title"
-          className="fixed inset-0 z-[var(--z-modal)] flex justify-end bg-black/50 backdrop-blur-sm"
-          onMouseDown={() => setSessionPanelOpen(false)}
-        >
-          <aside
-            className="custom-scrollbar h-full w-full max-w-[358px] overflow-y-auto border-l border-[var(--border-base)] bg-[var(--bg-sidebar)] p-4 shadow-2xl"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="mb-4 flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
-              <div
-                id="session-panel-title"
-                className="flex items-center gap-2 text-sm font-semibold"
-              >
-                <SlidersHorizontal size={15} className="text-primary" /> Session
-                Panel
-              </div>
-              <button
-                type="button"
-                onClick={() => setSessionPanelOpen(false)}
-                className={`rounded-lg p-2 text-[var(--text-muted)] hover:bg-white/5 hover:text-white ${focusRing}`}
-                aria-label="Close session panel"
-              >
-                <X size={16} />
-              </button>
-            </div>
-            {sessionPanelContent}
-          </aside>
-        </div>
-      )}
+      {sessionPanel}
     </div>
   )
 }

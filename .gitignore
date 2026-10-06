@@ -35,6 +35,9 @@ node_modules/
 *.pid
 *.pid.lock
 
+# Local automation data may contain real customer or staff information
+.maestro/local-data/
+
 # Coverage
 coverage/
 *.lcov

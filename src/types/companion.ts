@@ -6,6 +6,18 @@ export interface CompanionDevice {
   protocol: number
   transport: string
   capabilities: string[]
+  /** Stable identity persisted by the Agent app itself, independent of `id`
+   * (which is connection-scoped). Absent for Agent builds that predate it. */
+  agentDeviceId?: string
+  /** The LAN peer's IP, used to auto-match this Agent against an ADB wifi device. */
+  peerIp?: string
+}
+
+export interface CompanionTelemetryEvent {
+  agentDeviceId?: string
+  battery?: number
+  wifiConnected?: boolean
+  screenOn?: boolean
 }
 
 export type CompanionMethod =
@@ -29,10 +41,33 @@ export interface CompanionScanResponse {
 export interface CompanionLanOffer {
   generation: number
   host: string
+  /**
+   * Every LAN address this desktop is reachable on, best first. `host` is the first
+   * entry; the Agent walks the whole list because a multi-homed desktop cannot know
+   * which of its addresses the phone can actually see.
+   */
+  hosts: string[]
   port: number
+  /** UDP port the Agent can broadcast to, or null when that port was unavailable. */
+  discoveryPort: number | null
   expiresAt: number
   payload: string
   svg: string
+}
+
+/**
+ * An Agent that found this desktop by LAN broadcast and is holding its socket open
+ * waiting to be approved. It has no pairing token, so this prompt is the auth gate.
+ */
+export interface CompanionApprovalEvent {
+  requestId: number
+  pairingGeneration: number
+  deviceName: string
+  peerIp: string
+  /** Six digits the phone shows too, so the user can confirm it is the right device. */
+  code: string
+  /** True once answered, timed out, or superseded — the UI drops the prompt. */
+  resolved: boolean
 }
 
 export interface CompanionRequestResponse<T = unknown> {

@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { applyAutomationRecord, crossJoinDataRecords, datasetRecords, filterDataRecords, variableNameForColumn } from './automationData'
+import { applyAutomationRecord, applyDataTransforms, crossJoinDataRecords, datasetRecords, filterDataRecords, filterDataRecordsMany, lookupJoinDataRecords, profileAutomationColumn, variableNameForColumn } from './automationData'
 
 describe('automationData', () => {
   it('creates generic safe variable names without domain assumptions', () => {
     expect(variableNameForColumn('Branch Code', 0)).toBe('BRANCH_CODE')
     expect(variableNameForColumn('ชื่อสาขา', 1)).toBe('COLUMN_2')
+  })
+
+  it('profiles dates, mixed types, and leading-zero identifiers without coercion', () => {
+    expect(profileAutomationColumn(['001', '002'])).toEqual({ type: 'string', hasLeadingZeros: true })
+    expect(profileAutomationColumn(['2026-08-26', '2026-08-27'])).toEqual({ type: 'date', hasLeadingZeros: false })
+    expect(profileAutomationColumn([1, 'two'])).toEqual({ type: 'mixed', hasLeadingZeros: false })
   })
 
   it('maps and filters arbitrary dataset columns', () => {
@@ -23,6 +29,16 @@ describe('automationData', () => {
 
   it('rejects duplicate variables when joining datasets', () => {
     expect(() => crossJoinDataRecords([{ ID: 'A' }], [{ ID: 'B' }])).toThrow(/Duplicate variable/)
+  })
+
+  it('joins related datasets by matching keys', () => {
+    expect(lookupJoinDataRecords([{ ID: '1', NAME: 'A' }, { ID: '2', NAME: 'B' }], [{ KEY: '2', EMAIL: 'b@test' }], 'ID', 'KEY')).toEqual([{ ID: '2', NAME: 'B', KEY: '2', EMAIL: 'b@test' }])
+  })
+
+  it('combines filters and derives transformed values', () => {
+    const rows = [{ NAME: '  Alice ', ACTIVE: true }, { NAME: 'Bob', ACTIVE: false }]
+    expect(filterDataRecordsMany(rows, [{ variable: 'ACTIVE', operator: 'truthy', expected: '' }, { variable: 'NAME', operator: 'contains', expected: 'ali' }], 'and')).toHaveLength(1)
+    expect(applyDataTransforms(rows[0], [{ target: 'NAME', kind: 'trim' }, { target: 'LABEL', kind: 'template', value: 'User: ${NAME}' }])).toMatchObject({ NAME: 'Alice', LABEL: 'User: Alice' })
   })
 
   it('injects mapped variables into env and leaves Maestro expressions intact', () => {

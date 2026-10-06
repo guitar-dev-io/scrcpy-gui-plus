@@ -34,8 +34,6 @@ function renderControlPanel(config: ScrcpyConfig, support: RenderDriverSupport, 
         <ControlPanel
             config={config}
             setConfig={setConfig}
-            onStart={vi.fn()}
-            onStop={vi.fn()}
             isRunning={false}
             onListOptions={vi.fn()}
             detectedCameras={[]}
@@ -52,6 +50,35 @@ async function openRendererSelect(user: ReturnType<typeof userEvent.setup>) {
     const button = container.querySelector('button') as HTMLButtonElement;
     await user.click(button);
 }
+
+describe('ControlPanel scope', () => {
+    // Each of these has exactly one owner elsewhere in the dashboard. Rendering
+    // a second copy inside the Advanced drawer is what made "Open advanced
+    // settings" look like a duplicate of the panel it was opened from.
+    it('leaves session mode to the header command bar', () => {
+        renderControlPanel(createConfig(), supportedRenderers);
+        expect(screen.queryByText('Capture Source')).not.toBeInTheDocument();
+    });
+
+    it('leaves Start/Stop to the header command bar', () => {
+        renderControlPanel(createConfig(), supportedRenderers);
+        expect(screen.queryByText('Start Mirroring')).not.toBeInTheDocument();
+        expect(screen.queryByText('Stop Session')).not.toBeInTheDocument();
+    });
+
+    it('leaves FPS, bitrate and VSync to the session control panel', () => {
+        renderControlPanel(createConfig(), supportedRenderers);
+        expect(screen.queryByText('FPS')).not.toBeInTheDocument();
+        expect(screen.queryByText('Bitrate')).not.toBeInTheDocument();
+        expect(screen.queryByText('VSync')).not.toBeInTheDocument();
+    });
+
+    it('still owns the settings that live nowhere else', () => {
+        renderControlPanel(createConfig(), supportedRenderers);
+        expect(screen.getByText('Graphics Renderer')).toBeInTheDocument();
+        expect(screen.getByText('Resolution')).toBeInTheDocument();
+    });
+});
 
 describe('ControlPanel renderer selector', () => {
     describe('with supported renderers and default config', () => {

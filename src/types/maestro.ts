@@ -4,10 +4,11 @@ export interface MaestroAvailability {
   error?: string
 }
 
-/** Payload of the `maestro-run-progress` event emitted per stdout line while a run is in flight. */
+/** Payload emitted per Maestro CLI output line while a run is in flight. */
 export interface MaestroRunProgressEvent {
   runId: string
   line: string
+  stream?: 'stdout' | 'stderr'
 }
 
 export interface MaestroArtifact {

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CirclePower, Settings } from 'lucide-react'
+import { Settings } from 'lucide-react'
 import type { ScrcpyConfig } from '../../hooks/useScrcpy'
 import type { DeviceActionId } from '../../types/deviceControl'
 import { formatUptime, type DeviceStatus } from '../../types/deviceStatus'
@@ -55,7 +55,12 @@ function Switch({
   )
 }
 
-type ControlTab = 'control' | 'inspector' | 'settings'
+/**
+ * Two tabs only: the live controls, and the read-only device facts. A third
+ * "Settings" tab used to exist holding nothing but a link to the session
+ * drawer — that link now sits under the controls it belongs to.
+ */
+type ControlTab = 'control' | 'inspector'
 
 interface SessionControlPanelProps {
   activeDevice: string
@@ -63,12 +68,10 @@ interface SessionControlPanelProps {
   status: DeviceStatus | null
   config: ScrcpyConfig
   pending: Readonly<Record<string, boolean>>
-  isRunning: boolean
   onUpdateConfig: <K extends keyof ScrcpyConfig>(key: K, value: ScrcpyConfig[K]) => void
   onUpdateDeviceSetting: (action: DeviceActionId) => void
+  /** Opens the session drawer holding launch behaviour and advanced tools. */
   onOpenSettings: () => void
-  onStart: () => void
-  onStop: () => void
 }
 
 export default function SessionControlPanel({
@@ -77,18 +80,14 @@ export default function SessionControlPanel({
   status,
   config,
   pending,
-  isRunning,
   onUpdateConfig,
   onUpdateDeviceSetting,
   onOpenSettings,
-  onStart,
-  onStop,
 }: SessionControlPanelProps) {
   const [activeTab, setActiveTab] = useState<ControlTab>('control')
   const tabs: Array<{ id: ControlTab; label: string }> = [
     { id: 'control', label: 'Control' },
     { id: 'inspector', label: 'Inspector' },
-    { id: 'settings', label: 'Settings' },
   ]
   const infoRows = [
     ['Model', status?.model],
@@ -202,18 +201,12 @@ export default function SessionControlPanel({
           </div>
         )}
 
-        {activeTab === 'settings' && (
-          <div className="space-y-3">
-            <p className="text-[10px] leading-relaxed text-[var(--text-subtle)]">Advanced launch, input, codec and window options are available in Session Settings.</p>
-            <button type="button" onClick={onOpenSettings} className={`flex items-center gap-1.5 text-[10px] font-medium text-primary hover:underline ${focusRing}`}>
-              <Settings size={12} /> Open advanced settings
-            </button>
-          </div>
-        )}
-
+        {/* Start/Stop lives in the command bar above the stage, which stays
+            visible even when this panel is collapsed. */}
         <div className="mt-4 border-t border-[var(--border-subtle)] pt-4">
-          <button type="button" onClick={isRunning ? onStop : onStart} disabled={!activeDevice} className={`flex h-10 w-full items-center justify-center gap-2 rounded-lg text-[10px] font-semibold disabled:opacity-35 ${focusRing} ${isRunning ? 'border border-red-500/35 bg-red-500/15 text-red-400' : 'bg-primary text-on-primary hover:bg-[var(--primary-hover)]'}`}>
-            <CirclePower size={13} /> {isRunning ? 'Stop Session' : 'Start Session'}
+          <p className="text-[10px] leading-relaxed text-[var(--text-subtle)]">Launch behaviour, input, codec and window options live in the session drawer.</p>
+          <button type="button" onClick={onOpenSettings} className={`mt-2 flex items-center gap-1.5 text-[10px] font-medium text-primary hover:underline ${focusRing}`}>
+            <Settings size={12} /> Open advanced settings
           </button>
         </div>
       </div>

@@ -1,3 +1,4 @@
+import { StrictMode } from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 import { vi } from 'vitest'
 import DeviceScreen from './DeviceScreen'
@@ -81,6 +82,22 @@ describe('DeviceScreen', () => {
       hasRenderedFrame: true,
       error: '',
     })
+  })
+
+  it('re-arms auto-start when the session is torn down and remounted', async () => {
+    // StrictMode runs effects, cleans them up, then runs them again. The
+    // session teardown in that cleanup kills the first start's lifecycle, so
+    // without re-arming the guard the screen would sit in 'starting' forever
+    // until the user toggled stop/start by hand.
+    render(
+      <StrictMode>
+        <DeviceScreen serial="pixel-1" autoStart>
+          {() => null}
+        </DeviceScreen>
+      </StrictMode>,
+    )
+
+    await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(2))
   })
 
   it('handles each imperative command id only once', async () => {

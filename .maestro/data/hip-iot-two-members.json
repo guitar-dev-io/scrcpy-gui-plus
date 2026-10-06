@@ -1,0 +1,18 @@
+{
+  "homes": [
+    {
+      "BRANCH_CODE": "WX0007",
+      "BRANCH_NAME": "012 หมู่บ้านบัวทอง"
+    }
+  ],
+  "members": [
+    {
+      "MEMBER_NAME": "Automation Test 1",
+      "MEMBER_ACCOUNT": "test1@example.com"
+    },
+    {
+      "MEMBER_NAME": "Automation Test 2",
+      "MEMBER_ACCOUNT": "test2@example.com"
+    }
+  ]
+}

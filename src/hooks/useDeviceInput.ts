@@ -2,9 +2,25 @@ import { useEffect, useRef } from 'react'
 import { clientToDevice } from '../utils/deviceCoordinates'
 import type { TouchArgs, KeyArgs, DeviceAction } from './useEmbeddedSession'
 
-// Android key codes used for the few keys we translate directly.
+// Android key codes used for the keys we translate directly.
+const KEYCODE_DPAD_UP = 19
+const KEYCODE_DPAD_DOWN = 20
+const KEYCODE_DPAD_LEFT = 21
+const KEYCODE_DPAD_RIGHT = 22
 const KEYCODE_ENTER = 66
 const KEYCODE_DEL = 67
+const KEYCODE_FORWARD_DEL = 112
+
+/** Keys with no text of their own that still have to reach the device. */
+const KEYCODE_BY_KEY: Readonly<Record<string, number>> = {
+  Enter: KEYCODE_ENTER,
+  Backspace: KEYCODE_DEL,
+  Delete: KEYCODE_FORWARD_DEL,
+  ArrowUp: KEYCODE_DPAD_UP,
+  ArrowDown: KEYCODE_DPAD_DOWN,
+  ArrowLeft: KEYCODE_DPAD_LEFT,
+  ArrowRight: KEYCODE_DPAD_RIGHT,
+}
 
 interface UseDeviceInputArgs {
   /** The <canvas> that shows the decoded video (used only for reference). */
@@ -87,6 +103,10 @@ export function useDeviceInput({
       if (!dims) return
       const point = mapPointer(e)
       if (!point) return
+      // Cancelling pointerdown below suppresses the compatibility mousedown
+      // event, and with it the default focus. Without this explicit focus the
+      // surface never receives keydown, so typing silently goes nowhere.
+      el.focus({ preventScroll: true })
       try {
         el.setPointerCapture(e.pointerId)
       } catch {
@@ -177,13 +197,9 @@ export function useDeviceInput({
         e.preventDefault()
         return
       }
-      if (e.key === 'Backspace') {
-        onKeyRef.current({ keycode: KEYCODE_DEL })
-        e.preventDefault()
-        return
-      }
-      if (e.key === 'Enter') {
-        onKeyRef.current({ keycode: KEYCODE_ENTER })
+      const keycode = KEYCODE_BY_KEY[e.key]
+      if (keycode !== undefined) {
+        onKeyRef.current({ keycode })
         e.preventDefault()
         return
       }

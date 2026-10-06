@@ -1,5 +1,3 @@
-name: Release CI
-
 on:
   push:
     tags:
@@ -73,17 +71,19 @@ jobs:
             | macOS (Universal) | `.dmg` |
             | Linux (AppImage) | `.AppImage` |
             | Linux (deb) | `.deb` |
+            | Android (signed APK) | `app-release.apk` |
+            | Android (Play bundle) | `app-release.aab` |
           releaseDraft: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.draft == 'true' }}
           prerelease: false
           args: ${{ matrix.args }}
 
       - name: Build Windows portable package
-        if: matrix.platform == 'windows-latest'
+        if: github.event_name != 'workflow_dispatch' && matrix.platform == 'windows-latest'
         shell: pwsh
         run: ./scripts/build-portable.ps1 -SkipBuild
 
       - name: Upload Windows portable package to release
-        if: matrix.platform == 'windows-latest'
+        if: github.event_name != 'workflow_dispatch' && matrix.platform == 'windows-latest'
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -106,3 +106,94 @@ jobs:
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/portable/*.zip
           if-no-files-found: ignore
+
+  android-release:
+    needs: publish
+    runs-on: ubuntu-22.04
+    environment:
+      name: android-release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Prepare Android signing keystore
+        env:
+          ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_RELEASE_KEYSTORE_BASE64" || {
+            echo "ANDROID_RELEASE_KEYSTORE_BASE64 is not configured in the android-release environment" >&2
+            exit 1
+          }
+          printf '%s' "$ANDROID_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/scrcpy-gui-plus-release.jks"
+          chmod 600 "$RUNNER_TEMP/scrcpy-gui-plus-release.jks"
+          test -s "$RUNNER_TEMP/scrcpy-gui-plus-release.jks"
+
+      - name: Build signed Android APK and bundle
+        working-directory: android-companion
+        env:
+          ANDROID_RELEASE_KEYSTORE_PATH: ${{ runner.temp }}/scrcpy-gui-plus-release.jks
+          ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_RELEASE_STORE_PASSWORD"
+          test -n "$ANDROID_RELEASE_KEY_ALIAS"
+          test -n "$ANDROID_RELEASE_KEY_PASSWORD"
+          ./gradlew --no-daemon -PandroidReleaseSigningRequired=true test lint assembleRelease bundleRelease
+
+      - name: Generate Android checksums
+        run: |
+          set -euo pipefail
+          sha256sum \
+            android-companion/app/build/outputs/apk/release/app-release.apk \
+            android-companion/app/build/outputs/bundle/release/app-release.aab \
+            > android-companion/app/build/outputs/android-release-sha256sums.txt
+
+      - name: Upload Android workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release
+          path: |
+            android-companion/app/build/outputs/apk/release/app-release.apk
+            android-companion/app/build/outputs/bundle/release/app-release.aab
+            android-companion/app/build/outputs/android-release-sha256sums.txt
+
+      - name: Upload Android assets to GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="$(sed -n 's/^versionName=//p' android-companion/version.properties)"
+          test -n "$VERSION"
+          if [[ "$GITHUB_REF_TYPE" == "tag" && "$GITHUB_REF_NAME" != "v$VERSION" ]]; then
+            echo "Tag $GITHUB_REF_NAME does not match Android version v$VERSION" >&2
+            exit 1
+          fi
+          gh release upload "v$VERSION" \
+            android-companion/app/build/outputs/apk/release/app-release.apk \
+            android-companion/app/build/outputs/bundle/release/app-release.aab \
+            android-companion/app/build/outputs/android-release-sha256sums.txt \
+            --clobber
+
+      - name: Remove temporary signing keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/scrcpy-gui-plus-release.jks"

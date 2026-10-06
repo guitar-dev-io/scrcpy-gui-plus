@@ -16,6 +16,14 @@ interface CompanionSession {
 interface CompanionSessionListener {
     fun onConnected()
     fun onReconnecting(reason: String, attempt: Int, delayMs: Long) {}
+
+    /**
+     * The socket is open but the session is not live yet: this device was found through
+     * LAN discovery rather than a QR code, so the desktop user has to approve it. [code]
+     * is the six digits the desktop prompt shows, for the user to compare.
+     */
+    fun onAwaitingApproval(code: String?) {}
+
     fun onLog(message: String)
     fun onDisconnected(reason: String)
 }

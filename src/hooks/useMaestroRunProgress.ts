@@ -111,6 +111,7 @@ export function useMaestroRunProgress(
     let unlisten: (() => void) | undefined
     onMaestroRunProgress((payload) => {
       if (cancelled || payload.runId !== runId) return
+      if (payload.stream === 'stderr') return
       const status = classifyProgressLine(payload.line)
       if (!status) return
       const ids = orderedIdsRef.current

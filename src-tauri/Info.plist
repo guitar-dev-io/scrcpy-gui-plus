@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Merged into the generated macOS Info.plist by Tauri.
+
+  LAN pairing answers an Agent's UDP discovery probe with a unicast datagram to the
+  phone. On macOS 15 and later that outbound local-network traffic needs the Local
+  Network privacy grant, and without a usage description the system prompt has no
+  explanation and the reply is silently dropped.
+-->
+<plist version="1.0">
+  <dict>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Scrcpy GUI Plus needs local network access to pair with the Mobile Studio Agent on your Android device over Wi-Fi.</string>
+  </dict>
+</plist>

@@ -21,12 +21,9 @@ function renderPanel() {
       }}
       config={{ sessionMode: 'mirror' } as ScrcpyConfig}
       pending={{}}
-      isRunning={false}
       onUpdateConfig={(key, value) => onUpdateConfig(key, value)}
       onUpdateDeviceSetting={onUpdateDeviceSetting}
       onOpenSettings={onOpenSettings}
-      onStart={vi.fn()}
-      onStop={vi.fn()}
     />,
   )
   return { onUpdateConfig, onUpdateDeviceSetting, onOpenSettings }
@@ -44,17 +41,21 @@ describe('SessionControlPanel', () => {
     expect(onUpdateDeviceSetting).toHaveBeenCalledWith('auto_rotate_off')
   })
 
-  it('owns only tab selection while exposing settings actions', async () => {
+  it('owns only tab selection while delegating the session drawer', async () => {
     const user = userEvent.setup()
     const { onOpenSettings } = renderPanel()
 
     await user.click(screen.getByRole('button', { name: 'Inspector' }))
     expect(screen.getByText('Pixel')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Settings' }))
-    expect(screen.getAllByRole('button', { name: 'Start Session' })).toHaveLength(1)
     await user.click(screen.getByRole('button', { name: 'Open advanced settings' }))
     expect(onOpenSettings).toHaveBeenCalledOnce()
-    expect(screen.getByRole('button', { name: 'Start Session' })).toBeEnabled()
+  })
+
+  it('leaves starting and stopping the session to the command bar', () => {
+    renderPanel()
+
+    expect(screen.queryByRole('button', { name: /Session$/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Settings' })).toBeNull()
   })
 })

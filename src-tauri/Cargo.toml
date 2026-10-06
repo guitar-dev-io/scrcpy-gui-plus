@@ -15,31 +15,34 @@ name = "scrcpy_gui_plus_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-reqwest = { version = "0.13", default-features = false, features = [
+tauri = { version = "2.11.6", features = ["protocol-asset"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+serde_yaml_ng = "0.10.0"
+calamine = "0.36.1"
+reqwest = { version = "0.13.5", default-features = false, features = [
   "json",
   "native-tls",
 ] }
-zip = "8.1.0"
-quick-xml = "0.41.0"
-flate2 = "1.0"
-tar = "0.4"
-tokio = { version = "1.49.0", features = ["full"] }
-tauri-plugin-shell = "2.3.5"
-tauri-plugin-dialog = "2.7.0"
-chrono = "0.4.43"
-base64 = "0.22"
-qrcode = { version = "0.14", default-features = false, features = ["svg"] }
-rand = "0.9"
+zip = "8.6.0"
+quick-xml = "0.42.0"
+flate2 = "1.1.10"
+tar = "0.4.46"
+tokio = { version = "1.53.1", features = ["full"] }
+tauri-plugin-shell = "2.3.6"
+tauri-plugin-dialog = "2.7.3"
+chrono = "0.4.45"
+base64 = "0.23.1"
+qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
+rand = "0.10.3"
 rusb = { version = "=0.9.4", features = ["vendored"] }
-image = { version = "=0.25.8", default-features = false, features = [
+image = { version = "0.25.10", default-features = false, features = [
   "png",
   "jpeg",
 ] }
-sha2 = "0.10"
-openssl = { version = "0.10", features = ["vendored"] }
+sha2 = "0.11.0"
+openssl = { version = "0.10.81", features = ["vendored"] }
+if-addrs = "0.13"

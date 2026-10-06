@@ -1,20 +1,23 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
-  Circle,
-  Minus,
-  Plus,
-  Play,
-  Smartphone,
-  Square,
-  Wifi,
-} from 'lucide-react'
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react'
+import { Circle, Minus, Plus, Play, Smartphone, Square, Wifi } from 'lucide-react'
 import {
   useEmbeddedWorkspaceSettings,
   settingsToOptions,
 } from '../../hooks/useEmbeddedWorkspaceSettings'
-import { useDeviceScreen } from '../embedded-workspace/DeviceScreen'
+import {
+  useDeviceScreen,
+  type DeviceScreenMetrics,
+} from '../embedded-workspace/DeviceScreen'
 import FullscreenDeviceView from '../embedded-workspace/FullscreenDeviceView'
+import DeviceFrame from './DeviceFrame'
 import DeviceHeader from './DeviceHeader'
+import { openMirrorWindow } from '../../windows/mirrorWindow'
 
 export interface DashboardCompanionFallback {
   available: boolean
@@ -38,6 +41,7 @@ interface DashboardEmbeddedStageProps {
   customPath?: string
   outputDir?: string
   notify: Notify
+  /** The vertical rail beside the screen; supply an `ActionRail`. */
   actionRail: ReactNode
   onScreenshot: () => void
   screenshotBusy?: boolean
@@ -61,15 +65,24 @@ export interface EmbeddedSessionCommand {
   action: 'start' | 'stop'
 }
 
+/** Which transport is painting the stage right now. */
+export type StageStreamSource = 'embedded' | 'companion' | null
+
 export interface EmbeddedStageMetrics {
   connected: boolean
   busy: boolean
   dimensions: { width: number; height: number } | null
   fps: number
+  /** True while either transport paints frames, companion fallback included. */
+  streaming: boolean
+  source: StageStreamSource
 }
 
 const focusRing =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-base)]'
+
+const stageButton =
+  'flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-base)] bg-[var(--bg-input)] px-2.5 text-[9px] font-medium text-[var(--text-muted)] transition-colors hover:border-primary/50 hover:text-[var(--text-base)] disabled:cursor-not-allowed disabled:opacity-35'
 
 const ZOOM_MIN = 50
 const ZOOM_MAX = 200
@@ -79,8 +92,13 @@ const ZOOM_STEP = 25
  * Dashboard-styled shell around the embedded workspace streaming engine
  * (useEmbeddedSession + DeviceDisplay + useDeviceInput). Replaces the
  * screenshot-polling LivePreview with a real in-app WebCodecs stream that
- * accepts touch/keyboard input directly, while keeping the Dashboard's
- * existing header/rail/footer chrome.
+ * accepts touch/keyboard input directly.
+ *
+ * Session controls live in exactly one place: this stage's own header when it
+ * renders one (`showHeader`), otherwise the command bar the parent renders
+ * above it. There is deliberately no second control bar floating over the
+ * screen — it used to repeat Screenshot / Record / Start-Stop on top of the
+ * very buttons already sitting in the header.
  */
 export default function DashboardEmbeddedStage({
   deviceName,
@@ -109,6 +127,7 @@ export default function DashboardEmbeddedStage({
   const { settings } = useEmbeddedWorkspaceSettings()
   const [zoom, setZoom] = useState(100)
   const [fullscreen, setFullscreen] = useState(false)
+  const [companionMode, setCompanionMode] = useState(false)
   const sessionOptions = useMemo(() => {
     const preferred = settingsToOptions(settings)
     if (!compact) return preferred
@@ -121,6 +140,27 @@ export default function DashboardEmbeddedStage({
       bitRate: Math.min(preferred.bitRate ?? 4_000_000, 4_000_000),
     }
   }, [compact, settings])
+
+  // The companion fallback paints the same stage, so the metrics the parent
+  // command bar reads have to describe whichever transport is live — otherwise
+  // the header would claim the device is offline while frames are arriving.
+  const handleMetrics = useCallback(
+    (metrics: DeviceScreenMetrics) => {
+      onMetricsChange?.({
+        connected: metrics.connected,
+        busy: metrics.busy,
+        dimensions: metrics.dimensions,
+        fps: metrics.fps,
+        streaming: metrics.connected || companionMode,
+        source: companionMode
+          ? 'companion'
+          : metrics.connected
+            ? 'embedded'
+            : null,
+      })
+    },
+    [companionMode, onMetricsChange],
+  )
 
   const {
     state,
@@ -137,14 +177,13 @@ export default function DashboardEmbeddedStage({
     customPath,
     options: sessionOptions,
     command: sessionCommand,
-    onMetricsChange,
+    onMetricsChange: handleMetrics,
   })
 
   const companionActive =
     companion?.available &&
     companion.screenState !== 'stopped' &&
     companion.screenState !== 'error'
-  const [companionMode, setCompanionMode] = useState(false)
 
   const connected = state === 'connected'
   const busy = state === 'starting' || state === 'stopping'
@@ -232,6 +271,21 @@ export default function DashboardEmbeddedStage({
     }
   }
 
+  // Pop the device out into its own window. The detached window attaches to
+  // the session this stage already runs (embed_session multiplexes subscribers
+  // per device), so the stage here keeps streaming unaffected.
+  const handlePopOut = async () => {
+    if (!deviceSerial) return
+    const result = await openMirrorWindow({
+      serial: deviceSerial,
+      deviceName,
+      customPath,
+    })
+    if (!result.ok) {
+      notify('Could not open window', result.error || 'Unknown error', 'error')
+    }
+  }
+
   const zoomIn = () => setZoom((z) => Math.min(ZOOM_MAX, z + ZOOM_STEP))
   const zoomOut = () => setZoom((z) => Math.max(ZOOM_MIN, z - ZOOM_STEP))
   const resetZoom = () => setZoom(100)
@@ -260,6 +314,49 @@ export default function DashboardEmbeddedStage({
     )
   }
 
+  // Only rendered with the stage's own header; when a parent command bar owns
+  // the chrome it renders the equivalent controls itself.
+  const headerActions = (
+    <>
+      <button
+        type="button"
+        onClick={onScreenshot}
+        disabled={!deviceSerial || screenshotBusy}
+        title="Capture screenshot"
+        className={`${stageButton} ${focusRing}`}
+      >
+        Screenshot
+      </button>
+      {onToggleRecording && (
+        <button
+          type="button"
+          onClick={onToggleRecording}
+          disabled={!deviceSerial || recordingBusy}
+          title={isRecording ? 'Stop recording' : 'Record video'}
+          className={`${stageButton} ${focusRing} ${
+            isRecording ? 'border-red-500/40 text-red-400' : ''
+          }`}
+        >
+          {isRecording ? <Square size={11} /> : <Circle size={11} />}
+          {isRecording ? 'Stop Rec' : 'Record'}
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={() => void handleToggle()}
+        disabled={!deviceSerial || busy}
+        className={`flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[9px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${focusRing} ${
+          displayConnected
+            ? 'border border-red-500/40 text-red-400 hover:bg-red-500/10'
+            : 'bg-primary text-on-primary hover:brightness-110'
+        }`}
+      >
+        {displayConnected ? <Square size={11} /> : <Play size={11} />}
+        {displayConnected ? 'Stop' : 'Start'}
+      </button>
+    </>
+  )
+
   return (
     <section
       className={`relative flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] shadow-sm ${compact ? 'min-h-80' : 'min-h-[560px]'}`}
@@ -273,148 +370,85 @@ export default function DashboardEmbeddedStage({
           batteryLevel={batteryLevel}
           connected={displayConnected}
           busy={busy}
-          dimensions={dimensions}
+          dimensions={displayDimensions}
           fps={fps}
+          statusLabel={companionMode ? 'Companion stream' : undefined}
           onFullscreen={() => setFullscreen(true)}
+          onPopOut={() => void handlePopOut()}
           onClose={onClose}
+          actions={headerActions}
         />
       )}
 
       <div
         className={`relative flex min-h-0 min-w-0 flex-1 items-stretch overflow-hidden bg-[radial-gradient(circle_at_50%_45%,rgba(var(--primary-rgb),.08),transparent_44%),var(--bg-base)] ${compact ? 'min-h-64' : 'min-h-[460px]'}`}
       >
-        <aside
-          aria-label="Device controls"
-          className="z-10 flex w-12 shrink-0 flex-col items-center justify-center border-r border-(--border-subtle) bg-[var(--bg-elevated)]/72 p-1.5"
-        >
-          {actionRail}
-        </aside>
+        {actionRail}
 
-        <div className="flex h-full min-h-0 min-w-0 flex-1 items-center justify-center overflow-auto px-3 pb-16 pt-3 sm:px-5 sm:pb-17 sm:pt-4">
-          <div
-            className="relative aspect-[9/19] max-w-full shrink-0 overflow-hidden rounded-[25px] border-[3px] border-[#3b414d] bg-[#05070b] p-[3px] shadow-[0_18px_48px_rgba(0,0,0,.46)]"
-            style={{
-              height: `${zoom}%`,
-              maxHeight: zoom <= 100 ? '100%' : 'none',
-            }}
-          >
-            <div className="flex h-full w-full overflow-hidden rounded-[22px] bg-[radial-gradient(circle_at_50%_22%,rgba(var(--primary-rgb),.22),transparent_38%),linear-gradient(165deg,#151c2c,#090c13_62%)]">
-              {deviceSerial ? (
-                renderDisplay({
-                  dimensions: displayDimensions,
-                  imageSrc: companionMode ? companion?.frame : null,
-                  imageLabel: 'Android Companion',
-                  bare: true,
-                })
-              ) : (
-                <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-                  <Smartphone size={26} className="text-zinc-600" />
-                  <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
-                    No device connected
-                  </span>
-                  {onAddDevice && (
-                    <button
-                      type="button"
-                      onClick={onAddDevice}
-                      className={`mt-1 flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-[10px] font-semibold text-on-primary transition-colors hover:brightness-110 ${focusRing}`}
-                    >
-                      <Wifi size={12} /> Pair a Device
-                    </button>
-                  )}
-                </div>
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col px-3 py-3 sm:px-5">
+          {deviceSerial ? (
+            <DeviceFrame
+              dimensions={displayDimensions}
+              zoom={zoom}
+              compact={compact}
+            >
+              {renderDisplay({
+                dimensions: displayDimensions,
+                imageSrc: companionMode ? companion?.frame : null,
+                imageLabel: 'Android Companion',
+                bare: true,
+              })}
+            </DeviceFrame>
+          ) : (
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+              <Smartphone size={26} className="text-zinc-600" />
+              <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                No device connected
+              </span>
+              {onAddDevice && (
+                <button
+                  type="button"
+                  onClick={onAddDevice}
+                  className={`mt-1 flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-[10px] font-semibold text-on-primary transition-colors hover:brightness-110 ${focusRing}`}
+                >
+                  <Wifi size={12} /> Pair a Device
+                </button>
               )}
             </div>
-            {/* Notch */}
-            <div className="pointer-events-none absolute left-1/2 top-2 h-1.5 w-12 -translate-x-1/2 rounded-full bg-black/70" />
-            {/* Home indicator */}
-            <div className="pointer-events-none absolute inset-x-0 bottom-1.5 flex justify-center">
-              <div className="h-1 w-10 rounded-full bg-white/15" />
-            </div>
+          )}
+
+          {/* Zoom floats over the stage instead of holding a full-height rail:
+              it is an occasional adjustment, not a primary control. */}
+          <div className="pointer-events-none absolute bottom-2 right-2 flex items-center gap-0.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-elevated)]/80 p-0.5 opacity-55 backdrop-blur transition-opacity hover:opacity-100 focus-within:opacity-100">
+            <button
+              type="button"
+              onClick={zoomOut}
+              disabled={zoom <= ZOOM_MIN}
+              title="Zoom out"
+              aria-label="Zoom out"
+              className={`pointer-events-auto flex h-6 w-6 items-center justify-center rounded-md text-(--text-muted) transition-colors hover:bg-primary/15 hover:text-primary disabled:cursor-not-allowed disabled:opacity-30 ${focusRing}`}
+            >
+              <Minus size={12} />
+            </button>
+            <button
+              type="button"
+              onClick={resetZoom}
+              title="Reset zoom to 100%"
+              className={`pointer-events-auto flex h-6 min-w-9 items-center justify-center rounded-md text-[9px] tabular-nums text-(--text-muted) transition-colors hover:bg-primary/15 hover:text-primary ${focusRing}`}
+            >
+              {zoom}%
+            </button>
+            <button
+              type="button"
+              onClick={zoomIn}
+              disabled={zoom >= ZOOM_MAX}
+              title="Zoom in"
+              aria-label="Zoom in"
+              className={`pointer-events-auto flex h-6 w-6 items-center justify-center rounded-md text-(--text-muted) transition-colors hover:bg-primary/15 hover:text-primary disabled:cursor-not-allowed disabled:opacity-30 ${focusRing}`}
+            >
+              <Plus size={12} />
+            </button>
           </div>
-        </div>
-
-        <div className="flex w-10 shrink-0 flex-col items-center justify-end gap-1 border-l border-(--border-subtle) bg-[var(--bg-elevated)]/72 pb-3 text-[9px] text-[var(--text-subtle)]">
-          <button
-            type="button"
-            onClick={resetZoom}
-            title="Reset zoom to 100%"
-            className={`flex h-7 w-7 items-center justify-center rounded-md text-(--text-muted) transition-colors hover:bg-primary/15 hover:text-primary ${focusRing}`}
-          >
-            {zoom}%
-          </button>
-          <button
-            type="button"
-            onClick={zoomIn}
-            disabled={zoom >= ZOOM_MAX}
-            title="Zoom in"
-            aria-label="Zoom in"
-            className={`flex h-7 w-7 items-center justify-center rounded-md text-(--text-muted) transition-colors hover:bg-primary/15 hover:text-primary disabled:cursor-not-allowed disabled:opacity-30 ${focusRing}`}
-          >
-            <Plus size={13} />
-          </button>
-          <button
-            type="button"
-            onClick={zoomOut}
-            disabled={zoom <= ZOOM_MIN}
-            title="Zoom out"
-            aria-label="Zoom out"
-            className={`flex h-7 w-7 items-center justify-center rounded-md text-(--text-muted) transition-colors hover:bg-primary/15 hover:text-primary disabled:cursor-not-allowed disabled:opacity-30 ${focusRing}`}
-          >
-            <Minus size={13} />
-          </button>
-        </div>
-      </div>
-
-      <div className="pointer-events-none absolute inset-x-14 bottom-3 z-20 flex justify-center px-3">
-        <div className="pointer-events-auto flex min-h-10 max-w-full flex-wrap items-center justify-center gap-1.5 rounded-xl border border-[var(--border-base)] bg-[var(--bg-elevated)]/92 p-1.5 shadow-[0_12px_32px_rgba(0,0,0,.42)] backdrop-blur-xl">
-        <span
-          className={`h-1.5 w-1.5 rounded-full ${displayConnected ? 'bg-emerald-400' : 'bg-[var(--text-subtle)]'}`}
-        />
-        <span className="text-[9px] font-medium text-[var(--text-muted)]">
-          {companionMode
-            ? 'Android Companion stream'
-            : displayConnected
-              ? 'Live embedded stream'
-              : 'Embedded workspace'}
-        </span>
-        <button
-          type="button"
-          onClick={onScreenshot}
-          disabled={!deviceSerial || screenshotBusy}
-          title="Capture screenshot"
-          className={`ml-1 flex h-7 items-center gap-1.5 rounded-md border border-[var(--border-base)] px-2.5 text-[8px] font-medium text-[var(--text-muted)] transition-colors hover:border-primary/50 hover:text-primary disabled:cursor-not-allowed disabled:opacity-35 ${focusRing}`}
-        >
-          Screenshot
-        </button>
-        {onToggleRecording && (
-          <button
-            type="button"
-            onClick={onToggleRecording}
-            disabled={!deviceSerial || recordingBusy}
-            title={isRecording ? 'Stop recording' : 'Record video'}
-            className={`flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[8px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${focusRing} ${
-              isRecording
-                ? 'border-red-500/40 text-red-400 hover:bg-red-500/10'
-                : 'border-[var(--border-base)] text-[var(--text-muted)] hover:border-primary/50 hover:text-primary'
-            }`}
-          >
-            {isRecording ? <Square size={11} /> : <Circle size={11} />}
-            {isRecording ? 'Stop Rec' : 'Record'}
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={() => void handleToggle()}
-          disabled={!deviceSerial || busy}
-          className={`flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[8px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${focusRing} ${
-            connected
-              ? 'border-red-500/40 text-red-400 hover:bg-red-500/10'
-              : 'border-[var(--border-base)] text-[var(--text-muted)] hover:border-primary/50 hover:text-primary'
-          }`}
-        >
-          {connected ? <Square size={11} /> : <Play size={11} />}
-          {connected ? 'Stop' : 'Start'}
-        </button>
         </div>
       </div>
     </section>

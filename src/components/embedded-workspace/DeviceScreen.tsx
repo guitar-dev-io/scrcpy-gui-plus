@@ -116,6 +116,19 @@ export function useDeviceScreen({
     onAction: session.sendAction,
   })
 
+  // Keyboard events only reach a focused element, so a live screen claims focus
+  // once — otherwise the user has to discover that they must click the picture
+  // before typing reaches the device. A field the user is already working in is
+  // never interrupted.
+  useEffect(() => {
+    if (!connected || !interactive) return
+    const el = containerRef.current
+    if (!el) return
+    const active = document.activeElement
+    if (active && active !== document.body && active !== el) return
+    el.focus({ preventScroll: true })
+  }, [connected, interactive])
+
   useEffect(() => {
     if (!serial) {
       autoStartedSerialRef.current = null
@@ -127,6 +140,19 @@ export function useDeviceScreen({
       void session.start()
     }
   }, [autoStart, serial, session.start, session.stop])
+
+  // `useEmbeddedSession` tears its session down in a cleanup keyed on `serial`,
+  // which also fires on React's simulated StrictMode remount. That bumps the
+  // session's lifecycle generation, so an in-flight `start()` from the first
+  // mount resolves into a dead lifecycle and silently abandons the screen in
+  // 'starting'. Re-arm autostart whenever that teardown can have run, or the
+  // guard above suppresses the restart and the view spins until the user
+  // toggles stop/start by hand.
+  useEffect(() => {
+    return () => {
+      autoStartedSerialRef.current = null
+    }
+  }, [serial])
 
   useEffect(() => {
     if (!command || command.id <= handledCommandRef.current) return

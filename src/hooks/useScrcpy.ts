@@ -58,6 +58,9 @@ export interface ScrcpyConfig {
   hidKeyboard?: boolean
   hidMouse?: boolean
   renderDriver?: string
+  // Hardware-accelerated video decoding (scrcpy 5.0+): 'auto' | 'disabled' |
+  // 'vaapi' | 'd3d11va' | 'videotoolbox'. Undefined/'auto' lets scrcpy decide.
+  hwdec?: string
   // v4 features
   flexDisplay?: boolean
   cameraTorch?: boolean
@@ -153,6 +156,8 @@ export function useScrcpy() {
     registeredDevices,
     applyDiscovery,
     refreshHealth: refreshDeviceHealth,
+    applyAgentStatus,
+    applyAgentDisconnected,
   } = useDeviceRegistry({ customPath: config.scrcpyPath })
   const prevDevicesRef = useRef<string[]>([])
   const refreshDevicesRef = useRef<
@@ -984,6 +989,8 @@ export function useScrcpy() {
     deviceRegistry,
     registeredDevices,
     refreshDeviceHealth,
+    applyAgentStatus,
+    applyAgentDisconnected,
     logs,
     setLogs,
     clearLogs,

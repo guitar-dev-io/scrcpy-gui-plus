@@ -5,7 +5,7 @@
 //! directory, while stdout/stderr are drained into a bounded log tail.
 
 use chrono::Utc;
-use rand::Rng;
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{

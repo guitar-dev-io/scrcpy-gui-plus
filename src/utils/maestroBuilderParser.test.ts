@@ -1,10 +1,30 @@
 import { describe, expect, it } from 'vitest'
+import twoMemberExampleYaml from '../../.maestro/examples/hip-iot-add-two-members.yaml?raw'
 import { parseMaestroBuilderYaml } from './maestroBuilderParser'
 import { buildMaestroBuilderYaml } from './maestroBuilderSerializer'
 import { createEmptyMaestroFlow, createMaestroFlowAction } from './maestroBuilderFlow'
 import type { MaestroFlow } from '../types/maestroBuilder'
 
 describe('parseMaestroBuilderYaml', () => {
+  it('keeps the two-member Cross Join example executable after opening and saving in Builder', () => {
+    const parsed = parseMaestroBuilderYaml(twoMemberExampleYaml, 'HIP IoT add two members')
+    const rebuilt = buildMaestroBuilderYaml(parsed)
+
+    expect(parsed.appId).toBe('com.hip.iot')
+    expect(parsed.variables?.map(({ name }) => name)).toEqual(['BRANCH_CODE', 'BRANCH_NAME', 'MEMBER_NAME', 'MEMBER_ACCOUNT'])
+    expect(rebuilt).toContain('runFlow:\n    when:\n      notVisible:')
+    expect(rebuilt).toContain('centerElement: true')
+    expect(rebuilt).toContain('text: "^${BRANCH_CODE}([\\\\s_-]|$).*"')
+    // "App account" requires an internal account number rather than an email
+    // (confirmed against a real device, which rejected both a real and a
+    // fake email with "Unable to add the account"), so the example now uses
+    // the "คัดลอก" (Copy) share option instead of typing into that field.
+    expect(rebuilt).toContain('text: "คัดลอก|Copy"')
+    expect(rebuilt).toContain('text: "รอให้เข้าร่วม|Waiting to join"')
+    expect(rebuilt).not.toContain('eraseText')
+    expect(rebuilt).not.toContain('inputText')
+  })
+
   it('round-trips Maestro env variables into the visual model', () => {
     const parsed = parseMaestroBuilderYaml([
       'appId: "com.example.app"',

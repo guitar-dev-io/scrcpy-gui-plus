@@ -1,11 +1,12 @@
 export type AppRouteId =
   | 'dashboard'
   | 'devices'
+  | 'pair-device'
+  | 'device-wall'
   | 'sessions'
   | 'screenshots'
   | 'recordings'
   | 'file-explorer'
-  | 'wireless-adb'
   | 'app-manager'
   | 'apk-toolkit'
   | 'simulators'
@@ -30,6 +31,8 @@ export interface AppRouteDefinition {
 export const APP_ROUTES: readonly AppRouteDefinition[] = [
   { id: 'dashboard', label: 'Dashboard', path: '/dashboard', group: 'main' },
   { id: 'devices', label: 'Devices', path: '/devices', group: 'main' },
+  { id: 'pair-device', label: 'Connect Device', path: '/pair-device', group: 'main' },
+  { id: 'device-wall', label: 'Device Wall', path: '/device-wall', group: 'main' },
   { id: 'sessions', label: 'Sessions', path: '/sessions', group: 'main' },
   { id: 'screenshots', label: 'Screenshots', path: '/screenshots', group: 'main' },
   { id: 'recordings', label: 'Recordings', path: '/recordings', group: 'main' },
@@ -44,7 +47,6 @@ export const APP_ROUTES: readonly AppRouteDefinition[] = [
   { id: 'performance', label: 'Performance', path: '/performance', group: 'tools' },
   { id: 'input-control', label: 'Input Control', path: '/input-control', group: 'tools' },
   { id: 'qr-studio', label: 'QR Studio', path: '/qr-studio', group: 'tools' },
-  { id: 'wireless-adb', label: 'Wireless ADB', path: '/wireless-adb', group: 'system' },
   { id: 'settings', label: 'Settings', path: '/settings', group: 'system' },
 ]
 
@@ -53,9 +55,20 @@ export function appRouteToHash(routeId: AppRouteId): string {
   return `#${route?.path ?? APP_ROUTES[0].path}`
 }
 
+/**
+ * Paths that no longer have a route of their own. Kept so a restored window or a
+ * bookmarked hash from an older version still lands somewhere sensible instead of
+ * silently falling back to the dashboard.
+ */
+const LEGACY_PATH_ALIASES: Record<string, AppRouteId> = {
+  '/wireless-adb': 'pair-device',
+}
+
 export function appRouteFromHash(hash: string): AppRouteId {
   const path = hash.replace(/^#/, '').replace(/\/$/, '') || '/dashboard'
   return (
-    APP_ROUTES.find((candidate) => candidate.path === path)?.id ?? 'dashboard'
+    APP_ROUTES.find((candidate) => candidate.path === path)?.id ??
+    LEGACY_PATH_ALIASES[path] ??
+    'dashboard'
   )
 }
