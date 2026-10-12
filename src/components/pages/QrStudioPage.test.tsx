@@ -215,7 +215,7 @@ describe('QrStudioPage', () => {
     expect(
       screen.queryByRole('heading', { name: 'Templates' }),
     ).not.toBeInTheDocument()
-    expect(screen.getAllByTestId('qr-placeholder')).toHaveLength(1)
+    expect(screen.queryByTestId('qr-placeholder')).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Library' })).toBeInTheDocument()
   })
 
@@ -370,6 +370,71 @@ describe('QrStudioPage', () => {
         ).not.toBeInTheDocument(),
       )
       expect(confirmSpy).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('Library destination', () => {
+    const seedLibrary = () =>
+      window.localStorage.setItem(
+        QR_STUDIO_V2_STORAGE_KEY,
+        JSON.stringify({
+          schemaVersion: 2,
+          records: [
+            {
+              id: 'lib-1',
+              name: 'Docs',
+              content: 'https://example.com/docs',
+              contentType: 'url',
+              style: DEFAULT_QR_STYLE,
+              createdAt: '2026-01-01T00:00:00.000Z',
+              updatedAt: '2026-01-01T00:00:00.000Z',
+              folderId: null,
+              tags: [],
+              notes: '',
+              trashedAt: null,
+              source: 'created',
+              fields: { type: 'url', url: 'https://example.com/docs' },
+            },
+          ],
+          folders: [],
+          tags: [],
+          templates: [],
+        }),
+      )
+
+    it('opens a saved record in Create with its fields (edit round trip)', async () => {
+      seedLibrary()
+      renderPage()
+      openTab('Library')
+      const card = screen.getByRole('article', { name: 'Docs' })
+      fireEvent.click(within(card).getByRole('button', { name: 'Docs' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Edit in Create' }))
+      expect(screen.getByRole('tab', { name: 'Create' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      )
+      expect(screen.getByLabelText('Name')).toHaveValue('Docs')
+      expect(screen.getByLabelText('URL')).toHaveValue(
+        'https://example.com/docs',
+      )
+      fireEvent.change(screen.getByLabelText('Name'), {
+        target: { value: 'Docs v2' },
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+      await waitFor(() =>
+        expect(storedV2().records).toMatchObject([
+          { id: 'lib-1', name: 'Docs v2' },
+        ]),
+      )
+    })
+
+    it('shares the Library selection with Templates', () => {
+      seedLibrary()
+      renderPage()
+      openTab('Library')
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select Docs' }))
+      openTab('Templates')
+      expect(screen.getByText('1 Library record selected.')).toBeInTheDocument()
     })
   })
 

@@ -161,6 +161,8 @@ export default function QrStudioPage({
             selection={selection}
             onSelectionChange={setSelection}
             onEditRecord={editRecord}
+            onStatus={setStatus}
+            containerWidth={width}
           />
         )}
       </div>
