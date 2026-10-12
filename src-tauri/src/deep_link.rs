@@ -2,9 +2,9 @@
 //
 // Fires an ACTION_VIEW intent with a user-supplied URI at the device, and
 // generates a QR code (SVG) for the URI so it can be scanned by another
-// device. The device serial and optional package are validated; the URI is
-// passed to adb as a single array argument (never concatenated into a shell
-// string) so it cannot break out into additional commands.
+// device. The device serial and optional package are validated. `adb shell`
+// re-parses its arguments with the device shell, so the URI and package are
+// single-quoted (`sh_quote`) before being passed as array arguments.
 
 use crate::adb::{self, AdbError};
 use qrcode::render::svg;
@@ -68,6 +68,33 @@ fn validate_uri(uri: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Quote a value for the Android device shell (single quotes, with embedded
+/// single quotes rewritten as `'\''`). `adb shell` joins its arguments into one
+/// string that the device shell re-parses, so every untrusted value must be
+/// quoted or `&`, `;`, `|`, `$()` and backticks would be interpreted there.
+pub(crate) fn sh_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', r"'\''"))
+}
+
+/// Build the `adb` argv for launching a deep link. The `-d` and `-p` values are
+/// shell-quoted for the device shell; the action is a constant.
+fn build_launch_args(uri: &str, pkg: Option<&str>) -> Vec<String> {
+    let mut args: Vec<String> = vec![
+        "shell".into(),
+        "am".into(),
+        "start".into(),
+        "-a".into(),
+        "android.intent.action.VIEW".into(),
+        "-d".into(),
+        sh_quote(uri),
+    ];
+    if let Some(p) = pkg {
+        args.push("-p".into());
+        args.push(sh_quote(p));
+    }
+    args
+}
+
 /// Launch a deep link via `am start -a android.intent.action.VIEW -d <uri>`.
 /// When `package` is provided the intent is constrained to it (`-p <package>`).
 #[tauri::command]
@@ -95,20 +122,7 @@ pub async fn launch_deep_link(
         }
     }
 
-    let mut args: Vec<String> = vec![
-        "shell".into(),
-        "am".into(),
-        "start".into(),
-        "-a".into(),
-        "android.intent.action.VIEW".into(),
-        "-d".into(),
-        uri.clone(),
-    ];
-    if let Some(ref p) = pkg {
-        args.push("-p".into());
-        args.push(p.clone());
-    }
-
+    let args = build_launch_args(&uri, pkg.as_deref());
     let borrowed: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     match adb::run_adb_text(Some(&serial), &borrowed, custom_path, LAUNCH_TIMEOUT_SECS).await {
         Ok(out) => {
@@ -177,6 +191,45 @@ mod tests {
         assert!(validate_uri("").is_err());
         assert!(validate_uri("   ").is_err());
         assert!(validate_uri("bad\nuri").is_err());
+    }
+
+    fn d_value(uri: &str) -> String {
+        let args = build_launch_args(uri, None);
+        let i = args.iter().position(|a| a == "-d").unwrap();
+        args[i + 1].clone()
+    }
+
+    #[test]
+    fn launch_args_quote_the_uri() {
+        assert_eq!(
+            d_value("https://x/?a=1&b=2"),
+            "'https://x/?a=1&b=2'".to_string()
+        );
+        assert_eq!(d_value("a;reboot"), "'a;reboot'");
+        assert_eq!(d_value("$(id)"), "'$(id)'");
+        assert_eq!(d_value("https://x/`id`"), "'https://x/`id`'");
+        assert_eq!(d_value("it's"), r"'it'\''s'");
+        assert_eq!(d_value("https://x/a b"), "'https://x/a b'");
+    }
+
+    #[test]
+    fn launch_args_quote_the_package_and_keep_constants() {
+        let args = build_launch_args("myapp://x", Some("com.example.app"));
+        assert_eq!(
+            args,
+            vec![
+                "shell",
+                "am",
+                "start",
+                "-a",
+                "android.intent.action.VIEW",
+                "-d",
+                "'myapp://x'",
+                "-p",
+                "'com.example.app'",
+            ]
+        );
+        assert!(!build_launch_args("myapp://x", None).contains(&"-p".to_string()));
     }
 
     #[test]

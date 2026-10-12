@@ -23,6 +23,7 @@ mod logcat;
 mod macos_capture;
 mod macro_player;
 mod maestro;
+mod qr_device;
 mod screenshot;
 mod simdeck;
 mod system;
@@ -224,6 +225,9 @@ pub fn run() {
             logcat::clear_logcat,
             deep_link::launch_deep_link,
             deep_link::generate_qr_svg,
+            qr_device::qr_send_to_device,
+            qr_device::qr_decode_image,
+            qr_device::qr_capture_and_decode,
             test_session::set_show_touches,
             test_session::get_device_info,
             device_status::get_device_status,

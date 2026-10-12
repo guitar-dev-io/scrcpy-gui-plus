@@ -44,5 +44,6 @@ image = { version = "0.25.10", default-features = false, features = [
   "jpeg",
 ] }
 sha2 = "0.11.0"
+rqrr = { version = "=0.11.0", default-features = false }
 openssl = { version = "0.10.81", features = ["vendored"] }
 if-addrs = "0.13"
