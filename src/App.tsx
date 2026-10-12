@@ -33,6 +33,7 @@ import TestRunnerPanel from './components/test-runner'
 import OnboardingModal from './components/OnboardingModal'
 import ThemedModal from './components/ThemedModal'
 import DeviceControlToolbar from './components/device-control-toolbar'
+import { shellChromeForRoute } from './navigation/shellChrome'
 import ScreenshotManager from './components/screenshot-manager'
 //import EmbeddedMirror from './components/embedded-mirror'
 import MirrorStage from './components/mirror-stage'
@@ -1980,11 +1981,12 @@ function AppContent() {
     />
   )
 
+  const shellChrome = shellChromeForRoute(activeRoute)
   return (
     <AppShell
       header={undefined}
       navigation={
-        activeRoute === 'qr-studio' ? undefined : <AppNavigation
+        shellChrome.navigation && <AppNavigation
           actions={{
             'shell-terminal': () => {
               selectWorkspaceTool('shell')
@@ -1999,10 +2001,10 @@ function AppContent() {
           }}
         />
       }
-      footer={activeRoute === 'qr-studio' ? undefined : <Footer version={appVersion} />}
+      footer={shellChrome.footer && <Footer version={appVersion} />}
       content={
         <>
-          {activeRoute !== 'qr-studio' && <WorkspaceTabBar
+          {shellChrome.tabBar && <WorkspaceTabBar
             deviceWorkspaces={Array.from(
               new Set([
                 ...openDeviceWorkspaces,
@@ -2784,7 +2786,21 @@ function AppContent() {
                     notify={notify}
                   />
                 }
-                qrStudio={<QrStudioPage onExit={() => handleNavigate('dashboard')} />}
+                qrStudio={
+                  <QrStudioPage
+                    onExit={() => handleNavigate('dashboard')}
+                    devices={devices}
+                    deviceLabels={workspaceDeviceLabels}
+                    activeDevice={activeAndroidWorkspaceDevice}
+                    onSelectDevice={(serial) => {
+                      setActiveDevice(serial)
+                      setActiveIosUdid(null)
+                      setActiveCompanionWorkspaceId(null)
+                    }}
+                    customPath={config.scrcpyPath}
+                    notify={notify}
+                  />
+                }
                 automation={
                   <AutomationPage
                     activeDevice={activeAndroidWorkspaceDevice}

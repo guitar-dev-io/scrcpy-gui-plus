@@ -1,6 +1,5 @@
 import {
   DEFAULT_QR_STYLE,
-  type LegacyQrRecord as QrRecord,
   type QrContentType,
   type QrFolder,
   type QrRecord as QrRecordV2,
@@ -12,35 +11,6 @@ import {
 import { generateQrSvg } from './deepLinkService'
 
 export const QR_STUDIO_STORAGE_KEY = 'scrcpy-gui-plus:qr-studio:v1'
-
-export function loadQrRecords(storage: Pick<Storage, 'getItem'>): QrRecord[] {
-  try {
-    const parsed = JSON.parse(storage.getItem(QR_STUDIO_STORAGE_KEY) || '[]')
-    return Array.isArray(parsed)
-      ? parsed.filter(
-          (item) =>
-            Boolean(item) &&
-            typeof item.id === 'string' &&
-            typeof item.name === 'string' &&
-            typeof item.content === 'string' &&
-            typeof item.svg === 'string',
-        ).map((item) => ({
-          ...item,
-          favorite: Boolean(item.favorite),
-          style: { ...DEFAULT_QR_STYLE, ...(item.style || {}) },
-        })) as QrRecord[]
-      : []
-  } catch {
-    return []
-  }
-}
-
-export function saveQrRecords(
-  storage: Pick<Storage, 'setItem'>,
-  records: QrRecord[],
-): void {
-  storage.setItem(QR_STUDIO_STORAGE_KEY, JSON.stringify(records))
-}
 
 export function parseMultiQrInput(value: string): Array<{ name: string; content: string }> {
   return value

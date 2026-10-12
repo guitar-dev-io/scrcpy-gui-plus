@@ -80,19 +80,6 @@ export interface QrRecord {
   fields?: QrFieldValues
 }
 
-/** The v1 record shape (single page, svg always stored). Removed together with the v1 page. */
-export interface LegacyQrRecord {
-  id: string
-  name: string
-  content: string
-  contentType: QrContentType
-  svg: string
-  style: QrStyle
-  createdAt: string
-  updatedAt: string
-  favorite?: boolean
-}
-
 export interface QrFolder {
   id: string
   name: string
