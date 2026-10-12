@@ -1,3 +1,4 @@
+import { friendlyMessage } from '../../services/tauriRuntime'
 import { useState } from 'react'
 import { detectType, encode } from '../../services/qrEncoders'
 import { assessQrQuality, colorContrast } from '../../services/qrQuality'
@@ -88,7 +89,7 @@ export default function QualityTool({ store, draftApi }: QualityToolProps) {
       setVerify({ key: runKey, state })
     } catch (error) {
       console.error('QR Studio: quality scan check failed', error)
-      setVerify({ key: runKey, state: { status: 'undecodable', message: error instanceof Error ? error.message : undefined } })
+      setVerify({ key: runKey, state: { status: 'undecodable', message: friendlyMessage(error, '') || undefined } })
     }
   }
 

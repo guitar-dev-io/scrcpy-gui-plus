@@ -2,6 +2,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import type { DeepLinkResult } from '../types/deepLink';
+import { withDesktop } from './tauriRuntime';
 
 export async function launchDeepLink(
     serial: string,
@@ -9,17 +10,17 @@ export async function launchDeepLink(
     packageName?: string,
     customPath?: string
 ): Promise<DeepLinkResult> {
-    return invoke<DeepLinkResult>('launch_deep_link', {
+    return withDesktop(() => invoke<DeepLinkResult>('launch_deep_link', {
         serial,
         uri,
         package: packageName,
         customPath
-    });
+    }));
 }
 
 export async function generateQrSvg(
     text: string,
     errorCorrection: 'L' | 'M' | 'Q' | 'H' = 'M'
 ): Promise<string> {
-    return invoke<string>('generate_qr_svg', { text, errorCorrection });
+    return withDesktop(() => invoke<string>('generate_qr_svg', { text, errorCorrection }));
 }

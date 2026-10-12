@@ -50,13 +50,23 @@ export function typeLabel(type: QrContentType): string {
   return SHORT_LABELS[type] ?? QR_TYPE_OPTIONS.find((option) => option.value === type)?.label ?? type
 }
 
-export function typeBadgeClass(type: QrContentType): string {
-  if (type === 'wifi') return 'bg-sky-500/10 text-sky-400'
-  if (type === 'text' || type === 'contact') return 'bg-emerald-500/10 text-emerald-400'
-  if (type === 'deep-link' || type === 'app-link') return 'bg-violet-500/10 text-violet-400'
-  return 'bg-[#ff4f57]/10 text-[#ff6269]'
+const TYPE_BADGES: Record<QrContentType, string> = {
+  url: 'bg-[#ff4f57]/15 text-[#ff8087]',
+  text: 'bg-emerald-500/15 text-emerald-300',
+  wifi: 'bg-sky-500/15 text-sky-300',
+  contact: 'bg-amber-500/15 text-amber-300',
+  'deep-link': 'bg-violet-500/15 text-violet-300',
+  'app-link': 'bg-indigo-500/15 text-indigo-300',
+  email: 'bg-cyan-500/15 text-cyan-300',
+  phone: 'bg-teal-500/15 text-teal-300',
+  sms: 'bg-lime-500/15 text-lime-300',
+  location: 'bg-orange-500/15 text-orange-300',
+  event: 'bg-pink-500/15 text-pink-300',
+  custom: 'bg-slate-500/20 text-slate-300',
 }
-
+export function typeBadgeClass(type: QrContentType): string {
+  return TYPE_BADGES[type] ?? TYPE_BADGES.custom
+}
 export function relativeDate(value: string, now: number = Date.now()): string {
   const time = new Date(value).getTime()
   if (Number.isNaN(time)) return 'Updated recently'

@@ -528,3 +528,46 @@ body {
     animation: none;
   }
 }
+
+/* ── QR Studio: panels stay navy in every theme, so text tokens are local ─── */
+/* Panel tokens live on :root too: dialogs and menus are portaled outside .qr-studio-root. */
+:root {
+  --qr-coral: #ff4f57;
+  --qr-coral-strong: #f53f4c;
+  --qr-text: #f5f7fa;
+  --qr-text-muted: #cbd5e1;
+  --qr-text-subtle: #94a3b8;
+  --qr-panel: #0d1725;
+  --qr-border: #263244;
+}
+.qr-studio-root {
+  /* Text drawn straight on the app shell (not on a navy panel) follows the shell mode. */
+  --qr-shell-text: #f5f7fa;
+  --qr-shell-muted: #94a3b8;
+  --qr-shell-coral: #ff8087;
+  color: var(--qr-text);
+}
+[data-mode='light'] .qr-studio-root {
+  --qr-shell-text: #0f172a;
+  --qr-shell-muted: #475569;
+  --qr-shell-coral: #b91c2b;
+}
+/* Dialogs and drawers are portaled onto the light app surface: darken slate helper text there,
+   but keep the original shades inside the navy sub-panels they contain. */
+[data-mode='light'] [role='dialog'] .text-slate-300 { color: #1e293b; }
+[data-mode='light'] [role='dialog'] .text-slate-400 { color: #475569; }
+[data-mode='light'] [role='dialog'] .text-slate-500 { color: #5b6b80; }
+[data-mode='light'] [role='dialog'] [class*='bg-[#0'] .text-slate-300,
+[data-mode='light'] [role='dialog'] [class*='bg-[#1'] .text-slate-300,
+[data-mode='light'] [role='dialog'] [class*='bg-[#0'].text-slate-300 { color: #cbd5e1; }
+[data-mode='light'] [role='dialog'] [class*='bg-[#0'] .text-slate-400,
+[data-mode='light'] [role='dialog'] [class*='bg-[#1'] .text-slate-400,
+[data-mode='light'] [role='dialog'] [class*='bg-[#0'].text-slate-400 { color: #94a3b8; }
+[data-mode='light'] [role='dialog'] [class*='bg-[#0'] .text-slate-500,
+[data-mode='light'] [role='dialog'] [class*='bg-[#1'] .text-slate-500,
+[data-mode='light'] [role='dialog'] [class*='bg-[#0'].text-slate-500 { color: #94a3b8; }
+[data-mode='light'] .qr-studio-root .text-white,
+[data-mode='light'] .qr-studio-root .text-zinc-200,
+[data-mode='light'] .qr-studio-root .text-zinc-300 {
+  color: var(--qr-text);
+}

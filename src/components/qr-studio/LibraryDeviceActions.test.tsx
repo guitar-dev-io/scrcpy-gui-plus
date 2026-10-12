@@ -122,6 +122,7 @@ describe('Library device actions', () => {
 
       await user.click(within(card('Code 1')).getByRole('button', { name: 'Code 1' }))
       const details = screen.getByRole('complementary', { name: 'Details' })
+      await user.click(within(details).getByRole('tab', { name: 'Actions' }))
       await user.click(within(details).getByRole('button', { name: 'Open on device' }))
       const again = await screen.findByRole('alertdialog')
       await user.click(within(again).getByRole('button', { name: 'Open on device' }))
@@ -145,6 +146,7 @@ describe('Library device actions', () => {
       await waitFor(() => expect(sendMock).toHaveBeenCalledWith('SER', 'code-1.png', 'AAAA', '/opt/adb'))
       await user.click(within(card('Code 1')).getByRole('button', { name: 'Code 1' }))
       const details = screen.getByRole('complementary', { name: 'Details' })
+      await user.click(within(details).getByRole('tab', { name: 'Actions' }))
       expect(await within(details).findByText(/Saved to Downloads\/code-1-aa\.png on Pixel 7/)).toBeInTheDocument()
     } finally {
       restore()
@@ -164,6 +166,7 @@ describe('Library device actions', () => {
 
       await user.click(within(card('Code 1')).getByRole('button', { name: 'Code 1' }))
       const details = screen.getByRole('complementary', { name: 'Details' })
+      await user.click(within(details).getByRole('tab', { name: 'Actions' }))
       for (const name of ['Open on device', 'Send to device']) {
         const button = within(details).getByRole('button', { name })
         expect(button).toBeDisabled()
@@ -183,6 +186,7 @@ describe('Library device actions', () => {
     render(<Harness />)
     await user.click(within(card('Code 1')).getByRole('button', { name: 'Code 1' }))
     const details = screen.getByRole('complementary', { name: 'Details' })
+    await user.click(within(details).getByRole('tab', { name: 'Actions' }))
     expect(within(details).getByRole('button', { name: 'Open on device' })).toBeDisabled()
     expect(within(details).getByText('This type is not a launchable link')).toBeInTheDocument()
     expect(within(details).getByRole('button', { name: 'Send to device' })).toBeEnabled()

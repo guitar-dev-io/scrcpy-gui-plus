@@ -18,7 +18,7 @@ interface QualityPanelProps {
 
 export default function QualityPanel({ report, contrast, verify }: QualityPanelProps) {
   return (
-    <Section title="Scan quality" icon={<ShieldCheck size={13} className="text-[#ff4f57]" aria-hidden="true" />}>
+    <Section title="Quality Check" icon={<ShieldCheck size={13} className="text-[#ff4f57]" aria-hidden="true" />}>
       {contrast !== null && (
         <p className="mb-2 text-[11px] text-slate-400">
           <b className="text-slate-200">{contrast.toFixed(1)}:1</b> contrast

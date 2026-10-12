@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -9,7 +9,7 @@ import type { QrFolder, QrRecord, QrTag } from '../../types/qrStudio'
 import { mockLayout } from '../ui/overlay/testUtils'
 import LibraryPanel from './LibraryPanel'
 import { copyQr, downloadPng } from './qrDownloads'
-import { QR_LIBRARY_UI_KEY } from './libraryUtils'
+import { QR_LIBRARY_UI_KEY, typeBadgeClass } from './libraryUtils'
 import { useQrStore } from './useQrStore'
 import type { UseQrStore } from './useQrStore'
 
@@ -591,6 +591,7 @@ describe('LibraryPanel cards, menu and details', () => {
     seed([rec(1)])
     render(<Harness />)
     await user.click(within(card('Code 1')).getByRole('button', { name: 'Code 1' }))
+    await user.click(screen.getByRole('tab', { name: 'Actions' }))
     await user.click(screen.getByRole('button', { name: 'Edit in Create' }))
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ id: 'r1', content: 'https://example.com/1' }))
   })
@@ -630,50 +631,110 @@ describe('LibraryPanel cards, menu and details', () => {
   })
 })
 
-describe('LibraryPanel windowing', () => {
+describe('LibraryPanel pagination and windowing', () => {
   const many = Array.from({ length: 5000 }, (_, i) => rec(i + 1))
-  const scrollTo = (top: number) => {
-    const region = screen.getByRole('region', { name: 'QR codes' })
-    Object.defineProperty(region, 'scrollTop', { configurable: true, writable: true, value: top })
-    act(() => {
-      fireEvent.scroll(region)
-    })
-  }
+  const thirty = Array.from({ length: 30 }, (_, i) => rec(i + 1))
 
-  it('renders a small window of 5,000 records, requests only visible thumbnails and tracks the status line', async () => {
-    seed(many)
-    const view = render(<Harness />)
-    const count = screen.getAllByRole('article').length
-    expect(count).toBeGreaterThanOrEqual(20)
-    expect(count).toBeLessThanOrEqual(60)
-    expect(screen.getByText('Showing 1-16 of 5000 items')).toBeInTheDocument()
-    await waitFor(() => expect(view.container.querySelectorAll('article img').length).toBe(count))
-    expect(vi.mocked(generateQrSvg).mock.calls.length).toBeLessThanOrEqual(60)
-
-    scrollTo(232 * 100)
-    expect(screen.getByText('Showing 401-416 of 5000 items')).toBeInTheDocument()
-    expect(screen.getAllByRole('article').length).toBeLessThanOrEqual(60)
-    expect(screen.getByRole('article', { name: 'Code 4600' })).toBeInTheDocument()
-    expect(screen.queryByRole('article', { name: 'Code 5000' })).not.toBeInTheDocument()
-
-    scrollTo(10_000_000)
-    expect(screen.getByText('Showing 4985-5000 of 5000 items')).toBeInTheDocument()
-    expect(screen.getByRole('article', { name: 'Code 1' })).toBeInTheDocument()
-    expect(vi.mocked(generateQrSvg).mock.calls.length).toBeLessThanOrEqual(200)
+  it('shows 12 per page by default with a status line, page numbers and a per-page select', async () => {
+    const user = userEvent.setup()
+    seed(thirty)
+    render(<Harness />)
+    expect(screen.getAllByRole('article')).toHaveLength(12)
+    expect(screen.getByText('Showing 1-12 of 30 items')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Page 1' })).toHaveAttribute('aria-current', 'page')
+    await user.click(screen.getByRole('button', { name: 'Page 2' }))
+    expect(screen.getByText('Showing 13-24 of 30 items')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Page 2' })).toHaveAttribute('aria-current', 'page')
+    await user.click(screen.getByRole('button', { name: 'Page 3' }))
+    expect(screen.getByText('Showing 25-30 of 30 items')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Items per page' }))
+    await user.click(screen.getByRole('option', { name: '24 per page' }))
+    expect(screen.getByText('Showing 1-24 of 30 items')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Page 1' })).toHaveAttribute('aria-current', 'page')
   })
 
-  it('select-all in view covers the full filtered result, not only rendered cards', () => {
+  it('returns to page 1 when the search changes', async () => {
+    const user = userEvent.setup()
+    seed(thirty)
+    render(<Harness />)
+    await user.click(screen.getByRole('button', { name: 'Page 2' }))
+    await user.type(screen.getByRole('searchbox'), 'Code 1')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Page 1' })).toHaveAttribute('aria-current', 'page'))
+    expect(screen.getByText(/^Showing 1-/)).toBeInTheDocument()
+  })
+
+  it('pages 5,000 records, requests only visible thumbnails and keeps the window small', async () => {
+    const user = userEvent.setup()
+    seed(many)
+    const view = render(<Harness />)
+    expect(screen.getAllByRole('article')).toHaveLength(12)
+    expect(screen.getByText('Showing 1-12 of 5000 items')).toBeInTheDocument()
+    await waitFor(() => expect(view.container.querySelectorAll('article img').length).toBe(12))
+    expect(vi.mocked(generateQrSvg).mock.calls.length).toBeLessThanOrEqual(60)
+    await user.click(screen.getByRole('button', { name: 'Items per page' }))
+    await user.click(screen.getByRole('option', { name: '96 per page' }))
+    expect(screen.getByText('Showing 1-96 of 5000 items')).toBeInTheDocument()
+    expect(screen.getAllByRole('article').length).toBeLessThanOrEqual(60)
+  })
+
+  it('select-all in view covers the full filtered result, not only the page', () => {
     seed(many)
     render(<Harness />)
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select all in view' }))
     expect(bulk().getByText('5000 selected')).toBeInTheDocument()
   })
 
-  it('windows list rows at 56px with 3 rows of overscan', () => {
+  it('pages list rows too', () => {
     window.localStorage.setItem(QR_LIBRARY_UI_KEY, JSON.stringify({ view: 'list', sort: 'updated' }))
     seed(many)
     render(<Harness />)
-    expect(screen.getAllByRole('article').length).toBe(Math.ceil(800 / 56) + 3)
-    expect(screen.getByText('Showing 1-15 of 5000 items')).toBeInTheDocument()
+    expect(screen.getAllByRole('article')).toHaveLength(12)
+    expect(screen.getByText('Showing 1-12 of 5000 items')).toBeInTheDocument()
+  })
+})
+
+describe('LibraryPanel card quick actions', () => {
+  it('offers preview, edit, copy, download and delete beside the menu, and Delete moves to Trash', async () => {
+    const user = userEvent.setup()
+    seed([rec(1)])
+    render(<Harness />)
+    const item = within(card('Code 1'))
+    for (const name of ['Preview', 'Edit', 'Copy', 'Download PNG', 'Delete', 'Actions for Code 1']) {
+      expect(item.getByRole('button', { name })).toBeInTheDocument()
+    }
+    await user.click(item.getByRole('button', { name: 'Edit' }))
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ id: 'r1' }))
+    await user.click(item.getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(stored().records[0].trashedAt).not.toBeNull())
+  })
+})
+
+describe('typeBadgeClass', () => {
+  it('gives every content type its own badge colors', () => {
+    const types = ['url', 'text', 'wifi', 'contact', 'deep-link', 'app-link', 'email', 'phone', 'sms', 'location', 'event', 'custom'] as const
+    expect(new Set(types.map((type) => typeBadgeClass(type))).size).toBe(types.length)
+  })
+})
+
+describe('QrDetails tabs', () => {
+  it('has Details, Design and Actions tabs with arrow key navigation', async () => {
+    const user = userEvent.setup()
+    seed([rec(1)])
+    render(<Harness />)
+    await user.click(within(card('Code 1')).getByRole('button', { name: 'Code 1' }))
+    const tabs = within(screen.getByRole('tablist', { name: 'Details sections' })).getAllByRole('tab')
+    expect(tabs.map((item) => item.textContent)).toEqual(['Details', 'Design', 'Actions'])
+    expect(tabs[0]).toHaveAttribute('aria-selected', 'true')
+    tabs[0].focus()
+    await user.keyboard('{ArrowRight}')
+    expect(tabs[1]).toHaveAttribute('aria-selected', 'true')
+    expect(tabs[1]).toHaveFocus()
+    expect(screen.getByText('Style')).toBeInTheDocument()
+    await user.keyboard('{End}')
+    expect(tabs[2]).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('button', { name: 'Edit in Create' })).toBeInTheDocument()
+    await user.keyboard('{ArrowRight}')
+    expect(tabs[0]).toHaveAttribute('aria-selected', 'true')
   })
 })

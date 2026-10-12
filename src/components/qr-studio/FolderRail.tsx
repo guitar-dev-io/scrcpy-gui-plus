@@ -31,7 +31,9 @@ const SYSTEM_VIEWS: ReadonlyArray<{ view: QrView; label: string; icon: ReactNode
 const itemClass = (active: boolean) =>
   classNames(
     'flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 text-left text-[12px] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff4f57]/60',
-    active ? 'bg-[#ff4f57]/15 text-white' : 'text-slate-300 hover:bg-white/5 hover:text-white',
+    active
+      ? 'bg-[#ff4f57]/15 text-[color:var(--qr-shell-text)]'
+      : 'text-[color:var(--qr-shell-muted)] hover:bg-[#ff4f57]/10 hover:text-[color:var(--qr-shell-text)]',
   )
 
 export default function FolderRail({
@@ -94,17 +96,17 @@ export default function FolderRail({
           <button type="button" aria-current={view === value ? 'page' : undefined} className={itemClass(view === value)} onClick={() => onSelectView(value)}>
             {icon}
             <span className="min-w-0 flex-1 truncate">{label}</span>
-            <span className="text-[10px] text-slate-500">{countOf(value)}</span>
+            <span className="text-[10px] text-[color:var(--qr-shell-muted)]">{countOf(value)}</span>
           </button>
         </div>
       ))}
       <div className="mt-3 flex items-center justify-between px-2.5">
-        <h3 className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Folders</h3>
+        <h3 className="text-[10px] font-semibold uppercase tracking-wide text-[color:var(--qr-shell-muted)]">Folders</h3>
         <button type="button" aria-label="New folder" title="New folder" className={iconButtonClass} onClick={onCreateFolder}>
           <FolderPlus size={14} aria-hidden="true" />
         </button>
       </div>
-      {folders.length === 0 && <p className="px-2.5 text-[11px] text-slate-500">No folders yet</p>}
+      {folders.length === 0 && <p className="px-2.5 text-[11px] text-[color:var(--qr-shell-muted)]">No folders yet</p>}
       {folders.map((folder) => {
         const value: QrView = `folder:${folder.id}`
         return (
@@ -112,7 +114,7 @@ export default function FolderRail({
             <button type="button" aria-current={view === value ? 'page' : undefined} className={itemClass(view === value)} onClick={() => onSelectView(value)}>
               <FolderIcon size={14} aria-hidden="true" />
               <span className="min-w-0 flex-1 truncate">{folder.name}</span>
-              <span className="text-[10px] text-slate-500">{countOf(value)}</span>
+              <span className="text-[10px] text-[color:var(--qr-shell-muted)]">{countOf(value)}</span>
             </button>
             {folderMenu(folder)}
           </div>

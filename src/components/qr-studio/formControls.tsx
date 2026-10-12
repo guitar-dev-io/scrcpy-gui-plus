@@ -8,8 +8,8 @@ export const inputClass =
   'w-full rounded-lg border border-[#2a374a] bg-[#0c1624] px-3 py-2 text-[12px] text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-[#ff4f57]/70 focus:ring-2 focus:ring-[#ff4f57]/10 aria-[invalid=true]:border-red-400/70'
 const buttonBase =
   'inline-flex min-h-9 items-center justify-center gap-2 rounded-lg px-3 text-[11px] font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff4f57]/60 disabled:pointer-events-none disabled:opacity-40'
-export const primaryButtonClass = `${buttonBase} bg-[linear-gradient(135deg,#ff625f,#f53f4c)] text-white shadow-[0_8px_25px_rgba(255,67,76,.28)] hover:brightness-110`
-export const secondaryButtonClass = `${buttonBase} border border-[#2a3749] bg-[#101b2a] text-slate-200 hover:border-[#ff4f57]/50 hover:text-white`
+export const primaryButtonClass = `${buttonBase} bg-[linear-gradient(135deg,#ff625f,#f53f4c)] text-[color:var(--qr-text)] shadow-[0_8px_25px_rgba(255,67,76,.28)] hover:brightness-110`
+export const secondaryButtonClass = `${buttonBase} border border-[#2a3749] bg-[#101b2a] text-slate-200 hover:border-[#ff4f57]/50 hover:text-[color:var(--qr-text)]`
 export const outlineButtonClass = `${buttonBase} border border-[#ff4f57] text-[#ff7a80] hover:bg-[#ff4f57]/10`
 export const labelClass = 'mb-1.5 block text-[11px] font-medium text-slate-300'
 
@@ -109,7 +109,7 @@ export function Segmented<T extends string>({ label, value, options, onChange }:
             title={option.title}
             className={classNames(
               'flex h-8 flex-1 cursor-pointer items-center justify-center rounded-md px-2 text-[11px] font-semibold transition focus-within:ring-2 focus-within:ring-[#ff4f57]/60',
-              value === option.value ? 'bg-[#ff4f57] text-white' : 'text-slate-400 hover:text-white',
+              value === option.value ? 'bg-[#ff4f57] text-[color:var(--qr-text)]' : 'text-slate-400 hover:text-[color:var(--qr-text)]',
             )}
           >
             <input
@@ -152,8 +152,8 @@ export function CheckField({
 
 export function Section({ title, icon, children }: { title: string; icon?: ReactNode; children: ReactNode }) {
   return (
-    <section className="rounded-xl border border-[#2a3749] bg-[#0d1725]/75 p-3">
-      <h3 className="mb-3 flex items-center gap-2 text-[11px] font-semibold text-slate-200">
+    <section className="rounded-xl border border-[#2a3749] bg-[#0d1725] p-3">
+      <h3 className="mb-3 flex items-center gap-2 text-[11px] font-semibold text-[color:var(--qr-text)]">
         {icon}
         {title}
       </h3>

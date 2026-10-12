@@ -12,7 +12,7 @@ import {
 } from './RecordParts'
 import { relativeDate, typeBadgeClass, typeLabel } from './libraryUtils'
 
-/** Grid card. The grid row is 232px; the card is 12px shorter to leave a gap. */
+/** Grid card. The grid row is 252px; the card is 12px shorter to leave a gap. */
 export default function QrCard(props: RecordViewProps) {
   const { record, folderName, tagNames, selected, active, inTrash, actions, onToggleSelect } = props
   const shownTags = tagNames.slice(0, 2)
@@ -25,8 +25,8 @@ export default function QrCard(props: RecordViewProps) {
         if (!isInteractiveTarget(event)) actions.open(record)
       }}
       className={classNames(
-        'relative flex h-[220px] min-w-0 cursor-pointer flex-col gap-1.5 overflow-hidden rounded-xl border bg-[#101b2a] p-3 transition hover:border-[#ff4f57]/40',
-        active ? 'border-[#ff4f57] ring-1 ring-[#ff4f57]/60' : 'border-[#293649]',
+        'relative flex h-[240px] min-w-0 cursor-pointer flex-col gap-1.5 overflow-hidden rounded-xl border bg-[var(--qr-panel)] p-3 transition hover:border-[#ff4f57]/40',
+        active ? 'border-[var(--qr-coral)] ring-1 ring-[var(--qr-coral)]/60' : 'border-[#293649]',
         selected && 'bg-[#1a2535]',
       )}
     >
@@ -38,7 +38,7 @@ export default function QrCard(props: RecordViewProps) {
       <button
         type="button"
         onClick={() => actions.open(record)}
-        className="truncate text-left text-[12px] font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff4f57]/60"
+        className="truncate text-left text-[12px] font-semibold text-[color:var(--qr-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff4f57]/60"
       >
         {record.name}
       </button>
@@ -55,9 +55,9 @@ export default function QrCard(props: RecordViewProps) {
         ))}
         {tagNames.length > shownTags.length && <Chip>{`+${tagNames.length - shownTags.length}`}</Chip>}
       </div>
+      <p className="min-w-0 truncate text-[10px] text-slate-500">{relativeDate(record.updatedAt)}</p>
       <div className="mt-auto flex items-center justify-between gap-1">
-        <p className="min-w-0 truncate text-[10px] text-slate-500">{relativeDate(record.updatedAt)}</p>
-        <div className="flex shrink-0 items-center">
+        <div className="flex min-w-0 shrink-0 items-center">
           {!inTrash && <QuickActions record={record} actions={actions} />}
           <RecordMenu record={record} inTrash={inTrash} actions={actions} />
         </div>

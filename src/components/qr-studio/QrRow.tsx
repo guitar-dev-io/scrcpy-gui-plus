@@ -35,7 +35,7 @@ export default function QrRow(props: RecordViewProps) {
         <button
           type="button"
           onClick={() => actions.open(record)}
-          className="block max-w-full truncate text-left text-[12px] font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff4f57]/60"
+          className="block max-w-full truncate text-left text-[12px] font-semibold text-[color:var(--qr-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff4f57]/60"
         >
           {record.name}
         </button>

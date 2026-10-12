@@ -1,0 +1,7 @@
+{
+  "task_id": "task-qr-studio-refactor",
+  "task_description": "Refactor the existing QR Studio (src/components/pages/QrStudioPage.tsx, v1, single page) into the approved design in .agents/tasks/design.md, applying every override in .agents/tasks/design-review.md (iteration 3): 5 destinations (Create, Templates, Device Actions, Tools, Library) with only the active one mounted, header with device selector reusing App device state, v2 data model + safe non-destructive migration, 12 content types, templates, Library with folders/tags/trash/search/sort/grid-list/multi-select/bulk/details/windowing, honest Device Actions (Send, Open on Device with launch-confirm, Capture & Decode, camera scan permanently disabled), Tools (Deep Link Builder, Wi-Fi generator, image decoder, Quality Checker), shared portal-based overlay primitives with stacked-modal focus/inert/scroll-lock ownership, Rust commands (shell-quoting fix for launch_deep_link, qr_send_to_device, qr_capture_and_decode, qr_decode_image with new dependency rqrr =0.11.0 default-features=false), shell chrome no longer hidden on the qr-studio route, responsive at 5 viewports and 80-150% zoom, offline, unrelated modules untouched.",
+  "status": "pending",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003", "FEAT-004", "FEAT-005", "FEAT-006"],
+  "blocked_reason": null
+}

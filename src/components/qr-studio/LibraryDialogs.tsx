@@ -237,7 +237,7 @@ export function ManageTagsDialog({
                 </form>
               ) : (
                 <div className="flex items-center gap-2">
-                  <span className="min-w-0 flex-1 truncate text-[12px] text-white">
+                  <span className="min-w-0 flex-1 truncate text-[12px] text-[color:var(--qr-text)]">
                     {tag.name}
                   </span>
                   <span className="text-[10px] text-slate-500">

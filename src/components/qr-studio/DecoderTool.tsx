@@ -1,3 +1,4 @@
+import { friendlyMessage } from '../../services/tauriRuntime'
 import { useEffect, useRef, useState } from 'react'
 import type { DragEvent } from 'react'
 import { ImageUp, Loader2 } from 'lucide-react'
@@ -70,7 +71,7 @@ export default function DecoderTool({ store, onUseInCreate, onStatus }: DecoderT
     } catch (reason) {
       if (request.current !== id) return
       console.error('QR Studio: image decode failed', reason)
-      setError(reason instanceof Error ? reason.message : 'The image could not be decoded.')
+      setError(friendlyMessage(reason, 'The image could not be decoded.'))
     } finally {
       if (request.current === id) setBusy(false)
     }

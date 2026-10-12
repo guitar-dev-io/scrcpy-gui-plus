@@ -1,3 +1,4 @@
+import { friendlyMessage } from '../../services/tauriRuntime'
 import { useCallback, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { launchDeepLink } from '../../services/deepLinkService'
@@ -187,7 +188,7 @@ export function useDeviceActions({
         outcome = await job()
       } catch (error) {
         console.error(`QR Studio: device action "${key}" failed`, error)
-        outcome = { ok: false, message: error instanceof Error ? error.message : 'Unexpected error' }
+        outcome = { ok: false, message: friendlyMessage(error, 'Unexpected error') }
       } finally {
         running.current.delete(guard)
       }

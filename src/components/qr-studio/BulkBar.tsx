@@ -117,7 +117,7 @@ export default function BulkBar({
       aria-label="Bulk actions"
       className="sticky top-0 z-[1] flex flex-wrap items-center gap-2 rounded-xl border border-[#ff4f57]/40 bg-[#1a1f2e] px-3 py-2"
     >
-      <p className="mr-1 text-[12px] font-semibold text-white">{records.length} selected</p>
+      <p className="mr-1 text-[12px] font-semibold text-[color:var(--qr-text)]">{records.length} selected</p>
       {inTrash ? (
         <>
           <button type="button" className={btn} onClick={onRestore}>

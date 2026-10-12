@@ -4,7 +4,7 @@ import type { RefObject } from 'react'
 export const FALLBACK_VIEWPORT_HEIGHT = 800
 export const FALLBACK_CONTAINER_WIDTH = 1000
 export const LIST_ROW_HEIGHT = 56
-export const GRID_ROW_HEIGHT = 232
+export const GRID_ROW_HEIGHT = 252
 export const GRID_MIN_CARD_WIDTH = 200
 export const GRID_GAP = 12
 export const OVERSCAN_ROWS = 3

@@ -116,7 +116,7 @@ export default function TemplatesPanel({ store, selection, onApplyToCreate, onSt
     <div className="p-4 lg:p-6">
       <div className={`${panelClass} p-4`}>
         <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-[14px] font-semibold text-white">Templates</h2>
+          <h2 className="text-[14px] font-semibold text-[color:var(--qr-text)]">Templates</h2>
           <p className="text-[11px] text-slate-400">
             A template stores colors, error correction and size. Save one from the Create tab.
           </p>
@@ -183,7 +183,7 @@ export default function TemplatesPanel({ store, selection, onApplyToCreate, onSt
                         </form>
                       ) : (
                         <>
-                          <h3 className="truncate text-[12px] font-semibold text-white">{template.name}</h3>
+                          <h3 className="truncate text-[12px] font-semibold text-[color:var(--qr-text)]">{template.name}</h3>
                           <p className="mt-0.5 text-[10px] text-slate-500">
                             {template.builtIn ? 'Built-in' : 'Yours'} · {template.style.errorCorrection} · {template.style.size}px
                           </p>

@@ -36,6 +36,7 @@ import {
   viewTitle,
 } from './libraryUtils'
 import type { LibraryUiPrefs } from './libraryUtils'
+import LibraryPager from './LibraryPager'
 import { useLibrarySelection } from './useLibrarySelection'
 import type { ToolbarNotifier } from '../device-control-toolbar'
 import { useDeviceActions } from './useDeviceActions'
@@ -75,8 +76,8 @@ const chipClass = (on: boolean) =>
   classNames(
     'inline-flex min-h-8 items-center gap-1.5 rounded-full border px-3 text-[11px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff4f57]/60',
     on
-      ? 'border-[#ff4f57] bg-[#ff4f57]/15 text-white'
-      : 'border-[#2a3749] bg-[#0d1725] text-slate-300 hover:text-white',
+      ? 'border-[#ff4f57] bg-[#ff4f57]/15 text-[color:var(--qr-text)]'
+      : 'border-[#2a3749] bg-[#0d1725] text-slate-300 hover:text-[color:var(--qr-text)]',
   )
 
 function EmptyState({
@@ -90,8 +91,8 @@ function EmptyState({
 }) {
   return (
     <div className="flex h-full min-h-[200px] flex-col items-center justify-center gap-2 p-6 text-center">
-      <p className="text-[13px] font-semibold text-white">{title}</p>
-      <p className="max-w-sm text-[11px] text-slate-400">{hint}</p>
+      <p className="text-[13px] font-semibold text-[color:var(--qr-shell-text)]">{title}</p>
+      <p className="max-w-sm text-[11px] text-[color:var(--qr-shell-muted)]">{hint}</p>
       {action && (
         <button
           type="button"
@@ -149,6 +150,8 @@ export default function LibraryPanel({
   )
   const [moveIds, setMoveIds] = useState<string[] | null>(null)
   const [manageTags, setManageTags] = useState(false)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(12)
   const scrollRef = useRef<HTMLDivElement>(null)
   const selectAllRef = useRef<HTMLInputElement>(null)
 
@@ -190,6 +193,12 @@ export default function LibraryPanel({
     () =>
       selectRecords(state, { view, query, types, tagIds, sort: prefs.sort }),
     [state, view, query, types, tagIds, prefs.sort],
+  )
+  const pageCount = Math.max(1, Math.ceil(records.length / pageSize))
+  const currentPage = Math.min(page, pageCount)
+  const pageRecords = useMemo(
+    () => records.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [records, currentPage, pageSize],
   )
   const counts = useMemo(
     () => typeCounts(state, { view, query, tagIds }),
@@ -248,7 +257,7 @@ export default function LibraryPanel({
   }, [detailsId, state.records, inTrash])
 
   const windowed = useWindowedList({
-    count: records.length,
+    count: pageRecords.length,
     mode: prefs.view,
     scrollRef,
     initialViewportHeight,
@@ -257,7 +266,11 @@ export default function LibraryPanel({
   const { resetScroll } = windowed
   useEffect(() => {
     resetScroll()
+    setPage(1)
   }, [view, query, types, tagIds, prefs.sort, prefs.view, resetScroll])
+  useEffect(() => {
+    resetScroll()
+  }, [currentPage, pageSize, resetScroll])
 
   useEffect(() => {
     const box = selectAllRef.current
@@ -516,7 +529,7 @@ export default function LibraryPanel({
     onToggleSelect: selectionApi.toggle,
   })
   const Item = prefs.view === 'grid' ? QrCard : QrRow
-  const visible = records.slice(windowed.startIndex, windowed.endIndex)
+  const visible = pageRecords.slice(windowed.startIndex, windowed.endIndex)
 
   const detailsBody = detailsRecord && (
     <QrDetails
@@ -558,7 +571,7 @@ export default function LibraryPanel({
           <div className="flex flex-wrap items-center gap-2">
             <h2
               id="qr-library-title"
-              className="mr-1 text-[14px] font-semibold text-white"
+              className="mr-1 text-[14px] font-semibold text-[color:var(--qr-text)]"
             >
               Library
             </h2>
@@ -664,8 +677,8 @@ export default function LibraryPanel({
                   className={classNames(
                     'inline-flex h-7 w-8 items-center justify-center rounded-md transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff4f57]/60',
                     prefs.view === mode
-                      ? 'bg-[#ff4f57] text-white'
-                      : 'text-slate-400 hover:text-white',
+                      ? 'bg-[#ff4f57] text-[color:var(--qr-text)]'
+                      : 'text-slate-400 hover:text-[color:var(--qr-text)]',
                   )}
                 >
                   <Icon size={14} aria-hidden="true" />
@@ -808,7 +821,16 @@ export default function LibraryPanel({
         </div>
 
         {total > 0 && (
-          <p className="shrink-0 text-[11px] text-slate-400">{`Showing ${windowed.firstIndex + 1}-${windowed.lastIndex + 1} of ${total} items`}</p>
+          <LibraryPager
+            total={total}
+            page={currentPage}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size)
+              setPage(1)
+            }}
+          />
         )}
       </div>
 
@@ -818,7 +840,7 @@ export default function LibraryPanel({
           className={`${panelClass} custom-scrollbar min-h-0 w-[320px] shrink-0 overflow-y-auto p-4`}
         >
           <div className="mb-3 flex items-center justify-between gap-2">
-            <h3 className="text-[13px] font-semibold text-white">Details</h3>
+            <h3 className="text-[13px] font-semibold text-[color:var(--qr-text)]">Details</h3>
             {detailsRecord && (
               <button
                 type="button"

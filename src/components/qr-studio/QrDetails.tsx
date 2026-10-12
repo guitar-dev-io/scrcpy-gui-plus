@@ -1,6 +1,6 @@
 import { Copy, Download, FileCode2, Pencil, CopyPlus, RotateCcw, Send, Smartphone, Star, Trash2, XCircle, Eye, EyeOff } from 'lucide-react'
-import { useState } from 'react'
-import type { FormEvent } from 'react'
+import { useRef, useState } from 'react'
+import type { FormEvent, KeyboardEvent } from 'react'
 import { MAX_NOTES, MAX_RECORD_NAME, MAX_TAG_NAME, redactWifi } from '../../services/qrStudioStore'
 import type { QrRecord } from '../../types/qrStudio'
 import { Select } from '../ui'
@@ -22,6 +22,12 @@ interface QrDetailsProps {
   onStatus: (message: string) => void
 }
 
+type DetailsTab = 'details' | 'design' | 'actions'
+const DETAIL_TABS: ReadonlyArray<{ id: DetailsTab; label: string }> = [
+  { id: 'details', label: 'Details' },
+  { id: 'design', label: 'Design' },
+  { id: 'actions', label: 'Actions' },
+]
 const fmt = (iso: string) => {
   const date = new Date(iso)
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleString()
@@ -36,6 +42,8 @@ export default function QrDetails({ record, store, inTrash, actions, onCopyConte
   const [notes, setNotes] = useState(record.notes)
   const [nameError, setNameError] = useState<string | undefined>()
   const [revealed, setRevealed] = useState(false)
+  const [tab, setTab] = useState<DetailsTab>('details')
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
   const [tagInput, setTagInput] = useState('')
   const [tagError, setTagError] = useState<string | undefined>()
   const isWifi = /^WIFI:/i.test(record.content)
@@ -80,11 +88,62 @@ export default function QrDetails({ record, store, inTrash, actions, onCopyConte
       record.tags.filter((tagId) => tagId !== id),
     )
 
+  const onTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const current = DETAIL_TABS.findIndex((item) => item.id === tab)
+    let next = -1
+    if (event.key === 'ArrowRight') next = (current + 1) % DETAIL_TABS.length
+    else if (event.key === 'ArrowLeft') next = (current - 1 + DETAIL_TABS.length) % DETAIL_TABS.length
+    else if (event.key === 'Home') next = 0
+    else if (event.key === 'End') next = DETAIL_TABS.length - 1
+    if (next < 0) return
+    event.preventDefault()
+    setTab(DETAIL_TABS[next].id)
+    tabRefs.current[next]?.focus()
+  }
   return (
     <div className="space-y-4">
+      <div
+        role="tablist"
+        aria-label="Details sections"
+        onKeyDown={onTabKeyDown}
+        className="flex rounded-lg border border-[#2a3749] bg-[#0d1725] p-0.5"
+      >
+        {DETAIL_TABS.map((item, index) => (
+          <button
+            key={item.id}
+            ref={(element) => {
+              tabRefs.current[index] = element
+            }}
+            type="button"
+            role="tab"
+            id={`qr-details-tab-${item.id}`}
+            aria-selected={tab === item.id}
+            aria-controls={`qr-details-panel-${item.id}`}
+            tabIndex={tab === item.id ? 0 : -1}
+            onClick={() => setTab(item.id)}
+            className={classNames(
+              'h-8 flex-1 rounded-md text-[11px] font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--qr-coral)]/60',
+              tab === item.id
+                ? 'bg-[var(--qr-coral)] text-[color:var(--qr-text)]'
+                : 'text-[color:var(--qr-text-subtle)] hover:text-[color:var(--qr-text)]',
+            )}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+      <div
+        role="tabpanel"
+        id={`qr-details-panel-${tab}`}
+        aria-labelledby={`qr-details-tab-${tab}`}
+        className="space-y-4"
+      >
+      {tab !== 'actions' && (
       <div className="flex justify-center rounded-xl border border-[#2a3749] bg-[#0d1725] p-3">
         <QrThumb record={record} size={200} />
       </div>
+      )}
+      {tab === 'details' && (<>
 
       <TextField
         label="Name"
@@ -99,8 +158,11 @@ export default function QrDetails({ record, store, inTrash, actions, onCopyConte
       />
 
       <div className="flex flex-wrap items-center gap-2">
-        <span className={classNames('inline-flex rounded-md px-1.5 py-0.5 text-[10px] font-medium', typeBadgeClass(record.contentType))}>
-          {typeLabel(record.contentType)}
+        {/* Navy backing keeps the tinted badge readable on the light drawer surface. */}
+        <span className="inline-flex rounded-md bg-[#0d1725]">
+          <span className={classNames('inline-flex rounded-md px-1.5 py-0.5 text-[10px] font-medium', typeBadgeClass(record.contentType))}>
+            {typeLabel(record.contentType)}
+          </span>
         </span>
         <button
           type="button"
@@ -169,7 +231,7 @@ export default function QrDetails({ record, store, inTrash, actions, onCopyConte
               <button
                 type="button"
                 aria-label={`Remove tag ${tag.name}`}
-                className="rounded px-1 text-[11px] text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff4f57]/60"
+                className="rounded px-1 text-[11px] text-slate-400 hover:text-[color:var(--qr-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff4f57]/60"
                 onClick={() => removeTag(tag.id)}
               >
                 ×
@@ -223,6 +285,20 @@ export default function QrDetails({ record, store, inTrash, actions, onCopyConte
       </div>
 
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px]">
+        <dt className="text-slate-500">Created</dt>
+        <dd className="text-slate-300">{fmt(record.createdAt)}</dd>
+        <dt className="text-slate-500">Updated</dt>
+        <dd className="text-slate-300">{fmt(record.updatedAt)}</dd>
+        {record.trashedAt && (
+          <>
+            <dt className="text-slate-500">Trashed</dt>
+            <dd className="text-slate-300">{fmt(record.trashedAt)}</dd>
+          </>
+        )}
+      </dl>
+      </>)}
+      {tab === 'design' && (
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px]">
         <dt className="text-slate-500">Style</dt>
         <dd className="flex min-w-0 flex-wrap items-center gap-1.5 text-slate-300">
           <span className="inline-flex items-center gap-1">
@@ -237,19 +313,11 @@ export default function QrDetails({ record, store, inTrash, actions, onCopyConte
             {record.style.size}px · EC {record.style.errorCorrection}
           </span>
         </dd>
-        <dt className="text-slate-500">Created</dt>
-        <dd className="text-slate-300">{fmt(record.createdAt)}</dd>
-        <dt className="text-slate-500">Updated</dt>
-        <dd className="text-slate-300">{fmt(record.updatedAt)}</dd>
-        {record.trashedAt && (
-          <>
-            <dt className="text-slate-500">Trashed</dt>
-            <dd className="text-slate-300">{fmt(record.trashedAt)}</dd>
-          </>
-        )}
       </dl>
+      )}
 
-      <div className="flex flex-wrap gap-2 border-t border-[#2a3749] pt-3">
+      {tab === 'actions' && (<>
+      <div className="flex flex-wrap gap-2">
         {inTrash ? (
           <>
             <button type="button" className={`${secondaryButtonClass} min-h-8`} onClick={() => actions.restore([record.id])}>
@@ -304,6 +372,8 @@ export default function QrDetails({ record, store, inTrash, actions, onCopyConte
           <ResultStrip state={actions.deviceState('send')} label="Last send result" />
         </div>
       )}
+      </>)}
+      </div>
     </div>
   )
 }

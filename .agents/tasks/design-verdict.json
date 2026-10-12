@@ -1,0 +1,48 @@
+{
+  "verdict": "CHANGES_REQUESTED",
+  "findings": [
+    {
+      "id": 1,
+      "severity": "MEDIUM",
+      "title": "Open-on-Device confirm rule ambiguous: persisted `source` vs 'this session', and `origin` vs `source` naming; edit/duplicate transitions unspecified",
+      "section": "6.0, 2.1"
+    },
+    {
+      "id": 2,
+      "severity": "MEDIUM",
+      "title": "Dialog over modal Drawer: no focus-trap/inert/scroll-lock ref-count rule for stacked modal surfaces in the overlay root",
+      "section": "8.4, 8.5, 8.6"
+    },
+    {
+      "id": 3,
+      "severity": "NIT",
+      "title": "migrateV1 does not handle duplicate ids",
+      "section": "2.2"
+    },
+    {
+      "id": 4,
+      "severity": "NIT",
+      "title": "short_hash unspecified; DefaultHasher is not stable across builds",
+      "section": "6.2"
+    },
+    {
+      "id": 5,
+      "severity": "NIT",
+      "title": "Grep-based svg enforcement test is brittle",
+      "section": "2.2"
+    },
+    {
+      "id": 6,
+      "severity": "NIT",
+      "title": "Header Select value undefined when activeDevice not in devices or is empty due to iOS/companion",
+      "section": "1.1, 1.3"
+    },
+    {
+      "id": 7,
+      "severity": "NIT",
+      "title": "2.5 MB v2 svg budget has no defined unit/measure",
+      "section": "2.2"
+    }
+  ],
+  "reviewDoc": "/Users/anuwat.t/scrcpy-gui-plus/.agents/tasks/design-review.md"
+}

@@ -1,3 +1,4 @@
+import { DESKTOP_ONLY_MESSAGE, friendlyMessage, isDesktopRequired } from '../../services/tauriRuntime'
 import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Loader2, QrCode } from 'lucide-react'
 import { generateQrSvg } from '../../services/deepLinkService'
@@ -47,8 +48,8 @@ export function useQrPreview(content: string | null, errorCorrection: QrErrorCor
         })
         .catch((reason: unknown) => {
           if (request.current !== requestId) return
-          console.error('QR Studio: preview generation failed', reason)
-          setError(reason instanceof Error ? reason.message : 'Preview could not be generated')
+          if (!isDesktopRequired(reason)) console.error('QR Studio: preview generation failed', reason)
+          setError(friendlyMessage(reason, 'Preview could not be generated'))
         })
         .finally(() => {
           if (request.current === requestId) setLoading(false)
@@ -73,7 +74,7 @@ export default function LivePreview({ style, preview, hasContent }: LivePreviewP
   return (
     <div className="flex flex-col items-center gap-3">
       <div
-        className="relative flex aspect-square w-full max-w-[260px] items-center justify-center overflow-hidden rounded-[24px] border border-white/15 shadow-[0_25px_70px_rgba(0,0,0,.38)]"
+        className="relative flex aspect-square w-full max-w-[320px] items-center justify-center overflow-hidden rounded-[20px] border border-white/15 shadow-[0_25px_70px_rgba(0,0,0,.38)]"
         style={{ backgroundColor: style.background }}
       >
         {styled ? (
@@ -96,13 +97,13 @@ export default function LivePreview({ style, preview, hasContent }: LivePreviewP
         )}
       </div>
       <p className="text-[11px] text-slate-400">
-        {style.size} × {style.size} px · Error correction {style.errorCorrection}
+        {style.size} × {style.size} · PNG · Error correction: {style.errorCorrection}
       </p>
       <div role="status" className="min-h-4 text-center text-[11px]">
         {preview.error ? (
           <span className="inline-flex items-center gap-1.5 text-amber-300">
             <AlertTriangle size={12} aria-hidden="true" />
-            Preview failed: {preview.error}
+            {preview.error === DESKTOP_ONLY_MESSAGE ? preview.error : `Preview failed: ${preview.error}`}
           </span>
         ) : !hasContent && preview.stale ? (
           <span className="text-slate-500">Fix the highlighted fields to refresh the preview.</span>

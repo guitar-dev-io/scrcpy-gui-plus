@@ -46,7 +46,7 @@ function Card({
     <section aria-labelledby={id} className={`${panelClass} space-y-3 p-4`}>
       <h3
         id={id}
-        className="flex items-center gap-2 text-[13px] font-semibold text-white"
+        className="flex items-center gap-2 text-[13px] font-semibold text-[color:var(--qr-text)]"
       >
         {icon}
         {title}
@@ -170,8 +170,8 @@ export default function DeviceActionsPanel({
   return (
     <div className="space-y-4 p-4 lg:p-6">
       <div>
-        <h2 className="text-[14px] font-semibold text-white">Device Actions</h2>
-        <p className="mt-1 text-[11px] text-slate-400">
+        <h2 className="text-[14px] font-semibold text-[color:var(--qr-shell-text)]">Device Actions</h2>
+        <p className="mt-1 text-[11px] text-[color:var(--qr-shell-muted)]">
           {device.hasDevice
             ? `Acting on ${device.deviceName}.`
             : 'No Android device is selected. Choose one in the header to enable these actions.'}

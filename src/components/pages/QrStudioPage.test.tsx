@@ -272,17 +272,16 @@ describe('QrStudioPage', () => {
     expect(tab('Create')).toHaveAttribute('aria-selected', 'true')
   })
 
-  it('collapses tab labels to icons with accessible names in a narrow container', () => {
+  it('keeps all five numbered cards, dropping subtitles in a compact container', () => {
     const wide = renderPage({ initialWidth: 1300 })
-    expect(screen.getByRole('tab', { name: 'Templates' })).toHaveTextContent(
-      'Templates',
-    )
+    expect(screen.getByRole('tab', { name: 'Templates' })).toBeVisible()
+    expect(screen.getByRole('tablist', { name: 'QR Studio sections' })).not.toHaveAttribute('data-compact')
     wide.unmount()
 
     renderPage({ initialWidth: 900 })
-    const tab = screen.getByRole('tab', { name: 'Templates' })
-    expect(tab).toHaveAttribute('aria-label', 'Templates')
-    expect(tab).not.toHaveTextContent('Templates')
+    expect(screen.getAllByRole('tab')).toHaveLength(5)
+    expect(screen.getByRole('tablist', { name: 'QR Studio sections' })).toHaveAttribute('data-compact', 'true')
+    expect(screen.getByRole('tab', { name: 'Templates' })).toHaveAttribute('aria-label', 'Templates')
   })
 
   it('keeps the unsaved draft when switching destinations and back', () => {
@@ -423,6 +422,7 @@ describe('QrStudioPage', () => {
       openTab('Library')
       const card = screen.getByRole('article', { name: 'Docs' })
       fireEvent.click(within(card).getByRole('button', { name: 'Docs' }))
+      fireEvent.click(screen.getByRole('tab', { name: 'Actions' }))
       fireEvent.click(screen.getByRole('button', { name: 'Edit in Create' }))
       expect(screen.getByRole('tab', { name: 'Create' })).toHaveAttribute(
         'aria-selected',
@@ -524,7 +524,9 @@ describe('QrStudioPage', () => {
     it('uses 3, 2 and 1 columns by measured width', () => {
       expect(layoutAt(1300)).toBe('wide')
       expect(layoutAt(1200)).toBe('wide')
-      expect(layoutAt(1100)).toBe('medium')
+      expect(layoutAt(1100)).toBe('wide')
+      expect(layoutAt(1060)).toBe('wide')
+      expect(layoutAt(1040)).toBe('medium')
       expect(layoutAt(1024)).toBe('medium')
       expect(layoutAt(900)).toBe('narrow')
     })
@@ -586,6 +588,72 @@ describe('QrStudioPage', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Target device' }))
       fireEvent.click(screen.getByRole('option', { name: 'Pixel' }))
       expect(onSelectDevice).toHaveBeenCalledWith('b2')
+    })
+  })
+
+  describe('polish', () => {
+    it('lays Create out as form | Live Preview | Device Actions and Tools at a 1366 viewport container', () => {
+      const { container } = renderPage({ initialWidth: 1100 })
+      const root = container.querySelector('[data-layout]') as HTMLElement
+      expect(root).toHaveAttribute('data-layout', 'wide')
+      const form = screen.getByRole('heading', { name: 'Create QR Code' })
+      const preview = screen.getByRole('heading', { name: 'Live Preview' })
+      const deviceActions = screen.getByRole('heading', { name: 'Device Actions' })
+      const tools = screen.getByRole('heading', { name: 'Tools' })
+      const order = (a: Node, b: Node) =>
+        Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
+      expect(order(form, preview)).toBe(true)
+      expect(order(preview, deviceActions)).toBe(true)
+      expect(order(deviceActions, tools)).toBe(true)
+      expect(screen.getByText(/1024 × 1024 · PNG · Error correction: M/)).toBeInTheDocument()
+      for (const name of ['Download PNG', 'Download SVG']) {
+        expect(screen.getByRole('button', { name: new RegExp(name) })).toBeInTheDocument()
+      }
+      expect(screen.getByRole('heading', { name: 'Quality Check' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Decode Test' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Export Options' })).toBeInTheDocument()
+    })
+
+    it('stacks the aside under the preview at 1024 and toggles QR Code / Design View', () => {
+      const { container } = renderPage({ initialWidth: 1024 })
+      expect(container.querySelector('[data-layout]')).toHaveAttribute('data-layout', 'medium')
+      expect(screen.getByRole('heading', { name: 'Tools' })).toBeInTheDocument()
+      const qr = screen.getByRole('button', { name: 'QR Code' })
+      const design = screen.getByRole('button', { name: 'Design View' })
+      expect(qr).toHaveAttribute('aria-pressed', 'true')
+      fireEvent.click(design)
+      expect(design).toHaveAttribute('aria-pressed', 'true')
+      expect(qr).toHaveAttribute('aria-pressed', 'false')
+      expect(screen.getByLabelText('Design summary')).toBeInTheDocument()
+    })
+
+    it('jumps to the real destinations from the aside shortcut cards', () => {
+      renderPage({ initialWidth: 1300 })
+      fireEvent.click(screen.getByRole('button', { name: 'Open Device Actions' }))
+      expect(screen.getByRole('tab', { name: 'Device Actions' })).toHaveAttribute('aria-selected', 'true')
+      openTab('Create')
+      fireEvent.click(screen.getByRole('button', { name: 'Open Tools' }))
+      expect(screen.getByRole('tab', { name: 'Tools' })).toHaveAttribute('aria-selected', 'true')
+    })
+
+    it('marks the page root with the qr-studio-root token scope', () => {
+      const { container } = renderPage()
+      expect(container.firstElementChild).toHaveClass('qr-studio-root')
+      expect(screen.getByRole('heading', { name: 'Create QR Code' }).className).toContain('var(--qr-text)')
+      expect(screen.getByRole('heading', { name: 'Live Preview' }).className).toContain('var(--qr-text)')
+    })
+
+    it('shows only the friendly desktop message when the Tauri runtime is missing', async () => {
+      isTauriMock.mockReturnValue(false)
+      generateQrSvgMock.mockRejectedValue(
+        new TypeError("Cannot read properties of undefined (reading 'invoke')"),
+      )
+      vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      renderPage({ initialWidth: 1300 })
+      fireEvent.change(screen.getByLabelText('URL'), { target: { value: 'https://example.com' } })
+      const status = await screen.findAllByText('Requires the desktop app')
+      expect(status.length).toBeGreaterThan(0)
+      expect(screen.queryByText(/Cannot read properties|reading 'invoke'|Preview failed/)).not.toBeInTheDocument()
     })
   })
 })

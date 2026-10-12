@@ -4,6 +4,7 @@ import type { ToolbarNotifier } from '../device-control-toolbar'
 import CreatePanel from '../qr-studio/CreatePanel'
 import DeviceActionsPanel from '../qr-studio/DeviceActionsPanel'
 import LibraryPanel from '../qr-studio/LibraryPanel'
+import type { QrDeviceMeta } from '../qr-studio/QrDeviceCard'
 import QrStudioHeader, { panelId, tabId } from '../qr-studio/QrStudioHeader'
 import TemplatesPanel from '../qr-studio/TemplatesPanel'
 import ToolsPanel from '../qr-studio/ToolsPanel'
@@ -23,6 +24,8 @@ interface QrStudioPageProps {
   onExit?: () => void
   devices: string[]
   deviceLabels?: Record<string, string>
+  /** Optional per-serial details (Android version, connection, battery) shown on the device card. */
+  deviceMeta?: Record<string, QrDeviceMeta>
   /** `''` when an iOS or companion workspace is active. */
   activeDevice: string
   onSelectDevice: (serial: string) => void
@@ -46,6 +49,7 @@ const STATUS_MS = 2400
 export default function QrStudioPage({
   devices,
   deviceLabels,
+  deviceMeta,
   activeDevice,
   onSelectDevice,
   customPath,
@@ -98,7 +102,7 @@ export default function QrStudioPage({
   return (
     <div
       ref={ref}
-      className="relative flex h-full min-h-0 flex-1 flex-col bg-[radial-gradient(circle_at_58%_20%,rgba(255,79,87,.07),transparent_25%)] text-slate-100"
+      className="relative flex h-full min-h-0 flex-1 flex-col bg-[radial-gradient(circle_at_58%_20%,rgba(255,79,87,.07),transparent_25%)] text-[color:var(--qr-text)] qr-studio-root"
     >
       <QrStudioHeader
         destination={destination}
@@ -108,6 +112,7 @@ export default function QrStudioPage({
         linkCount={linkCount}
         devices={devices}
         deviceLabels={deviceLabels}
+        deviceMeta={deviceMeta}
         activeDevice={activeDevice}
         onSelectDevice={onSelectDevice}
       />
@@ -127,6 +132,7 @@ export default function QrStudioPage({
             draftApi={draftApi}
             containerWidth={width}
             onOpenTool={openTool}
+            onOpenDestination={setDestination}
             onStatus={setStatus}
             notify={notify}
             devices={devices}

@@ -38,7 +38,7 @@ export interface RecordViewProps {
 }
 
 export const iconButtonClass =
-  'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-transparent text-slate-400 transition hover:border-[#ff4f57]/40 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff4f57]/60 disabled:opacity-40'
+  'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-transparent text-slate-400 transition hover:border-[#ff4f57]/40 hover:text-[color:var(--qr-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff4f57]/60 disabled:opacity-40'
 
 /** True when a click came from an interactive child, so the surrounding card should not open details. */
 export function isInteractiveTarget(event: MouseEvent): boolean {
@@ -82,9 +82,14 @@ export function FavoriteButton({ record, actions }: Pick<RecordViewProps, 'recor
 export function QuickActions({ record, actions }: Pick<RecordViewProps, 'record' | 'actions'>) {
   return (
     <>
-      <Tooltip content="Download PNG">
-        <button type="button" aria-label="Download PNG" className={iconButtonClass} onClick={() => actions.downloadPng(record)}>
-          <Download size={14} aria-hidden="true" />
+      <Tooltip content="Preview">
+        <button type="button" aria-label="Preview" className={iconButtonClass} onClick={() => actions.open(record)}>
+          <Eye size={14} aria-hidden="true" />
+        </button>
+      </Tooltip>
+      <Tooltip content="Edit">
+        <button type="button" aria-label="Edit" className={iconButtonClass} onClick={() => actions.edit(record)}>
+          <Pencil size={14} aria-hidden="true" />
         </button>
       </Tooltip>
       <Tooltip content="Copy">
@@ -92,10 +97,24 @@ export function QuickActions({ record, actions }: Pick<RecordViewProps, 'record'
           <Copy size={14} aria-hidden="true" />
         </button>
       </Tooltip>
+      <Tooltip content="Download PNG">
+        <button type="button" aria-label="Download PNG" className={iconButtonClass} onClick={() => actions.downloadPng(record)}>
+          <Download size={14} aria-hidden="true" />
+        </button>
+      </Tooltip>
+      <Tooltip content="Delete">
+        <button
+          type="button"
+          aria-label="Delete"
+          className={classNames(iconButtonClass, 'text-red-400 hover:border-red-400/50 hover:text-red-300')}
+          onClick={() => actions.trash([record.id])}
+        >
+          <Trash2 size={14} aria-hidden="true" />
+        </button>
+      </Tooltip>
     </>
   )
 }
-
 export function RecordMenu({ record, inTrash, actions }: Pick<RecordViewProps, 'record' | 'inTrash' | 'actions'>) {
   const icon = (node: typeof Eye) => {
     const Icon = node

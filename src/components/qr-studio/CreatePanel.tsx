@@ -1,3 +1,4 @@
+import { friendlyMessage } from '../../services/tauriRuntime'
 import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
@@ -16,7 +17,7 @@ import { decodeQrImage } from '../../services/qrDeviceService'
 import { isTauri } from '../../utils/tauriEnv'
 import { Button, Dialog, useConfirm } from '../ui'
 import type { ToolbarNotifier } from '../device-control-toolbar'
-import type { QrToolId } from './destinations'
+import type { QrDestination, QrToolId } from './destinations'
 import CreateAside from './CreateAside'
 import DeviceActionsAside from './DeviceActionsAside'
 import DesignControls from './DesignControls'
@@ -27,6 +28,7 @@ import TypePicker from './TypePicker'
 import { MAX_BULK_LINES, validateBulkInput } from './qrBulk'
 import { canCopyImage, copyQr, downloadPng, downloadSvg, renderPngBase64, type QrRenderable } from './qrDownloads'
 import {
+  Section,
   Segmented,
   TextField,
   outlineButtonClass,
@@ -43,6 +45,8 @@ interface CreatePanelProps {
   /** Measured width of the studio container; drives the 3 / 2 / 1 column layouts. */
   containerWidth: number
   onOpenTool: (tool: QrToolId) => void
+  /** Opens a full destination from the aside shortcut cards. */
+  onOpenDestination?: (destination: QrDestination) => void
   onStatus: (message: string) => void
   notify: ToolbarNotifier
   /** Connected Android serials. Without devices, the aside's device actions stay disabled. */
@@ -55,10 +59,12 @@ interface CreatePanelProps {
 
 const NO_DEVICES: string[] = []
 
+export const WIDE_FROM = 1060
 export type CreateLayout = 'wide' | 'medium' | 'narrow'
 
+/** Container (not viewport) widths: the app sidebar leaves roughly 1100px at a 1366px viewport. */
 export function createLayoutForWidth(width: number): CreateLayout {
-  if (width >= 1200) return 'wide'
+  if (width >= WIDE_FROM) return 'wide'
   if (width >= 1024) return 'medium'
   return 'narrow'
 }
@@ -76,6 +82,7 @@ export default function CreatePanel({
   draftApi,
   containerWidth,
   onOpenTool,
+  onOpenDestination,
   onStatus,
   notify,
   devices = NO_DEVICES,
@@ -93,6 +100,7 @@ export default function CreatePanel({
   const [saveError, setSaveError] = useState<string | null>(null)
   const [verify, setVerify] = useState<{ key: string; state: VerifyState } | null>(null)
   const [previewOpen, setPreviewOpen] = useState(true)
+  const [previewMode, setPreviewMode] = useState<'qr' | 'design'>('qr')
   const [templateOpen, setTemplateOpen] = useState(false)
   const [templateName, setTemplateName] = useState('')
   const [templateError, setTemplateError] = useState<string | undefined>()
@@ -241,7 +249,7 @@ export default function CreatePanel({
       () => onStatus(success),
       (error: unknown) => {
         console.error(`QR Studio: ${failure}`, error)
-        notify(failure, error instanceof Error ? error.message : 'Unexpected error', 'error')
+        notify(failure, friendlyMessage(error, 'Unexpected error'), 'error')
       },
     )
   }
@@ -273,7 +281,7 @@ export default function CreatePanel({
       setVerify({ key, state })
     } catch (error) {
       console.error('QR Studio: verify scan failed', error)
-      setVerify({ key, state: { status: 'undecodable', message: error instanceof Error ? error.message : undefined } })
+      setVerify({ key, state: { status: 'undecodable', message: friendlyMessage(error, '') || undefined } })
     }
   }
 
@@ -290,7 +298,7 @@ export default function CreatePanel({
 
   const formBlock = (
     <div className={`${panelClass} space-y-4 p-4`}>
-      <h2 className="text-[14px] font-semibold text-white">Create QR Code</h2>
+      <h2 className="text-[14px] font-semibold text-[color:var(--qr-text)]">Create QR Code</h2>
       <Segmented
         label="Mode"
         value={draft.mode}
@@ -366,53 +374,41 @@ export default function CreatePanel({
     </div>
   )
 
-  const actionsBlock = (
+  const exportRow = (
+    <div className="grid grid-cols-3 gap-2">
+      <button
+        type="button"
+        className={`${primaryButtonClass} min-w-0 whitespace-nowrap px-2`}
+        disabled={!canExport}
+        onClick={() => runAction(downloadPng, 'PNG downloaded', 'PNG export failed')}
+      >
+        <Download size={13} aria-hidden="true" /> Download PNG
+      </button>
+      <button
+        type="button"
+        className={`${secondaryButtonClass} min-w-0 whitespace-nowrap px-2`}
+        disabled={!canExport}
+        onClick={() => runAction(downloadSvg, 'SVG downloaded', 'SVG export failed')}
+      >
+        <Download size={13} aria-hidden="true" /> Download SVG
+      </button>
+      <button type="button" className={`${secondaryButtonClass} min-w-0 whitespace-nowrap px-2`} disabled={!canExport} onClick={copy}>
+        <Copy size={13} aria-hidden="true" /> {canCopyImage() ? 'Copy image' : 'Copy text'}
+      </button>
+    </div>
+  )
+  const saveRow = (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          className={outlineButtonClass}
-          disabled={!canExport}
-          onClick={() => runAction(downloadPng, 'PNG downloaded', 'PNG export failed')}
-        >
-          <Download size={13} aria-hidden="true" /> Download PNG
-        </button>
-        <button
-          type="button"
-          className={secondaryButtonClass}
-          disabled={!canExport}
-          onClick={() => runAction(downloadSvg, 'SVG downloaded', 'SVG export failed')}
-        >
-          <Download size={13} aria-hidden="true" /> Download SVG
-        </button>
-        <button type="button" className={secondaryButtonClass} disabled={!canExport} onClick={copy}>
-          <Copy size={13} aria-hidden="true" /> {canCopyImage() ? 'Copy image' : 'Copy text'}
-        </button>
-        <button
-          type="button"
-          className={secondaryButtonClass}
-          disabled={!canExport || !desktop || verifyState.status === 'running'}
-          aria-describedby={desktop ? undefined : 'qr-verify-hint'}
-          onClick={() => void verifyScan()}
-        >
-          <ScanLine size={13} aria-hidden="true" /> Verify scan
-        </button>
-      </div>
-      {!desktop && (
-        <p id="qr-verify-hint" className="text-[11px] text-slate-500">
-          Requires the desktop app
-        </p>
-      )}
       <div className="flex flex-wrap gap-2">
         {single ? (
-          <button type="button" className={`${primaryButtonClass} flex-1`} disabled={preview.error !== null || qualityBlocked} onClick={saveSingle}>
+          <button type="button" className={`${outlineButtonClass} flex-1`} disabled={preview.error !== null || qualityBlocked} onClick={saveSingle}>
             <Save size={13} aria-hidden="true" />
             {draft.editingId ? 'Save changes' : 'Save'}
           </button>
         ) : (
           <button
             type="button"
-            className={`${primaryButtonClass} flex-1`}
+            className={`${outlineButtonClass} flex-1`}
             disabled={!bulk || bulk.valid.length === 0 || bulk.tooMany || qualityBlocked}
             onClick={() => void saveBulk()}
           >
@@ -442,11 +438,51 @@ export default function CreatePanel({
       )}
     </div>
   )
-
+  const decodeRow = (
+    <Section title="Decode Test" icon={<ScanLine size={13} className="text-[color:var(--qr-coral)]" aria-hidden="true" />}>
+      <button
+        type="button"
+        className={secondaryButtonClass}
+        disabled={!canExport || !desktop || verifyState.status === 'running'}
+        aria-describedby={desktop ? undefined : 'qr-verify-hint'}
+        onClick={() => void verifyScan()}
+      >
+        <ScanLine size={13} aria-hidden="true" /> Verify scan
+      </button>
+      {!desktop && (
+        <p id="qr-verify-hint" className="mt-2 text-[11px] text-[color:var(--qr-text-subtle)]">
+          Requires the desktop app
+        </p>
+      )}
+    </Section>
+  )
+  const exportOptions = (
+    <Section title="Export Options" icon={<Download size={13} className="text-[color:var(--qr-coral)]" aria-hidden="true" />}>
+      <p className="mb-2 text-[11px] text-[color:var(--qr-text-subtle)]">
+        PNG at {draft.style.size} px, or a scalable SVG. Size, colors and error correction are set in the form.
+      </p>
+      {saveRow}
+    </Section>
+  )
   const previewBlock = (
     <div className={`${panelClass} space-y-4 p-4`}>
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="text-[14px] font-semibold text-white">Live Preview</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-[14px] font-semibold text-[color:var(--qr-text)]">Live Preview</h2>
+        <div role="group" aria-label="Preview mode" className="flex rounded-lg border border-[#2a3749] bg-[#0d1725] p-0.5">
+          {([['qr', 'QR Code'], ['design', 'Design View']] as const).map(([mode, label]) => (
+            <button
+              key={mode}
+              type="button"
+              aria-pressed={previewMode === mode}
+              onClick={() => setPreviewMode(mode)}
+              className={`h-7 rounded-md px-2.5 text-[11px] font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--qr-coral)]/60 ${
+                previewMode === mode ? 'bg-[var(--qr-coral)] text-[color:var(--qr-text)]' : 'text-[color:var(--qr-text-subtle)] hover:text-[color:var(--qr-text)]'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         {layout === 'narrow' && (
           <button
             type="button"
@@ -467,14 +503,32 @@ export default function CreatePanel({
           <p className="py-6 text-center text-[11px] text-slate-500">Bulk mode saves each line as its own QR code. Switch to Single to preview one.</p>
         )}
       </div>
-      {actionsBlock}
+      {previewMode === 'design' && (
+        <dl aria-label="Design summary" className="grid grid-cols-2 gap-2 text-[11px]">
+          {[
+            ['Foreground', draft.style.foreground],
+            ['Background', draft.style.background],
+            ['Size', `${draft.style.size} px`],
+            ['Error correction', draft.style.errorCorrection],
+          ].map(([term, value]) => (
+            <div key={term} className="rounded-lg border border-[#2a3749] bg-[#0d1725]/75 px-3 py-2">
+              <dt className="text-[color:var(--qr-text-subtle)]">{term}</dt>
+              <dd className="font-semibold text-[color:var(--qr-text)]">{value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {exportRow}
       <QualityPanel report={report} contrast={contrast} verify={verifyState} />
+      {decodeRow}
+      {exportOptions}
     </div>
   )
 
   const asideBlock = (
     <CreateAside
       onOpenTool={onOpenTool}
+      onOpenDestination={onOpenDestination}
       deviceActions={
         <DeviceActionsAside
           draftItem={renderable}
@@ -493,7 +547,7 @@ export default function CreatePanel({
   return (
     <div data-layout={layout} className="p-4 lg:p-6">
       {layout === 'wide' && (
-        <div className="grid grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(220px,.55fr)] items-start gap-4">
+        <div className="grid grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)_minmax(240px,.6fr)] items-start gap-4">
           {formBlock}
           {previewBlock}
           {asideBlock}

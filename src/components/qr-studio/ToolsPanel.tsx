@@ -109,8 +109,8 @@ export default function ToolsPanel({
             className={classNames(
               'min-h-9 shrink-0 rounded-lg px-3 text-left text-[12px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff4f57]/60',
               entry.id === active.id
-                ? 'bg-[#ff4f57]/15 text-white'
-                : 'text-slate-300 hover:bg-white/5 hover:text-white',
+                ? 'bg-[#ff4f57]/15 text-[color:var(--qr-text)]'
+                : 'text-slate-300 hover:bg-white/5 hover:text-[color:var(--qr-text)]',
             )}
           >
             {entry.label}
@@ -122,7 +122,7 @@ export default function ToolsPanel({
         data-tool={active.id}
         className={`${panelClass} min-w-0 space-y-4 p-4`}
       >
-        <h2 id="qr-tool-title" className="text-[14px] font-semibold text-white">
+        <h2 id="qr-tool-title" className="text-[14px] font-semibold text-[color:var(--qr-text)]">
           {active.label}
         </h2>
         {body[active.id]}

@@ -6,13 +6,14 @@ export type QrDestination = 'create' | 'templates' | 'device-actions' | 'tools' 
 export const QR_DESTINATIONS: ReadonlyArray<{
   id: QrDestination
   label: string
+  subtitle: string
   icon: LucideIcon
 }> = [
-  { id: 'create', label: 'Create', icon: QrCode },
-  { id: 'templates', label: 'Templates', icon: Palette },
-  { id: 'device-actions', label: 'Device Actions', icon: Smartphone },
-  { id: 'tools', label: 'Tools', icon: Wrench },
-  { id: 'library', label: 'Library', icon: Library },
+  { id: 'create', label: 'Create', subtitle: 'Generate QR codes', icon: QrCode },
+  { id: 'templates', label: 'Templates', subtitle: 'Predefined styles', icon: Palette },
+  { id: 'device-actions', label: 'Device Actions', subtitle: 'Test on connected device', icon: Smartphone },
+  { id: 'tools', label: 'Tools', subtitle: 'Scan · Validate · Convert', icon: Wrench },
+  { id: 'library', label: 'Library', subtitle: 'Manage & organize', icon: Library },
 ]
 
 export type QrToolId = 'deep-link-builder' | 'wifi' | 'decoder' | 'quality'
