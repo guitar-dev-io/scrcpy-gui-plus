@@ -39,7 +39,7 @@ import {
 import {
   DEFAULT_QR_STYLE,
   type QrContentType,
-  type QrRecord,
+  type LegacyQrRecord as QrRecord,
   type QrStyle,
 } from '../../types/qrStudio'
 
