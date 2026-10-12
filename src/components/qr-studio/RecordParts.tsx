@@ -1,9 +1,10 @@
-import { Copy, Download, Eye, FileCode2, FolderInput, MoreHorizontal, Pencil, CopyPlus, RotateCcw, Star, Trash2, XCircle } from 'lucide-react'
+import { Copy, Download, Eye, FileCode2, FolderInput, MoreHorizontal, Pencil, CopyPlus, RotateCcw, Send, Smartphone, Star, Trash2, XCircle } from 'lucide-react'
 import type { MouseEvent } from 'react'
 import type { QrRecord } from '../../types/qrStudio'
 import { Menu, Tooltip } from '../ui'
 import type { MenuItem } from '../ui'
 import { classNames } from '../ui/classNames'
+import type { ActionState } from './useDeviceActions'
 
 export interface RecordActions {
   open: (record: QrRecord) => void
@@ -17,6 +18,12 @@ export interface RecordActions {
   trash: (ids: string[]) => void
   restore: (ids: string[]) => void
   deleteForever: (ids: string[]) => void
+  /** Open on Device. Records that were not authored in Create ask for confirmation first. */
+  openOnDevice: (record: QrRecord) => void
+  sendToDevice: (record: QrRecord) => void
+  /** Null when the device action can run for `record`, otherwise the visible reason it cannot. */
+  deviceReason: (record: QrRecord, action: 'open' | 'send') => string | null
+  deviceState: (action: 'open' | 'send') => ActionState
 }
 
 export interface RecordViewProps {
@@ -113,6 +120,21 @@ export function RecordMenu({ record, inTrash, actions }: Pick<RecordViewProps, '
         { id: 'duplicate', label: 'Duplicate', icon: icon(CopyPlus), onSelect: () => actions.duplicate(record) },
         { id: 'move', label: 'Move to…', icon: icon(FolderInput), onSelect: () => actions.move([record.id]) },
         { id: 'svg', label: 'Download SVG', icon: icon(FileCode2), onSelect: () => actions.downloadSvg(record) },
+        {
+          id: 'open-device',
+          label: 'Open on device',
+          icon: icon(Smartphone),
+          separatorBefore: true,
+          disabled: actions.deviceReason(record, 'open') !== null,
+          onSelect: () => actions.openOnDevice(record),
+        },
+        {
+          id: 'send-device',
+          label: 'Send to device',
+          icon: icon(Send),
+          disabled: actions.deviceReason(record, 'send') !== null,
+          onSelect: () => actions.sendToDevice(record),
+        },
         {
           id: 'delete',
           label: 'Delete',

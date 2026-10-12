@@ -19,7 +19,7 @@ interface TextFieldProps {
   onChange: (value: string) => void
   error?: string
   hint?: string
-  type?: 'text' | 'datetime-local' | 'date' | 'number' | 'tel' | 'email'
+  type?: 'text' | 'datetime-local' | 'date' | 'number' | 'tel' | 'email' | 'password'
   multiline?: boolean
   rows?: number
   placeholder?: string

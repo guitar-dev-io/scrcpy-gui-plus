@@ -1,9 +1,10 @@
-import { Copy, Download, FileCode2, Pencil, CopyPlus, RotateCcw, Star, Trash2, XCircle, Eye, EyeOff } from 'lucide-react'
+import { Copy, Download, FileCode2, Pencil, CopyPlus, RotateCcw, Send, Smartphone, Star, Trash2, XCircle, Eye, EyeOff } from 'lucide-react'
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { MAX_NOTES, MAX_RECORD_NAME, MAX_TAG_NAME, redactWifi } from '../../services/qrStudioStore'
 import type { QrRecord } from '../../types/qrStudio'
 import { Select } from '../ui'
+import { ActionButton, ResultStrip } from './DeviceParts'
 import { classNames } from '../ui/classNames'
 import QrThumb from './QrThumb'
 import type { RecordActions } from './RecordParts'
@@ -278,6 +279,31 @@ export default function QrDetails({ record, store, inTrash, actions, onCopyConte
           </>
         )}
       </div>
+      {!inTrash && (
+        <div className="space-y-2 border-t border-[#2a3749] pt-3">
+          <p className={labelClass}>Device</p>
+          <div className="flex flex-wrap items-start gap-2">
+            <ActionButton
+              className={`${secondaryButtonClass} min-h-8`}
+              reason={actions.deviceReason(record, 'open')}
+              running={actions.deviceState('open').status === 'running'}
+              onClick={() => actions.openOnDevice(record)}
+            >
+              <Smartphone size={13} aria-hidden="true" /> Open on device
+            </ActionButton>
+            <ActionButton
+              className={`${secondaryButtonClass} min-h-8`}
+              reason={actions.deviceReason(record, 'send')}
+              running={actions.deviceState('send').status === 'running'}
+              onClick={() => actions.sendToDevice(record)}
+            >
+              <Send size={13} aria-hidden="true" /> Send to device
+            </ActionButton>
+          </div>
+          <ResultStrip state={actions.deviceState('open')} label="Last open result" />
+          <ResultStrip state={actions.deviceState('send')} label="Last send result" />
+        </div>
+      )}
     </div>
   )
 }

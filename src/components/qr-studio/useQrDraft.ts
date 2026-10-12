@@ -100,6 +100,8 @@ export interface UseQrDraft {
   setStyle: (style: QrStyle) => void
   setBulkInput: (value: string) => void
   startEdit: (record: QrRecord) => void
+  /** Replaces the whole draft with a new (unsaved) one built from `fields`, for example from a Tool. */
+  loadFields: (fields: QrFieldValues, name?: string) => void
   /** Back to a blank draft. */
   reset: () => void
 }
@@ -132,6 +134,9 @@ export function useQrDraft(): UseQrDraft {
     startEdit: useCallback((record) => {
       const loaded = draftFromRecord(record)
       setState({ draft: loaded, baseline: loaded })
+    }, []),
+    loadFields: useCallback((fields, name = '') => {
+      setState({ draft: { ...initialDraft(), type: fields.type, fields, name }, baseline: initialDraft() })
     }, []),
     reset: useCallback(() => {
       const blank = initialDraft()

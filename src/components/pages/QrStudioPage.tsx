@@ -129,6 +129,10 @@ export default function QrStudioPage({
             onOpenTool={openTool}
             onStatus={setStatus}
             notify={notify}
+            devices={devices}
+            deviceLabels={deviceLabels}
+            activeDevice={activeDevice}
+            customPath={customPath}
           />
         )}
         {destination === 'templates' && (
@@ -150,10 +154,24 @@ export default function QrStudioPage({
             activeDevice={activeDevice}
             customPath={customPath}
             notify={notify}
+            draft={draftApi.draft}
+            onStatus={setStatus}
           />
         )}
         {destination === 'tools' && (
-          <ToolsPanel store={store} tool={tool} onSelectTool={setTool} />
+          <ToolsPanel
+            store={store}
+            tool={tool}
+            onSelectTool={setTool}
+            draftApi={draftApi}
+            onOpenCreate={() => setDestination('create')}
+            onStatus={setStatus}
+            devices={devices}
+            deviceLabels={deviceLabels}
+            activeDevice={activeDevice}
+            customPath={customPath}
+            notify={notify}
+          />
         )}
         {destination === 'library' && (
           <LibraryPanel
@@ -163,6 +181,11 @@ export default function QrStudioPage({
             onEditRecord={editRecord}
             onStatus={setStatus}
             containerWidth={width}
+            devices={devices}
+            deviceLabels={deviceLabels}
+            activeDevice={activeDevice}
+            customPath={customPath}
+            notify={notify}
           />
         )}
       </div>

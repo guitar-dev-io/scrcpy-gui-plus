@@ -196,7 +196,6 @@ describe('QrStudioPage', () => {
     expect(
       screen.getByRole('heading', { name: 'Create QR Code' }),
     ).toBeInTheDocument()
-    expect(screen.queryByTestId('qr-placeholder')).not.toBeInTheDocument()
 
     openTab('Templates')
     expect(
@@ -215,10 +214,26 @@ describe('QrStudioPage', () => {
     expect(
       screen.queryByRole('heading', { name: 'Templates' }),
     ).not.toBeInTheDocument()
-    expect(screen.queryByTestId('qr-placeholder')).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Library' })).toBeInTheDocument()
   })
 
+  it('renders the real Device Actions and Tools destinations', () => {
+    renderPage()
+    openTab('Device Actions')
+    expect(
+      screen.getByRole('heading', { name: 'Device Actions' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Scan with camera' }),
+    ).toHaveAttribute('aria-disabled', 'true')
+    expect(
+      screen.getByRole('button', { name: 'Send to device' }),
+    ).toBeDisabled()
+    openTab('Tools')
+    expect(
+      screen.getByRole('heading', { name: 'Deep Link Builder' }),
+    ).toBeInTheDocument()
+  })
   it('remembers the active destination for the session', () => {
     const first = renderPage()
     openTab('Tools')
@@ -531,9 +546,10 @@ describe('QrStudioPage', () => {
         'aria-selected',
         'true',
       )
-      expect(screen.getByTestId('qr-placeholder')).toHaveAttribute(
-        'data-tool',
-        'decoder',
+      expect(screen.getByRole('heading', { name: 'Decoder' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Decoder' })).toHaveAttribute(
+        'aria-current',
+        'true',
       )
     })
   })

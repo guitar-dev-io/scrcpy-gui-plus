@@ -18,6 +18,7 @@ import { Button, Dialog, useConfirm } from '../ui'
 import type { ToolbarNotifier } from '../device-control-toolbar'
 import type { QrToolId } from './destinations'
 import CreateAside from './CreateAside'
+import DeviceActionsAside from './DeviceActionsAside'
 import DesignControls from './DesignControls'
 import LivePreview, { useQrPreview } from './LivePreview'
 import QualityPanel, { type VerifyState } from './QualityPanel'
@@ -44,7 +45,15 @@ interface CreatePanelProps {
   onOpenTool: (tool: QrToolId) => void
   onStatus: (message: string) => void
   notify: ToolbarNotifier
+  /** Connected Android serials. Without devices, the aside's device actions stay disabled. */
+  devices?: string[]
+  deviceLabels?: Record<string, string>
+  /** `''` or a serial that is not in `devices` means there is no Android target. */
+  activeDevice?: string
+  customPath?: string
 }
+
+const NO_DEVICES: string[] = []
 
 export type CreateLayout = 'wide' | 'medium' | 'narrow'
 
@@ -69,6 +78,10 @@ export default function CreatePanel({
   onOpenTool,
   onStatus,
   notify,
+  devices = NO_DEVICES,
+  deviceLabels,
+  activeDevice = '',
+  customPath,
 }: CreatePanelProps) {
   const { draft, dirty } = draftApi
   const single = draft.mode === 'single'
@@ -459,7 +472,23 @@ export default function CreatePanel({
     </div>
   )
 
-  const asideBlock = <CreateAside onOpenTool={onOpenTool} />
+  const asideBlock = (
+    <CreateAside
+      onOpenTool={onOpenTool}
+      deviceActions={
+        <DeviceActionsAside
+          draftItem={renderable}
+          canSend={canExport}
+          devices={devices}
+          deviceLabels={deviceLabels}
+          activeDevice={activeDevice}
+          customPath={customPath}
+          notify={notify}
+          onStatus={onStatus}
+        />
+      }
+    />
+  )
 
   return (
     <div data-layout={layout} className="p-4 lg:p-6">

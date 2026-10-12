@@ -37,6 +37,8 @@ import {
 } from './libraryUtils'
 import type { LibraryUiPrefs } from './libraryUtils'
 import { useLibrarySelection } from './useLibrarySelection'
+import type { ToolbarNotifier } from '../device-control-toolbar'
+import { useDeviceActions } from './useDeviceActions'
 import type { UseQrStore } from './useQrStore'
 import { useWindowedList } from './useWindowedList'
 
@@ -51,11 +53,20 @@ export interface LibraryPanelProps {
   onStatus?: (message: string) => void
   /** Measured width of the page container; drives the rail and details breakpoints. */
   containerWidth?: number
+  /** Connected Android serials. Without devices, Open/Send to device stay disabled. */
+  devices?: string[]
+  deviceLabels?: Record<string, string>
+  /** `''` or a serial that is not in `devices` means there is no Android target. */
+  activeDevice?: string
+  customPath?: string
+  notify?: ToolbarNotifier
   /** Test hooks: sizes used until the list has been measured (jsdom has no layout). */
   initialViewportHeight?: number
   initialListWidth?: number
 }
 
+const NO_DEVICES: string[] = []
+const noopNotify: ToolbarNotifier = () => undefined
 const RAIL_COLLAPSE_BELOW = 1100
 const DETAILS_COLUMN_FROM = 1280
 const SEARCH_DEBOUNCE_MS = 150
@@ -101,6 +112,11 @@ export default function LibraryPanel({
   onEditRecord,
   onStatus,
   containerWidth = 1280,
+  devices = NO_DEVICES,
+  deviceLabels,
+  activeDevice = '',
+  customPath,
+  notify = noopNotify,
   initialViewportHeight,
   initialListWidth,
 }: LibraryPanelProps) {
@@ -111,6 +127,15 @@ export default function LibraryPanel({
     [onStatus],
   )
 
+  const device = useDeviceActions({
+    devices,
+    deviceLabels,
+    activeDevice,
+    customPath,
+    notify,
+    onStatus: status,
+    onUsed: (id) => void store.markUsed(id),
+  })
   const [prefs, setPrefsState] = useState<LibraryUiPrefs>(
     () => loadLibraryPrefs(),
   )
@@ -352,6 +377,13 @@ export default function LibraryPanel({
     trash: (ids) => void trashIds(ids),
     restore: restoreIds,
     deleteForever: (ids) => void deleteForeverIds(ids),
+    openOnDevice: (record) => device.openOnDevice({ kind: 'record', record }),
+    sendToDevice: (record) => void device.sendToDevice(record),
+    deviceReason: (record, action) =>
+      action === 'send'
+        ? device.sendReason(record)
+        : device.openReason({ kind: 'record', record }),
+    deviceState: (action) => device.state(action),
   }
 
   const copyContent = (record: QrRecord) =>
@@ -855,6 +887,7 @@ export default function LibraryPanel({
         />
       )}
       {confirmDialog}
+      {device.launchDialog}
     </section>
   )
 }

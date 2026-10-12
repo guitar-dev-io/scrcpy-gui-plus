@@ -520,6 +520,8 @@ describe('LibraryPanel cards, menu and details', () => {
         'Duplicate',
         'Move to…',
         'Download SVG',
+        'Open on device',
+        'Send to device',
         'Delete',
       ])
       await user.keyboard('{Escape}')
