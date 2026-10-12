@@ -19,7 +19,7 @@ const AUDIO_FALLBACK_CHAIN: &[&str] = &["aac", "flac", "raw"];
 /// Highest scrcpy release this GUI has been tested against. When the user's
 /// installed scrcpy is newer than this we surface an "untested" hint so they
 /// know a mismatch is possible, without blocking usage.
-const MAX_TESTED_SCRCPY_VERSION: &str = "5.0";
+const MAX_TESTED_SCRCPY_VERSION: &str = "5.0.1";
 
 /// Maximum number of distinct CLI flags we are willing to strip while trying to
 /// recover from a future scrcpy that no longer recognises an option. Prevents a
@@ -2636,6 +2636,16 @@ mod tests {
             Some("3.3.1".to_string())
         );
         assert_eq!(parse_scrcpy_version("no version here"), None);
+    }
+    #[test]
+    fn test_three_part_scrcpy_version_not_untested() {
+        assert_eq!(
+            parse_scrcpy_version("scrcpy 5.0.1 <https://github.com/Genymobile/scrcpy>"),
+            Some("5.0.1".to_string())
+        );
+        assert!(!compare_versions(MAX_TESTED_SCRCPY_VERSION, "5.0.1"));
+        assert!(compare_versions("5.0", "5.0.1"));
+        assert!(compare_versions("5.0.1", "5.0.2"));
     }
 
     #[test]
