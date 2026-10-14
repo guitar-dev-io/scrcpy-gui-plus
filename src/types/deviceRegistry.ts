@@ -383,3 +383,56 @@ export function markAgentDisconnected(
     [key]: { ...device, agent: { ...device.agent, connected: false } },
   }
 }
+
+const DEVICE_STATE_ORDER: Record<DeviceDerivedState, number> = {
+  busy: 0,
+  online: 1,
+  warning: 2,
+  offline: 3,
+}
+
+function wifiHost(device: RegisteredDevice): string | undefined {
+  if (device.connectionType !== 'wifi') return undefined
+  return device.ipAddress || device.serial.split(':')[0] || undefined
+}
+
+/**
+ * Wireless debugging hands out a new port on every pairing, so one phone
+ * leaves a trail of `ip:port` records behind. Collapse that trail for the
+ * device list: a stale Wi-Fi record is dropped when another record on the
+ * same host is online, and otherwise only the most recently seen stale
+ * record per host is kept. USB and online records are never dropped. The
+ * result is ordered busy → online → warning → offline, newest first.
+ */
+export function collapseStaleWifiRecords(
+  devices: readonly RegisteredDevice[],
+  runningSerials: ReadonlySet<string> = new Set(),
+): RegisteredDevice[] {
+  const onlineHosts = new Set<string>()
+  const newestStaleByHost = new Map<string, RegisteredDevice>()
+  devices.forEach((device) => {
+    const host = wifiHost(device)
+    if (!host) return
+    if (device.adbState === 'device') {
+      onlineHosts.add(host)
+      return
+    }
+    const kept = newestStaleByHost.get(host)
+    if (!kept || device.lastSeen > kept.lastSeen) newestStaleByHost.set(host, device)
+  })
+
+  const stateOf = (device: RegisteredDevice) =>
+    deriveDeviceState(device, runningSerials.has(device.serial))
+  return devices
+    .filter((device) => {
+      const host = wifiHost(device)
+      if (!host || device.adbState === 'device') return true
+      if (onlineHosts.has(host)) return false
+      return newestStaleByHost.get(host) === device
+    })
+    .sort(
+      (a, b) =>
+        DEVICE_STATE_ORDER[stateOf(a)] - DEVICE_STATE_ORDER[stateOf(b)] ||
+        b.lastSeen.localeCompare(a.lastSeen),
+    )
+}

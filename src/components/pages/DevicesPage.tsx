@@ -26,6 +26,7 @@ import type {
   CompanionScreenState,
 } from '../../types/companion'
 import {
+  collapseStaleWifiRecords,
   deriveDeviceConnectionState,
   deriveDeviceState,
   type RegisteredDevice,
@@ -473,18 +474,18 @@ export default function DevicesPage({
   const [density, setDensity] = useState<DeviceDensity>('grid')
   const runningSet = useMemo(() => new Set(runningDevices), [runningDevices])
   const androidDevices = useMemo(() => {
-    const registryBySerial = new Map(
-      registeredDevices.map((device) => [device.serial, device]),
-    )
-    const serials = [
-      ...registeredDevices.map((device) => device.serial),
-      ...devices.filter((serial) => !registryBySerial.has(serial)),
+    const collapsed = collapseStaleWifiRecords(registeredDevices, runningSet)
+    const registered = new Set(registeredDevices.map((device) => device.serial))
+    return [
+      ...collapsed.map((device) => ({
+        serial: device.serial,
+        registeredDevice: device as RegisteredDevice | undefined,
+      })),
+      ...devices
+        .filter((serial) => !registered.has(serial))
+        .map((serial) => ({ serial, registeredDevice: undefined })),
     ]
-    return serials.map((serial) => ({
-      serial,
-      registeredDevice: registryBySerial.get(serial),
-    }))
-  }, [devices, registeredDevices])
+  }, [devices, registeredDevices, runningSet])
   const filteredAndroidDevices = useMemo(() => {
     const query = search.trim().toLowerCase()
     return androidDevices.filter(({ serial, registeredDevice }) => {

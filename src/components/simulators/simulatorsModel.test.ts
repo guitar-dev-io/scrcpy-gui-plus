@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   canBoot,
   canInteract,
+  classifySimulatorError,
   canShutdown,
   filterDevices,
   formatStateLabel,
@@ -86,5 +87,24 @@ describe('filterDevices', () => {
 
   it('returns an empty list when nothing matches', () => {
     expect(filterDevices(devices, 'nope')).toEqual([])
+  })
+})
+
+describe('classifySimulatorError', () => {
+  it('points Xcode load failures at xcode-select', () => {
+    expect(
+      classifySimulatorError(
+        'simdeck request failed (500): {"error":"Unable to load SimulatorKit from Applications/Xcode.app/Contents/Developer/Library/PrivateFrameworks"}',
+      ),
+    ).toBe('xcode')
+  })
+
+  it('detects an unreachable SimDeck', () => {
+    expect(classifySimulatorError('error sending request: Connection refused')).toBe('simdeck')
+  })
+
+  it('falls back to a generic hint', () => {
+    expect(classifySimulatorError('boom')).toBe('generic')
+    expect(classifySimulatorError(undefined)).toBe('generic')
   })
 })

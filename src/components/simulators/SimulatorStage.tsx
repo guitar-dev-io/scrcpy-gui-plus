@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import { useSimulatorStream } from '../../hooks/useSimulatorStream'
-import { canBoot } from './simulatorsModel'
+import { canBoot, classifySimulatorError } from './simulatorsModel'
 import type {
   SimActionResult,
   SimulatorActionId,
@@ -282,9 +282,19 @@ export default function SimulatorStage({
                 <p className="text-[10px] font-bold text-zinc-300">
                   {t('simulators.streamError')}
                 </p>
-                <p className="max-w-64 text-[9px] leading-relaxed text-zinc-500">
-                  {errorMessage}
+                <p className="max-w-72 text-[10px] leading-relaxed text-zinc-400">
+                  {t(`simulators.streamErrorHint_${classifySimulatorError(errorMessage)}`)}
                 </p>
+                {errorMessage && (
+                  <details className="max-w-72 text-left">
+                    <summary className="cursor-pointer text-center text-[9px] text-zinc-500 hover:text-zinc-300">
+                      {t('simulators.streamErrorDetails')}
+                    </summary>
+                    <p className="mt-1 max-h-24 overflow-auto break-all rounded border border-zinc-800 bg-black/40 p-2 font-mono text-[8px] text-zinc-500">
+                      {errorMessage}
+                    </p>
+                  </details>
+                )}
                 <button
                   onClick={reconnect}
                   className="mt-2 flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-[9px] font-bold text-primary hover:bg-primary/20"

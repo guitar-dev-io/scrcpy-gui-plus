@@ -736,6 +736,12 @@ export const en = {
     liveView: 'Live View',
     connecting: 'Connecting...',
     streamError: 'Stream stopped',
+    streamErrorHint_xcode:
+      'Xcode Simulator tools could not be loaded. Install Xcode, then run "sudo xcode-select -s /Applications/Xcode.app" and reconnect.',
+    streamErrorHint_simdeck:
+      'SimDeck is not responding. Make sure SimDeck is running, then reconnect.',
+    streamErrorHint_generic: 'The simulator stream stopped unexpectedly. Try reconnecting.',
+    streamErrorDetails: 'Technical details',
     tapToType: 'Type text to send to the simulator',
     status_idle: 'idle',
     status_connecting: 'connecting',

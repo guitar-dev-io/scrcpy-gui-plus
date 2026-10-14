@@ -52,3 +52,19 @@ export function filterDevices(devices: SimulatorDevice[], query: string): Simula
     [d.name, d.deviceTypeName, d.runtimeName].some((field) => field.toLowerCase().includes(q)),
   )
 }
+
+export type SimulatorErrorHint = 'xcode' | 'simdeck' | 'generic'
+
+/**
+ * Map a raw SimDeck/stream failure onto the fix the user can act on. The raw
+ * text (often an HTTP body with a JSON blob) is still shown, but only as
+ * secondary detail under the hint.
+ */
+export function classifySimulatorError(message: string | null | undefined): SimulatorErrorHint {
+  const text = (message ?? '').toLowerCase()
+  if (/simulatorkit|xcode|xcrun|coresimulator|developer\/library/.test(text)) return 'xcode'
+  if (/connection refused|econnrefused|failed to fetch|error sending request|timed out/.test(text)) {
+    return 'simdeck'
+  }
+  return 'generic'
+}
