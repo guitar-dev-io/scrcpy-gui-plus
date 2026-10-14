@@ -1446,6 +1446,21 @@ export const en = {
       failed: 'Could not list this folder.',
     },
   },
+  settings: {
+    sections: 'Settings sections',
+    tabs: {
+      general: 'General',
+      advanced: 'Advanced',
+      shortcuts: 'Shortcuts',
+      about: 'About',
+    },
+    tabDescriptions: {
+      general: 'Session behavior and recording',
+      advanced: 'scrcpy launch options and tools',
+      shortcuts: 'Keyboard shortcuts',
+      about: 'Version and diagnostics',
+    },
+  },
   nav: {
     primaryNavigation: 'Primary navigation',
     collapseSidebar: 'Collapse sidebar',

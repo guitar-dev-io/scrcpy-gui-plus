@@ -9,6 +9,7 @@ import { loadRecentApkFiles, rememberApkFile } from '../../services/localApkTool
 import type { ApkAnalysisResult, RecentApkFile } from '../../types/apkToolkit'
 import { formatPackageBytes } from '../../utils/appManagerView'
 import { useI18n } from '../../i18n'
+import PageTitle, { PAGE_HEADER_CLASS } from '../ui/PageTitle'
 
 interface LocalApkToolkitPageProps {
   onInstallCurrent?: (path: string) => void | Promise<void>
@@ -55,8 +56,8 @@ export default function LocalApkToolkitPage({ onInstallCurrent, onInstallSelecte
   }
   const signingStatus = analysis?.signing?.status ?? 'unknown'
 
-  return <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--bg-base)] p-4 text-[var(--text-base)]">
-    <header className="mb-4 flex shrink-0 items-center justify-between"><div><h1 className="text-lg font-bold">{t('pages.apkToolkit.title')}</h1><p className="text-[10px] text-[var(--text-subtle)]">{t('pages.apkToolkit.subtitle')}</p></div><button type="button" onClick={() => void chooseApk()} className="flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-[10px] font-semibold text-on-primary"><FolderOpen size={14} />Open APK</button></header>
+  return <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--bg-base)] px-4 pb-6 text-[var(--text-base)] lg:px-6">
+    <header className={`${PAGE_HEADER_CLASS} mb-5 shrink-0`}><PageTitle route="apk-toolkit" title={t('pages.apkToolkit.title')} subtitle={t('pages.apkToolkit.subtitle')} /><button type="button" onClick={() => void chooseApk()} className="flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-[10px] font-semibold text-on-primary"><FolderOpen size={14} />Open APK</button></header>
     <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
       <aside className="custom-scrollbar min-h-0 overflow-y-auto rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3">
         <button type="button" onClick={() => void chooseApk()} onDragEnter={(event) => { event.preventDefault(); setDragging(true) }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={drop} className={`flex min-h-36 w-full flex-col items-center justify-center rounded-xl border border-dashed p-4 transition ${dragging ? 'border-primary bg-primary/10' : 'border-[var(--border-base)] bg-black/10'}`} aria-label="Drop APK or open file"><FileArchive size={26} className="text-primary" /><span className="mt-2 text-[10px] font-semibold">Drop APK here</span><span className="mt-1 text-[8px] text-[var(--text-subtle)]">or click to browse</span></button>

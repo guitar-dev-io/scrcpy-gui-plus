@@ -12,6 +12,7 @@ import {
 import { useDeviceStatus } from '../../hooks/useDeviceStatus'
 import type { SessionHistoryEntry } from '../../types/history'
 import { useI18n } from '../../i18n'
+import PageTitle, { PAGE_HEADER_CLASS } from '../ui/PageTitle'
 
 interface SessionsPageProps {
   runningDevices: string[]
@@ -115,11 +116,12 @@ export default function SessionsPage({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col px-4 pb-6 lg:px-6">
-      <header className="flex min-h-[72px] flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] py-4">
-        <div>
-          <h1 className="text-lg font-semibold text-[var(--text-base)]">{t('pages.sessions.title')}</h1>
-          <p className="mt-1 text-[10px] text-[var(--text-subtle)]">{t(runningDevices.length === 1 ? 'pages.sessions.activeOne' : 'pages.sessions.active', { count: runningDevices.length })}</p>
-        </div>
+      <header className={PAGE_HEADER_CLASS}>
+        <PageTitle
+          route="sessions"
+          title={t('pages.sessions.title')}
+          subtitle={t(runningDevices.length === 1 ? 'pages.sessions.activeOne' : 'pages.sessions.active', { count: runningDevices.length })}
+        />
         <button type="button" onClick={() => setSettingsOpen(true)} className="flex h-9 items-center gap-2 rounded-lg border border-[var(--border-base)] px-3 text-[10px] text-[var(--text-muted)] hover:border-primary/50 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]">
           <Settings2 size={13} /> Session Settings
         </button>

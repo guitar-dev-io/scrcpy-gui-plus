@@ -543,6 +543,21 @@ export const th: DeepPartialTranslations = {
     streamErrorHint_generic: 'สตรีม Simulator หยุดโดยไม่คาดคิด ลองเชื่อมต่อใหม่',
     streamErrorDetails: 'รายละเอียดทางเทคนิค',
   },
+  settings: {
+    sections: 'หมวดการตั้งค่า',
+    tabs: {
+      general: 'ทั่วไป',
+      advanced: 'ขั้นสูง',
+      shortcuts: 'คีย์ลัด',
+      about: 'เกี่ยวกับ',
+    },
+    tabDescriptions: {
+      general: 'พฤติกรรมเซสชันและการบันทึก',
+      advanced: 'ตัวเลือกการเปิด scrcpy และเครื่องมือ',
+      shortcuts: 'คีย์ลัดบนคีย์บอร์ด',
+      about: 'เวอร์ชันและการวินิจฉัย',
+    },
+  },
   nav: {
     primaryNavigation: 'เมนูหลัก',
     collapseSidebar: 'ย่อแถบด้านข้าง',

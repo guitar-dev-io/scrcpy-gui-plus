@@ -1,38 +1,20 @@
 import {
-  AppWindow,
   BatteryMedium,
-  Bot,
-  Braces,
   ChevronLeft,
   ChevronRight,
-  Folder,
-  Grid3x3,
-  Image,
-  Keyboard,
-  LayoutDashboard,
-  ListTodo,
-  MonitorPlay,
-  MonitorSmartphone,
-  PackageSearch,
-  Plus,
-  QrCode,
-  ScrollText,
-  Settings,
   Smartphone,
-  Video,
   Wifi,
-  type LucideIcon,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useDeviceStatus } from '../../hooks/useDeviceStatus'
 import { connectionTypeOf } from '../../types/deviceStatus'
 import { useI18n } from '../../i18n'
+import { ROUTE_ICONS } from '../../navigation/routeIcons'
 import {
   APP_ROUTES,
   isNavigationEntryActive,
   navigationEntries,
   type AppRouteDefinition,
-  type AppRouteId,
 } from '../../navigation/appRoutes'
 import { classNames } from '../ui/classNames'
 import { useShellUi } from '../../contexts/ShellUiContext'
@@ -45,26 +27,6 @@ interface AppNavigationProps {
   onStopSession?: () => void
 }
 
-const routeIcons: Record<AppRouteId, LucideIcon> = {
-  dashboard: LayoutDashboard,
-  devices: Smartphone,
-  'pair-device': Plus,
-  'device-wall': Grid3x3,
-  sessions: MonitorPlay,
-  screenshots: Image,
-  recordings: Video,
-  'file-explorer': Folder,
-  'app-manager': AppWindow,
-  'apk-toolkit': PackageSearch,
-  simulators: MonitorSmartphone,
-  'logcat-viewer': ScrollText,
-  'input-control': Keyboard,
-  'qr-studio': QrCode,
-  automation: Bot,
-  'script-manager': Braces,
-  'task-scheduler': ListTodo,
-  settings: Settings,
-}
 
 
 type CollapsibleGroup = 'testing' | 'tools' | 'system'
@@ -148,7 +110,7 @@ export default function AppNavigation({
     )
 
   const renderRouteButton = (route: AppRouteDefinition) => {
-    const Icon = routeIcons[route.id]
+    const Icon = ROUTE_ICONS[route.id]
     const active = isNavigationEntryActive(route.id, activeRoute)
     const label = route.familyId
       ? t(`nav.families.${route.familyId}`)

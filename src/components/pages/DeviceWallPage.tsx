@@ -35,6 +35,7 @@ import type { WorkspaceFilter } from '../../types/deviceWorkspace'
 import type { ScrcpyConfig } from '../../hooks/useScrcpy'
 import type { DeviceWallDensity } from '../device-wall/DeviceWallCard'
 import { useI18n } from '../../i18n'
+import PageTitle, { PAGE_HEADER_CLASS } from '../ui/PageTitle'
 
 type StatusFilter = 'all' | 'online' | 'busy' | 'offline'
 type NotifyKind = 'success' | 'error' | 'info' | 'warning'
@@ -256,13 +257,11 @@ export default function DeviceWallPage({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col px-4 pb-6 lg:px-6">
-      <header className="flex min-h-[72px] flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] py-4">
-        <div>
-          <h1 className="text-lg font-semibold text-[var(--text-base)]">
-            {t('pages.deviceWall.title')}
-          </h1>
-          <p className="mt-1 flex items-center gap-3 text-[10px] text-[var(--text-subtle)]">
-            <span>{t('pages.deviceWall.devices', { count: wallSerials.length })}</span>
+      <header className={PAGE_HEADER_CLASS}>
+        <PageTitle
+          route="device-wall"
+          title={t('pages.deviceWall.title')}
+          subtitle={<span className="flex flex-wrap items-center gap-3"><span>{t('pages.deviceWall.devices', { count: wallSerials.length })}</span>
             <span className="flex items-center gap-1 text-emerald-400">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
               {t('pages.deviceWall.online', { count: counts.online })}
@@ -274,9 +273,8 @@ export default function DeviceWallPage({
             <span className="flex items-center gap-1 text-[var(--text-subtle)]">
               <span className="h-1.5 w-1.5 rounded-full bg-[var(--text-subtle)]" />
               {t('pages.deviceWall.offline', { count: counts.offline })}
-            </span>
-          </p>
-        </div>
+            </span></span>}
+        />
         <div className="flex items-center gap-2">
           <button
             type="button"
