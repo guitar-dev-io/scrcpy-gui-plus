@@ -13,6 +13,8 @@ export interface DeviceStatus {
     abi?: string;
     securityPatch?: string;
     bootloader?: string;
+    /** `ro.serialno`; stable across USB and every Wi-Fi `ip:port`. */
+    hardwareSerial?: string;
     uptimeSeconds?: number;
     resolution?: string;
     /** Android display rotation: 0, 90, 180, or 270 degrees encoded as 0..3. */

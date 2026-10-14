@@ -391,44 +391,56 @@ const DEVICE_STATE_ORDER: Record<DeviceDerivedState, number> = {
   offline: 3,
 }
 
-function wifiHost(device: RegisteredDevice): string | undefined {
+/**
+ * Who a record belongs to, for collapsing duplicates: the hardware serial
+ * when the device reported one, otherwise the Wi-Fi host. USB records have
+ * no identity here, so they are never collapsed.
+ */
+function physicalIdentity(device: RegisteredDevice): string | undefined {
+  const hardwareSerial = device.health?.hardwareSerial?.trim()
+  if (hardwareSerial) return `hw:${hardwareSerial}`
   if (device.connectionType !== 'wifi') return undefined
-  return device.ipAddress || device.serial.split(':')[0] || undefined
+  const host = device.ipAddress || device.serial.split(':')[0]
+  return host ? `host:${host}` : undefined
 }
 
 /**
  * Wireless debugging hands out a new port on every pairing, so one phone
- * leaves a trail of `ip:port` records behind. Collapse that trail for the
- * device list: a stale Wi-Fi record is dropped when another record on the
- * same host is online, and otherwise only the most recently seen stale
- * record per host is kept. USB and online records are never dropped. The
- * result is ordered busy → online → warning → offline, newest first.
+ * leaves a trail of `ip:port` records behind (and a new IP on another
+ * network). Collapse that trail for the device list: records are grouped by
+ * hardware serial when known, otherwise by Wi-Fi host. A stale Wi-Fi record
+ * is dropped when its group has an online record, and otherwise only the
+ * most recently seen stale Wi-Fi record per group is kept. USB and online
+ * records are never dropped. The result is ordered busy → online → warning →
+ * offline, newest first.
  */
 export function collapseStaleWifiRecords(
   devices: readonly RegisteredDevice[],
   runningSerials: ReadonlySet<string> = new Set(),
 ): RegisteredDevice[] {
-  const onlineHosts = new Set<string>()
-  const newestStaleByHost = new Map<string, RegisteredDevice>()
+  const onlineIdentities = new Set<string>()
+  const newestStaleByIdentity = new Map<string, RegisteredDevice>()
   devices.forEach((device) => {
-    const host = wifiHost(device)
-    if (!host) return
+    const identity = physicalIdentity(device)
+    if (!identity) return
     if (device.adbState === 'device') {
-      onlineHosts.add(host)
+      onlineIdentities.add(identity)
       return
     }
-    const kept = newestStaleByHost.get(host)
-    if (!kept || device.lastSeen > kept.lastSeen) newestStaleByHost.set(host, device)
+    if (device.connectionType !== 'wifi') return
+    const kept = newestStaleByIdentity.get(identity)
+    if (!kept || device.lastSeen > kept.lastSeen) newestStaleByIdentity.set(identity, device)
   })
 
   const stateOf = (device: RegisteredDevice) =>
     deriveDeviceState(device, runningSerials.has(device.serial))
   return devices
     .filter((device) => {
-      const host = wifiHost(device)
-      if (!host || device.adbState === 'device') return true
-      if (onlineHosts.has(host)) return false
-      return newestStaleByHost.get(host) === device
+      if (device.adbState === 'device' || device.connectionType !== 'wifi') return true
+      const identity = physicalIdentity(device)
+      if (!identity) return true
+      if (onlineIdentities.has(identity)) return false
+      return newestStaleByIdentity.get(identity) === device
     })
     .sort(
       (a, b) =>

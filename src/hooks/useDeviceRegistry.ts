@@ -145,7 +145,12 @@ export function useDeviceRegistry({ customPath }: UseDeviceRegistryOptions) {
                 ...current,
                 [serial]: {
                   ...existing,
-                  health,
+                  // Keep the last known hardware serial through failed
+                  // probes; it is what ties ip:port records to one phone.
+                  health: {
+                    ...health,
+                    hardwareSerial: health.hardwareSerial ?? existing.health?.hardwareSerial,
+                  },
                   healthUpdatedAt: updatedAt,
                   ipAddress: health.ipAddress || existing.ipAddress,
                 },
@@ -167,6 +172,7 @@ export function useDeviceRegistry({ customPath }: UseDeviceRegistryOptions) {
                     serial,
                     error: String(error),
                     errorCode: 'invoke_failed',
+                    hardwareSerial: existing.health?.hardwareSerial,
                   },
                   healthUpdatedAt: updatedAt,
                 },

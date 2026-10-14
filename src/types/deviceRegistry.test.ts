@@ -325,6 +325,31 @@ describe('collapseStaleWifiRecords', () => {
     expect(result.map((device) => device.serial)).toEqual(['10.0.0.5:40069'])
   })
 
+  const withHardwareSerial = (device: RegisteredDevice, hardwareSerial: string): RegisteredDevice => ({
+    ...device,
+    health: { success: true, hardwareSerial },
+  })
+
+  it('groups stale records from different networks by hardware serial', () => {
+    const result = collapseStaleWifiRecords([
+      withHardwareSerial(record('10.0.0.5:38005', 'disconnected', '2026-09-10T10:00:00.000Z'), 'HW-1'),
+      withHardwareSerial(record('192.168.1.9:36957', 'disconnected', '2026-09-11T10:00:00.000Z'), 'HW-1'),
+      withHardwareSerial(record('192.168.1.10:40001', 'disconnected', '2026-09-09T10:00:00.000Z'), 'HW-2'),
+    ])
+    expect(result.map((device) => device.serial)).toEqual([
+      '192.168.1.9:36957',
+      '192.168.1.10:40001',
+    ])
+  })
+
+  it('drops a stale Wi-Fi record while the same phone is online over USB', () => {
+    const result = collapseStaleWifiRecords([
+      withHardwareSerial(record('10.0.0.5:38005', 'disconnected', '2026-09-10T10:00:00.000Z'), 'HW-1'),
+      withHardwareSerial(record('HW-1', 'device', '2026-09-12T10:00:00.000Z'), 'HW-1'),
+    ])
+    expect(result.map((device) => device.serial)).toEqual(['HW-1'])
+  })
+
   it('never drops USB records and orders busy, online, then offline', () => {
     const result = collapseStaleWifiRecords(
       [
