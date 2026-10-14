@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import {
   Camera,
   Check,
@@ -13,6 +13,8 @@ import {
   Usb,
   Wifi,
 } from 'lucide-react'
+import { Menu } from '../ui'
+import type { MenuItem } from '../ui'
 import { useDevicePreview } from '../../hooks/useLivePreview'
 import { useInView } from '../../hooks/useThumbnail'
 import { useDeviceRecoverySnapshot } from '../../hooks/useDeviceRecoverySnapshot'
@@ -82,7 +84,6 @@ export default function DeviceWallCard({
   onOpenInfo,
   onSetupAdb,
 }: DeviceWallCardProps) {
-  const menuRef = useRef<HTMLDetailsElement>(null)
   const [inViewRef, inView] = useInView<HTMLDivElement>('200px')
   const health = registeredDevice?.health
   const model = health?.model || serial
@@ -124,10 +125,55 @@ export default function DeviceWallCard({
     else stopPreview()
   }, [shouldPreview, startPreview, stopPreview])
 
-  const runMenuAction = (action: () => void) => {
-    menuRef.current?.removeAttribute('open')
-    action()
-  }
+  const menuItems: MenuItem[] = [
+    {
+      id: 'live',
+      label: 'Open Live Control',
+      icon: <MonitorPlay size={12} />,
+      onSelect: onOpenLiveControl,
+      disabled: !available,
+    },
+    {
+      id: 'screenshot',
+      label: 'Screenshot',
+      icon: <Camera size={12} />,
+      onSelect: onScreenshot,
+      disabled: !available,
+    },
+    {
+      id: 'shell',
+      label: 'ADB Shell',
+      icon: <Shell size={12} />,
+      onSelect: onOpenShell,
+      disabled: !available,
+    },
+    {
+      id: 'info',
+      label: 'Device Info',
+      icon: <Info size={12} />,
+      onSelect: onOpenInfo,
+      disabled: !available,
+    },
+    ...(registeredDevice?.agent?.connected && !available && onSetupAdb
+      ? [
+          {
+            id: 'setup-adb',
+            label: 'Setup ADB',
+            icon: <Plug size={12} />,
+            onSelect: onSetupAdb,
+          } satisfies MenuItem,
+        ]
+      : []),
+    {
+      id: 'reboot',
+      label: 'Reboot',
+      icon: <RotateCcw size={12} />,
+      onSelect: onReboot,
+      disabled: !available,
+      danger: true,
+      separatorBefore: true,
+    },
+  ]
 
   return (
     <article
@@ -217,7 +263,10 @@ export default function DeviceWallCard({
           </p>
           {registeredDevice?.agent && (
             <div className="mt-1 flex items-center gap-2">
-              <CapabilityDot label="Agent" active={registeredDevice.agent.connected} />
+              <CapabilityDot
+                label="Agent"
+                active={registeredDevice.agent.connected}
+              />
               <CapabilityDot label="ADB" active={available} />
               <CapabilityDot label="Screen" active={available} />
             </div>
@@ -228,66 +277,15 @@ export default function DeviceWallCard({
         ) : (
           <Usb size={11} className="shrink-0 text-[var(--text-subtle)]" />
         )}
-        <details ref={menuRef} className="relative shrink-0">
-          <summary
-            aria-label={`More actions for ${model}`}
-            className="flex h-6 w-6 list-none items-center justify-center rounded-md text-[var(--text-subtle)] hover:bg-white/5 hover:text-[var(--text-base)] [&::-webkit-details-marker]:hidden"
-          >
-            <MoreHorizontal size={14} />
-          </summary>
-          <div className="absolute right-0 top-[calc(100%+4px)] z-30 w-40 rounded-lg border border-[var(--border-base)] bg-[var(--bg-elevated)] p-1.5 shadow-2xl">
-            <button
-              type="button"
-              disabled={!available}
-              onClick={() => runMenuAction(onOpenLiveControl)}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[9px] font-semibold text-[var(--text-muted)] hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <MonitorPlay size={12} /> Open Live Control
-            </button>
-            <button
-              type="button"
-              disabled={!available}
-              onClick={() => runMenuAction(onScreenshot)}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[9px] font-semibold text-[var(--text-muted)] hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <Camera size={12} /> Screenshot
-            </button>
-            <button
-              type="button"
-              disabled={!available}
-              onClick={() => runMenuAction(onOpenShell)}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[9px] font-semibold text-[var(--text-muted)] hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <Shell size={12} /> ADB Shell
-            </button>
-            <button
-              type="button"
-              disabled={!available}
-              onClick={() => runMenuAction(onOpenInfo)}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[9px] font-semibold text-[var(--text-muted)] hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <Info size={12} /> Device Info
-            </button>
-            {registeredDevice?.agent?.connected && !available && onSetupAdb && (
-              <button
-                type="button"
-                onClick={() => runMenuAction(onSetupAdb)}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[9px] font-semibold text-[var(--text-muted)] hover:bg-primary/10 hover:text-primary"
-              >
-                <Plug size={12} /> Setup ADB
-              </button>
-            )}
-            <div className="my-1 border-t border-[var(--border-base)]" />
-            <button
-              type="button"
-              disabled={!available}
-              onClick={() => runMenuAction(onReboot)}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[9px] font-semibold text-red-400 hover:bg-red-500/10 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <RotateCcw size={12} /> Reboot
-            </button>
-          </div>
-        </details>
+        <div className="shrink-0">
+          <Menu
+            items={menuItems}
+            trigger={<MoreHorizontal size={14} />}
+            triggerLabel={`More actions for ${model}`}
+            triggerClassName="flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-subtle)] hover:bg-white/5 hover:text-[var(--text-base)]"
+            placement="bottom-end"
+          />
+        </div>
       </div>
     </article>
   )
