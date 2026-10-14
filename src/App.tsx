@@ -135,6 +135,7 @@ const LogcatViewerPage = lazy(
   () => import('./components/pages/LogcatViewerPage'),
 )
 const PerformancePage = lazy(() => import('./components/pages/PerformancePage'))
+const ClipboardHistory = lazy(() => import('./components/clipboard-history'))
 const InputControlPage = lazy(
   () => import('./components/pages/InputControlPage'),
 )
@@ -1919,6 +1920,67 @@ function AppContent() {
     }
   }
 
+  const performancePanel = (
+    <PerformancePage
+      embedded
+      connected={
+        !activeIosUdid &&
+        !activeCompanionWorkspaceId &&
+        (sessionRunning || embeddedDashboardConnected)
+      }
+      bitrateMbps={config.bitrate}
+      adaptiveEnabled={
+        config.qualityMode === 'adaptive' ||
+        config.qualityMode === 'quality' ||
+        config.qualityMode === 'balanced'
+      }
+      onApplySaferProfile={(profile) => {
+        const nextConfig = applyQualityMode({
+          ...config,
+          qualityMode: profile,
+        })
+        setConfig(nextConfig)
+        if (activeDevice)
+          persistScrcpyLaunchConfig(localStorage, {
+            ...nextConfig,
+            device: activeDevice,
+          })
+        if (sessionRunning && activeDevice) {
+          const serial = activeDevice
+          if (adaptiveRestartTimerRef.current !== null) {
+            window.clearTimeout(adaptiveRestartTimerRef.current)
+          }
+          void stopScrcpy(serial).then(() => {
+            adaptiveRestartTimerRef.current = window.setTimeout(
+              () => {
+                adaptiveRestartTimerRef.current = null
+                if (latestActiveDeviceRef.current === serial) {
+                  void runScrcpy(nextConfig)
+                }
+              },
+              600,
+            )
+          })
+        } else if (embeddedDashboardConnected && activeDevice) {
+          const serial = activeDevice
+          requestEmbeddedSession('stop', serial)
+          if (adaptiveRestartTimerRef.current !== null) {
+            window.clearTimeout(adaptiveRestartTimerRef.current)
+          }
+          adaptiveRestartTimerRef.current = window.setTimeout(
+            () => {
+              adaptiveRestartTimerRef.current = null
+              if (latestActiveDeviceRef.current === serial) {
+                requestEmbeddedSession('start', serial)
+              }
+            },
+            600,
+          )
+        }
+      }}
+    />
+  )
+
   const studioCommands = createStudioCommands({
     activeDevice,
     refreshDevices: handleRefresh,
@@ -2248,6 +2310,15 @@ function AppContent() {
                       screenshotBusy={captureBusy}
                       sessionBehavior={sessionBehavior}
                       screenshotPanel={renderScreenshotManager(true)}
+                      performancePanel={performancePanel}
+                      clipboardPanel={
+                        <ClipboardHistory
+                          activeDevice={activeAndroidWorkspaceDevice}
+                          devices={devices}
+                          customPath={config.scrcpyPath}
+                          notify={notify}
+                        />
+                      }
                       logPanel={renderDashboardLogPanel(
                         serial,
                         serial === activeDevice,
@@ -2714,69 +2785,9 @@ function AppContent() {
                     initialTagFilter={appToolPackage}
                   />
                 }
-                performance={
-                  <PerformancePage
-                    connected={
-                      !activeIosUdid &&
-                      !activeCompanionWorkspaceId &&
-                      (sessionRunning || embeddedDashboardConnected)
-                    }
-                    bitrateMbps={config.bitrate}
-                    adaptiveEnabled={
-                      config.qualityMode === 'adaptive' ||
-                      config.qualityMode === 'quality' ||
-                      config.qualityMode === 'balanced'
-                    }
-                    onApplySaferProfile={(profile) => {
-                      const nextConfig = applyQualityMode({
-                        ...config,
-                        qualityMode: profile,
-                      })
-                      setConfig(nextConfig)
-                      if (activeDevice)
-                        persistScrcpyLaunchConfig(localStorage, {
-                          ...nextConfig,
-                          device: activeDevice,
-                        })
-                      if (sessionRunning && activeDevice) {
-                        const serial = activeDevice
-                        if (adaptiveRestartTimerRef.current !== null) {
-                          window.clearTimeout(adaptiveRestartTimerRef.current)
-                        }
-                        void stopScrcpy(serial).then(() => {
-                          adaptiveRestartTimerRef.current = window.setTimeout(
-                            () => {
-                              adaptiveRestartTimerRef.current = null
-                              if (latestActiveDeviceRef.current === serial) {
-                                void runScrcpy(nextConfig)
-                              }
-                            },
-                            600,
-                          )
-                        })
-                      } else if (embeddedDashboardConnected && activeDevice) {
-                        const serial = activeDevice
-                        requestEmbeddedSession('stop', serial)
-                        if (adaptiveRestartTimerRef.current !== null) {
-                          window.clearTimeout(adaptiveRestartTimerRef.current)
-                        }
-                        adaptiveRestartTimerRef.current = window.setTimeout(
-                          () => {
-                            adaptiveRestartTimerRef.current = null
-                            if (latestActiveDeviceRef.current === serial) {
-                              requestEmbeddedSession('start', serial)
-                            }
-                          },
-                          600,
-                        )
-                      }
-                    }}
-                  />
-                }
                 inputControl={
                   <InputControlPage
                     activeDevice={activeAndroidWorkspaceDevice}
-                    devices={devices}
                     customPath={config.scrcpyPath}
                     notify={notify}
                   />

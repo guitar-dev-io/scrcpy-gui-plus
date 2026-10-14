@@ -17,7 +17,6 @@ interface OtherPagesProps {
   apkToolkit: ReactNode
   simulators: ReactNode
   logcatViewer: ReactNode
-  performance: ReactNode
   inputControl: ReactNode
   qrStudio: ReactNode
   automation: ReactNode
@@ -39,7 +38,6 @@ export default function OtherPages({
   apkToolkit,
   simulators,
   logcatViewer,
-  performance,
   inputControl,
   qrStudio,
   automation,
@@ -59,8 +57,7 @@ export default function OtherPages({
     'apk-toolkit': apkToolkit,
     simulators,
     'logcat-viewer': logcatViewer,
-    performance,
-    'input-control': inputControl,
+      'input-control': inputControl,
     'qr-studio': qrStudio,
     automation,
     'script-manager': scriptManager,

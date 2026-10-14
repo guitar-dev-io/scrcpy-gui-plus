@@ -27,7 +27,6 @@ describe('app route registry', () => {
       'simulators',
       'file-explorer',
       'logcat-viewer',
-      'performance',
       'input-control',
       'qr-studio',
       'settings',
@@ -44,6 +43,7 @@ describe('app route registry', () => {
     expect(appRouteFromHash('#/pair-device')).toBe('pair-device')
     // Retired path, aliased so old hashes still resolve.
     expect(appRouteFromHash('#/wireless-adb')).toBe('pair-device')
+    expect(appRouteFromHash('#/performance')).toBe('dashboard')
     expect(appRouteFromHash('#/settings/')).toBe('settings')
     expect(appRouteFromHash('#/unknown')).toBe('dashboard')
     expect(appRouteFromHash('')).toBe('dashboard')
@@ -61,7 +61,6 @@ describe('app route registry', () => {
       'simulators:Device Lab',
       'file-explorer:File Explorer',
       'logcat-viewer:Logcat Viewer',
-      'performance:Performance',
       'input-control:Input Control',
       'qr-studio:QR Studio',
       'settings:Settings',

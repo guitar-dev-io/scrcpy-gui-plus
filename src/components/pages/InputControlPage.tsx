@@ -1,18 +1,15 @@
 import { Keyboard } from 'lucide-react'
 import KeymapController from '../keymap-controller'
-import ClipboardHistory from '../clipboard-history'
 import type { ToolbarNotifier } from '../device-control-toolbar'
 
 interface InputControlPageProps {
   activeDevice: string
-  devices: string[]
   customPath?: string
   notify: ToolbarNotifier
 }
 
 export default function InputControlPage({
   activeDevice,
-  devices,
   customPath,
   notify,
 }: InputControlPageProps) {
@@ -32,11 +29,7 @@ export default function InputControlPage({
         </div>
       </header>
 
-      <section aria-label="Clipboard history" className="mt-5">
-        <ClipboardHistory activeDevice={activeDevice} devices={devices} customPath={customPath} notify={notify} />
-      </section>
-
-      <section aria-label="Keymap controller" className="mt-4 min-h-0 flex-1">
+      <section aria-label="Keymap controller" className="mt-5 min-h-0 flex-1">
         <KeymapController
           embedded
           isOpen={false}

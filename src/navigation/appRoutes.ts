@@ -11,7 +11,6 @@ export type AppRouteId =
   | 'apk-toolkit'
   | 'simulators'
   | 'logcat-viewer'
-  | 'performance'
   | 'input-control'
   | 'qr-studio'
   | 'automation'
@@ -44,7 +43,6 @@ export const APP_ROUTES: readonly AppRouteDefinition[] = [
   { id: 'simulators', label: 'Device Lab', path: '/simulators', group: 'tools' },
   { id: 'file-explorer', label: 'File Explorer', path: '/files', group: 'tools' },
   { id: 'logcat-viewer', label: 'Logcat Viewer', path: '/logcat', group: 'tools' },
-  { id: 'performance', label: 'Performance', path: '/performance', group: 'tools' },
   { id: 'input-control', label: 'Input Control', path: '/input-control', group: 'tools' },
   { id: 'qr-studio', label: 'QR Studio', path: '/qr-studio', group: 'tools' },
   { id: 'settings', label: 'Settings', path: '/settings', group: 'system' },
@@ -62,6 +60,8 @@ export function appRouteToHash(routeId: AppRouteId): string {
  */
 const LEGACY_PATH_ALIASES: Record<string, AppRouteId> = {
   '/wireless-adb': 'pair-device',
+  // Performance moved into the Dashboard activity rail.
+  '/performance': 'dashboard',
 }
 
 export function appRouteFromHash(hash: string): AppRouteId {

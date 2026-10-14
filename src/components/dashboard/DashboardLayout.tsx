@@ -1,13 +1,15 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { Suspense, useEffect, useState, type ReactNode } from 'react'
 import type { IJsonModel } from 'flexlayout-react'
 import {
   Camera,
   ChevronLeft,
   ChevronRight,
   Circle,
+  ClipboardList,
   Download,
   ExternalLink,
   Folder,
+  Gauge,
   Image as ImageIcon,
   LayoutGrid,
   ListChecks,
@@ -55,6 +57,10 @@ interface DashboardLayoutProps {
   isRunning: boolean
   sessionBehavior: ReactNode
   screenshotPanel: ReactNode
+  /** Connection health (FPS, bitrate, codec, dropped frames) for the activity rail. */
+  performancePanel?: ReactNode
+  /** Clipboard history for the activity rail. */
+  clipboardPanel?: ReactNode
   logPanel: ReactNode
   controlPanel: ReactNode
   advancedTools: ReactNode
@@ -81,6 +87,8 @@ const focusRing =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg-base)]'
 
 type DashboardLayoutPreset = 'compact' | 'wide'
+
+type ActivityDrawerId = 'test-runner' | 'screenshots' | 'performance' | 'clipboard'
 
 /**
  * The drawer holds what the docked control panel deliberately does not: the
@@ -257,6 +265,8 @@ export default function DashboardLayout({
   isRunning,
   sessionBehavior,
   screenshotPanel,
+  performancePanel,
+  clipboardPanel,
   logPanel,
   controlPanel,
   advancedTools,
@@ -282,9 +292,7 @@ export default function DashboardLayout({
   )
   const [fullscreenRequest, setFullscreenRequest] = useState(0)
   const [controlPanelOpen, setControlPanelOpen] = useState(loadControlPanelOpen)
-  const [activityDrawer, setActivityDrawer] = useState<
-    'test-runner' | 'screenshots' | null
-  >(null)
+  const [activityDrawer, setActivityDrawer] = useState<ActivityDrawerId | null>(null)
   const [embeddedMetrics, setEmbeddedMetrics] =
     useState<EmbeddedStageMetrics | null>(null)
 
@@ -720,6 +728,14 @@ export default function DashboardLayout({
     </div>
   )
 
+  const activityItems = [
+    { id: 'test-runner', label: 'Test Runner', Icon: ListChecks, content: <TestRunnerPanel activeDevice={activeDevice} customPath={customPath} outputDir={outputDir} /> },
+    { id: 'screenshots', label: 'Screenshots', Icon: ImageIcon, content: screenshotPanel },
+    { id: 'performance', label: 'Performance', Icon: Gauge, content: performancePanel },
+    { id: 'clipboard', label: 'Clipboard', Icon: ClipboardList, content: clipboardPanel },
+  ].filter((item): item is { id: ActivityDrawerId; label: string; Icon: typeof ListChecks; content: ReactNode } => item.content != null)
+  const activeActivity = activityItems.find((item) => item.id === activityDrawer)
+
   if (compactWorkspace) {
     return (
       <div className="flex h-full min-h-[430px] min-w-0 flex-col gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-base)] p-2">
@@ -761,21 +777,23 @@ export default function DashboardLayout({
           )}
 
           <nav aria-label="Workspace activity" className="flex w-11 shrink-0 flex-col items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-sidebar)] py-2">
-            {([['test-runner', 'Test Runner', ListChecks], ['screenshots', 'Screenshots', ImageIcon]] as const).map(([id, label, Icon]) => (
+            {activityItems.map(({ id, label, Icon }) => (
               <button key={id} type="button" onClick={() => setActivityDrawer((current) => current === id ? null : id)} aria-pressed={activityDrawer === id} title={label} aria-label={label} className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${focusRing} ${activityDrawer === id ? 'bg-primary text-on-primary' : 'text-[var(--text-subtle)] hover:bg-primary/15 hover:text-primary'}`}>
                 <Icon size={15} />
               </button>
             ))}
           </nav>
 
-          {activityDrawer && (
-            <aside className="absolute inset-y-0 right-13 z-30 flex w-[360px] max-w-[calc(100%-3.75rem)] flex-col overflow-hidden rounded-xl border border-[var(--border-base)] bg-[var(--bg-sidebar)] shadow-[-18px_0_48px_rgba(0,0,0,.42)]" aria-label={`${activityDrawer === 'test-runner' ? 'Test Runner' : 'Screenshots'} drawer`}>
+          {activeActivity && (
+            <aside className="absolute inset-y-0 right-13 z-30 flex w-[360px] max-w-[calc(100%-3.75rem)] flex-col overflow-hidden rounded-xl border border-[var(--border-base)] bg-[var(--bg-sidebar)] shadow-[-18px_0_48px_rgba(0,0,0,.42)]" aria-label={`${activeActivity.label} drawer`}>
               <div className="flex h-11 shrink-0 items-center justify-between border-b border-[var(--border-subtle)] px-3">
-                <h2 className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-base)]">{activityDrawer === 'test-runner' ? 'Test Runner' : 'Screenshots'}</h2>
+                <h2 className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-base)]">{activeActivity.label}</h2>
                 <button type="button" onClick={() => setActivityDrawer(null)} aria-label="Close activity drawer" className={`rounded-md p-1.5 text-[var(--text-subtle)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-base)] ${focusRing}`}><X size={14} /></button>
               </div>
               <div className="custom-scrollbar min-h-0 flex-1 overflow-auto p-2">
-                {activityDrawer === 'test-runner' ? <TestRunnerPanel activeDevice={activeDevice} customPath={customPath} outputDir={outputDir} /> : screenshotPanel}
+                <Suspense fallback={<p role="status" className="p-3 text-[10px] text-[var(--text-subtle)]">Loading…</p>}>
+                  {activeActivity.content}
+                </Suspense>
               </div>
             </aside>
           )}
