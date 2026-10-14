@@ -6,7 +6,12 @@ import type { ToolbarNotifier } from '../device-control-toolbar'
 import { ActionButton, DecodedList, ResultStrip } from './DeviceParts'
 import { isValidPackageName, readDeepLinkHandoff } from './deepLinkBuilder'
 import { decodedRecordInput, draftRenderable } from './deviceTargets'
-import { TextField, labelClass, panelClass } from './formControls'
+import {
+  TextField,
+  labelClass,
+  outlineButtonClass,
+  panelClass,
+} from './formControls'
 import { typeLabel } from './libraryUtils'
 import { CAMERA_SCAN_EXPLANATION } from './deviceText'
 import type { QrRenderable } from './qrDownloads'
@@ -153,6 +158,9 @@ export default function DeviceActionsPanel({
   const typedReason =
     device.openReason(typedTarget) ??
     (packageInvalid ? 'Invalid package name' : null)
+  const broadcastReason =
+    device.broadcastReason(typedTarget) ??
+    (packageInvalid ? 'Invalid package name' : null)
 
   const decodedReason = (text: string) =>
     device.openReason({ kind: 'decoded', text })
@@ -170,7 +178,9 @@ export default function DeviceActionsPanel({
   return (
     <div className="space-y-4 p-4 lg:p-6">
       <div>
-        <h2 className="text-[14px] font-semibold text-[color:var(--qr-shell-text)]">Device Actions</h2>
+        <h2 className="text-[14px] font-semibold text-[color:var(--qr-shell-text)]">
+          Device Actions
+        </h2>
         <p className="mt-1 text-[11px] text-[color:var(--qr-shell-muted)]">
           {device.hasDevice
             ? `Acting on ${device.deviceName}.`
@@ -342,6 +352,22 @@ export default function DeviceActionsPanel({
           <ResultStrip
             state={device.state('deeplink')}
             label="Last deep link result"
+          />
+          <ActionButton
+            className={outlineButtonClass}
+            reason={broadcastReason}
+            running={device.state('broadcast').status === 'running'}
+            onClick={() =>
+              device.openOnAllDevices(typedTarget, {
+                packageName: packageName.trim() || undefined,
+              })
+            }
+          >
+            Open on all devices
+          </ActionButton>
+          <ResultStrip
+            state={device.state('broadcast')}
+            label="Last broadcast result"
           />
         </Card>
       </div>

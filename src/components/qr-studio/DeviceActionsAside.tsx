@@ -2,7 +2,7 @@ import { Smartphone } from 'lucide-react'
 import type { ToolbarNotifier } from '../device-control-toolbar'
 import { ActionButton, DecodedList, ResultStrip } from './DeviceParts'
 import { CAMERA_SCAN_EXPLANATION } from './deviceText'
-import { Section } from './formControls'
+import { Section, outlineButtonClass } from './formControls'
 import type { QrRenderable } from './qrDownloads'
 import { useDeviceActions } from './useDeviceActions'
 
@@ -30,17 +30,44 @@ export default function DeviceActionsAside({
   notify,
   onStatus,
 }: DeviceActionsAsideProps) {
-  const device = useDeviceActions({ devices, deviceLabels, activeDevice, customPath, notify, onStatus })
-  const target = draftItem ? ({ kind: 'draft', content: draftItem.content, contentType: draftItem.contentType } as const) : null
+  const device = useDeviceActions({
+    devices,
+    deviceLabels,
+    activeDevice,
+    customPath,
+    notify,
+    onStatus,
+  })
+  const target = draftItem
+    ? ({
+        kind: 'draft',
+        content: draftItem.content,
+        contentType: draftItem.contentType,
+      } as const)
+    : null
   const missing = 'The form has no valid code yet'
-  const sendReason = device.hasDevice ? (!draftItem ? missing : canSend ? null : 'Fix the quality errors first') : device.sendReason(null)
-  const openReason = device.hasDevice && !target ? missing : device.openReason(target)
+  const sendReason = device.hasDevice
+    ? !draftItem
+      ? missing
+      : canSend
+        ? null
+        : 'Fix the quality errors first'
+    : device.sendReason(null)
+  const openReason =
+    device.hasDevice && !target ? missing : device.openReason(target)
 
   return (
-    <Section title="Device Actions" icon={<Smartphone size={13} className="text-[#ff4f57]" aria-hidden="true" />}>
+    <Section
+      title="Device Actions"
+      icon={
+        <Smartphone size={13} className="text-[#ff4f57]" aria-hidden="true" />
+      }
+    >
       <div className="space-y-3">
         <p className="text-[11px] text-slate-400">
-          {device.hasDevice ? `Acting on ${device.deviceName}.` : 'No Android device is selected.'}
+          {device.hasDevice
+            ? `Acting on ${device.deviceName}.`
+            : 'No Android device is selected.'}
         </p>
         <ActionButton
           reason={sendReason}
@@ -59,14 +86,31 @@ export default function DeviceActionsAside({
         </ActionButton>
         <ResultStrip state={device.state('open')} label="Last open result" />
         <ActionButton
+          className={outlineButtonClass}
+          reason={device.broadcastReason(target)}
+          running={device.state('broadcast').status === 'running'}
+          onClick={() => target && device.openOnAllDevices(target)}
+        >
+          Open on all devices
+        </ActionButton>
+        <ResultStrip
+          state={device.state('broadcast')}
+          label="Last broadcast result"
+        />
+        <ActionButton
           reason={device.captureReason()}
           running={device.state('capture').status === 'running'}
           onClick={() => void device.captureAndDecode()}
         >
           Capture & decode
         </ActionButton>
-        <ResultStrip state={device.state('capture')} label="Last capture result" />
-        {device.capture && device.capture.texts.length > 0 && <DecodedList texts={device.capture.texts} onStatus={onStatus} />}
+        <ResultStrip
+          state={device.state('capture')}
+          label="Last capture result"
+        />
+        {device.capture && device.capture.texts.length > 0 && (
+          <DecodedList texts={device.capture.texts} onStatus={onStatus} />
+        )}
         <div>
           <button
             type="button"
@@ -77,7 +121,10 @@ export default function DeviceActionsAside({
           >
             Scan with camera
           </button>
-          <p id="qr-aside-camera-note" className="mt-1 text-[11px] text-slate-400">
+          <p
+            id="qr-aside-camera-note"
+            className="mt-1 text-[11px] text-slate-400"
+          >
             {CAMERA_SCAN_EXPLANATION}
           </p>
         </div>
