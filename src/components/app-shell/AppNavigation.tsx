@@ -20,7 +20,6 @@ import {
   ScrollText,
   Settings,
   Smartphone,
-  SquareTerminal,
   Video,
   Wifi,
   type LucideIcon,
@@ -38,10 +37,7 @@ import {
 import { classNames } from '../ui/classNames'
 import { useShellUi } from '../../contexts/ShellUiContext'
 
-export type NavigationActionId = 'shell-terminal'
-
 interface AppNavigationProps {
-  actions?: Partial<Record<NavigationActionId, () => void>>
   routes?: readonly AppRouteDefinition[]
   activeDevice?: string
   customPath?: string
@@ -71,11 +67,6 @@ const routeIcons: Record<AppRouteId, LucideIcon> = {
   settings: Settings,
 }
 
-const shellTerminalItem = {
-  id: 'shell-terminal' as const,
-  label: 'Shell Terminal',
-  icon: SquareTerminal,
-}
 
 type CollapsibleGroup = 'testing' | 'tools' | 'system'
 const NAV_GROUPS_STORAGE_KEY = 'scrcpy-gui-plus:navigation-groups'
@@ -90,7 +81,6 @@ function loadOpenGroups(): Record<CollapsibleGroup, boolean> {
 }
 
 export default function AppNavigation({
-  actions = {},
   routes = APP_ROUTES,
   activeDevice = '',
   customPath,
@@ -225,18 +215,7 @@ export default function AppNavigation({
         <section aria-label="Tools navigation">
           {groupHeader('tools', 'Tools')}
           {(collapsed || openGroups.tools) && <div className="space-y-0.5">
-            {toolRoutes[0] && renderRouteButton(toolRoutes[0])}
-            <button
-              type="button"
-              onClick={actions['shell-terminal']}
-              aria-label={shellTerminalItem.label}
-              title={shellTerminalItem.label}
-              className={itemClass()}
-            >
-              <shellTerminalItem.icon size={16} className="shrink-0" />
-              {renderLabel(shellTerminalItem.label)}
-            </button>
-            {toolRoutes.slice(1).map(renderRouteButton)}
+            {toolRoutes.map(renderRouteButton)}
           </div>}
         </section>
 

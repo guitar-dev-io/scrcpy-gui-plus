@@ -1987,11 +1987,6 @@ function AppContent() {
       header={undefined}
       navigation={
         shellChrome.navigation && <AppNavigation
-          actions={{
-            'shell-terminal': () => {
-              selectWorkspaceTool('shell')
-            },
-          }}
           activeDevice={activeAndroidWorkspaceDevice}
           customPath={config.scrcpyPath}
           sessionRunning={sessionRunning || embeddedDashboardConnected}

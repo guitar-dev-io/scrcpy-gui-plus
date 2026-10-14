@@ -40,6 +40,7 @@ describe('AppNavigation', () => {
     expect(screen.getByRole('button', { name: 'Automation' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Script Manager' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Device Wall' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Shell Terminal' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Media & History' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'QR Studio' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Test Runs' })).not.toBeInTheDocument()
@@ -68,13 +69,14 @@ describe('AppNavigation', () => {
   it('collapses navigation groups and remembers their state', () => {
     const firstRender = renderNavigation(<AppNavigation />)
 
+    expect(screen.getByRole('button', { name: 'App Manager' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Tools' }))
-    expect(screen.queryByRole('button', { name: 'Shell Terminal' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'App Manager' })).not.toBeInTheDocument()
 
     firstRender.unmount()
     renderNavigation(<AppNavigation />)
     expect(screen.getByRole('button', { name: 'Tools' })).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByRole('button', { name: 'Shell Terminal' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'App Manager' })).not.toBeInTheDocument()
   })
 
   it('shows verified device metadata and exposes the real session action', () => {
