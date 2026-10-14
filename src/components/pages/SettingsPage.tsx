@@ -6,6 +6,7 @@ import {
   type ReactNode,
 } from 'react'
 import { Settings } from 'lucide-react'
+import { useI18n } from '../../i18n'
 
 type SettingsTabId = 'general' | 'advanced' | 'shortcuts' | 'about'
 
@@ -36,6 +37,7 @@ export default function SettingsPage({
   about,
   initialTab = 'general',
 }: SettingsPageProps) {
+  const { t } = useI18n()
   const [activeTab, setActiveTab] = useState<SettingsTabId>(initialTab)
   const tabListId = useId()
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
@@ -85,9 +87,9 @@ export default function SettingsPage({
             <Settings size={16} aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <h1 className="text-lg font-semibold text-[var(--text-base)]">Settings</h1>
+            <h1 className="text-lg font-semibold text-[var(--text-base)]">{t('pages.settings.title')}</h1>
             <p className="mt-1 text-[10px] text-[var(--text-subtle)]">
-              Configure application preferences and existing device controls.
+              {t('pages.settings.subtitle')}
             </p>
           </div>
         </div>

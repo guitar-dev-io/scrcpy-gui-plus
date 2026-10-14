@@ -1,6 +1,7 @@
 import { ScrollText } from 'lucide-react'
 import LogcatViewer from '../logcat-viewer'
 import type { ToolbarNotifier } from '../device-control-toolbar'
+import { useI18n } from '../../i18n'
 
 interface LogcatViewerPageProps {
   activeDevice: string
@@ -15,6 +16,7 @@ export default function LogcatViewerPage({
   notify,
   initialTagFilter,
 }: LogcatViewerPageProps) {
+  const { t } = useI18n()
   return (
     <div className="flex min-h-0 flex-1 flex-col px-4 pb-6 lg:px-6">
       <header className="flex min-h-[72px] items-center border-b border-[var(--border-subtle)] py-4">
@@ -23,9 +25,9 @@ export default function LogcatViewerPage({
             <ScrollText size={16} aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <h1 className="text-lg font-semibold text-[var(--text-base)]">Logcat Viewer</h1>
+            <h1 className="text-lg font-semibold text-[var(--text-base)]">{t('pages.logcat.title')}</h1>
             <p className="mt-1 text-[10px] text-[var(--text-subtle)]">
-              Stream, filter, and export logcat output from the active device.
+              {t('pages.logcat.subtitle')}
             </p>
           </div>
         </div>

@@ -12,6 +12,7 @@ import IosWorkspaceStage from '../dashboard/IosWorkspaceStage'
 import type { IosDeviceInfo } from '../../hooks/useIosMirror'
 import type { SimScreenshotResult, SimulatorDevice } from '../../types/simDeck'
 import type { ToolbarNotifier } from '../device-control-toolbar'
+import { useI18n } from '../../i18n'
 
 type DeviceSourceTab = 'simdeck' | 'android' | 'ios'
 
@@ -47,6 +48,7 @@ export default function SimulatorsPage({
   onOpenIos,
   onIosFrame,
 }: SimulatorsPageProps) {
+  const { t } = useI18n()
   const [source, setSource] = useState<DeviceSourceTab>('simdeck')
   const [androidSerial, setAndroidSerial] = useState('')
   const [iosUdid, setIosUdid] = useState('')
@@ -85,11 +87,10 @@ export default function SimulatorsPage({
           </span>
           <div className="min-w-0">
             <h1 className="text-lg font-semibold text-[var(--text-base)]">
-              Device Lab
+              {t('pages.deviceLab.title')}
             </h1>
             <p className="mt-1 text-[10px] text-[var(--text-subtle)]">
-              SimDeck simulators and physical Android/iOS devices, separated by
-              source.
+              {t('pages.deviceLab.subtitle')}
             </p>
           </div>
         </div>

@@ -34,6 +34,7 @@ import {
 import { connectionTypeOf, formatKb } from '../../types/deviceStatus'
 import { useDeviceRecoverySnapshot } from '../../hooks/useDeviceRecoverySnapshot'
 import { deviceConnectionPresentation } from '../../types/deviceConnectionPresentation'
+import { useI18n } from '../../i18n'
 
 type DeviceFilter = 'all' | 'online' | 'busy' | 'warning' | 'offline'
 type DeviceDensity = 'grid' | 'list'
@@ -468,6 +469,7 @@ export default function DevicesPage({
   iosReady = false,
   onViewIos,
 }: DevicesPageProps) {
+  const { t } = useI18n()
   const [toolsOpen, setToolsOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<DeviceFilter>('all')
@@ -537,11 +539,10 @@ export default function DevicesPage({
       <header className="flex min-h-[72px] flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] py-4">
         <div>
           <h1 className="text-lg font-semibold text-[var(--text-base)]">
-            Devices
+            {t('pages.devices.title')}
           </h1>
           <p className="mt-1 text-[10px] text-[var(--text-subtle)]">
-            {connectedDeviceCount} connected{' '}
-            {connectedDeviceCount === 1 ? 'device' : 'devices'}
+            {t(connectedDeviceCount === 1 ? 'pages.devices.connectedOne' : 'pages.devices.connected', { count: connectedDeviceCount })}
           </p>
         </div>
         <div className="flex items-center gap-2">

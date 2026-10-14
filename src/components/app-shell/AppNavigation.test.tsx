@@ -1,4 +1,5 @@
 import type { AppRouteId } from '../../navigation/appRoutes'
+import { I18nProvider } from '../../i18n'
 import { fireEvent, render, screen } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -45,6 +46,20 @@ describe('AppNavigation', () => {
     expect(screen.getByRole('button', { name: 'QR Studio' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Test Runs' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Test Cases' })).not.toBeInTheDocument()
+  })
+
+  it('translates entries, families and group headers', () => {
+    render(
+      <I18nProvider initialLocale="th">
+        <ShellUiProvider initialRoute="device-wall" initialOpenWorkspaceTools={[]}>
+          <AppNavigation />
+        </ShellUiProvider>
+      </I18nProvider>,
+    )
+
+    expect(screen.getByRole('button', { name: 'อุปกรณ์' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('button', { name: 'สื่อและประวัติ' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'เครื่องมือ' })).toBeInTheDocument()
   })
 
   it('marks a family entry current while one of its member pages is open', () => {

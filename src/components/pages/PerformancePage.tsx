@@ -1,5 +1,6 @@
 import { Gauge } from 'lucide-react'
 import ConnectionHealth from '../connection-health'
+import { useI18n } from '../../i18n'
 
 interface PerformancePageProps {
   /** Render only the health panel, for the Dashboard activity drawer. */
@@ -11,6 +12,7 @@ interface PerformancePageProps {
 }
 
 export default function PerformancePage({ embedded = false, connected, bitrateMbps, adaptiveEnabled, onApplySaferProfile }: PerformancePageProps) {
+  const { t } = useI18n()
   const health = (
     <ConnectionHealth
       embedded
@@ -32,9 +34,9 @@ export default function PerformancePage({ embedded = false, connected, bitrateMb
             <Gauge size={16} aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <h1 className="text-lg font-semibold text-[var(--text-base)]">Performance</h1>
+            <h1 className="text-lg font-semibold text-[var(--text-base)]">{t('pages.performance.title')}</h1>
             <p className="mt-1 text-[10px] text-[var(--text-subtle)]">
-              Monitor mirroring FPS, bitrate, codec, and dropped frames.
+              {t('pages.performance.subtitle')}
             </p>
           </div>
         </div>

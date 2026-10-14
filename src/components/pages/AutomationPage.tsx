@@ -13,6 +13,7 @@ import {
 import type { AutomationBatchRunRecord } from '../../types/automationBatchRun'
 import type { AutomationTarget, AutomationTargetResolution } from '../../types/automationTarget'
 import type { ToolbarNotifier } from '../device-control-toolbar'
+import { useI18n } from '../../i18n'
 
 interface AutomationPageProps {
   activeDevice: string
@@ -43,6 +44,7 @@ export default function AutomationPage({
   outputDir,
   notify,
 }: AutomationPageProps) {
+  const { t } = useI18n()
   const [target, setTarget] = useState<AutomationTarget>({ mode: 'current' })
   const [resolution, setResolution] = useState<AutomationTargetResolution | null>(null)
   const [flowPath, setFlowPath] = useState('')
@@ -194,9 +196,9 @@ export default function AutomationPage({
             <Bot size={16} aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <h1 className="text-lg font-semibold text-[var(--text-base)]">Automation</h1>
+            <h1 className="text-lg font-semibold text-[var(--text-base)]">{t('pages.automation.title')}</h1>
             <p className="mt-1 text-[10px] text-[var(--text-subtle)]">
-              Record macros or run one Maestro flow across current, selected, or grouped devices.
+              {t('pages.automation.subtitle')}
             </p>
           </div>
         </div>

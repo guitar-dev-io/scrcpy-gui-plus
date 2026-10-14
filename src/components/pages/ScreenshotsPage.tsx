@@ -286,11 +286,10 @@ export default function ScreenshotsPage({
       <header className="flex min-h-[72px] flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] py-4">
         <div>
           <h1 className="text-lg font-semibold text-[var(--text-base)]">
-            Screenshots
+            {t('pages.screenshots.title')}
           </h1>
           <p className="mt-1 text-[10px] text-[var(--text-subtle)]">
-            {history.length} saved{' '}
-            {history.length === 1 ? 'screenshot' : 'screenshots'}
+            {t(history.length === 1 ? 'pages.screenshots.savedOne' : 'pages.screenshots.saved', { count: history.length })}
           </p>
         </div>
 

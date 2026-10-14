@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { useDeviceStatus } from '../../hooks/useDeviceStatus'
 import type { SessionHistoryEntry } from '../../types/history'
+import { useI18n } from '../../i18n'
 
 interface SessionsPageProps {
   runningDevices: string[]
@@ -93,6 +94,7 @@ export default function SessionsPage({
   onClearHistory,
   settings,
 }: SessionsPageProps) {
+  const { t } = useI18n()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [now, setNow] = useState(Date.now())
 
@@ -115,8 +117,8 @@ export default function SessionsPage({
     <div className="flex min-h-0 flex-1 flex-col px-4 pb-6 lg:px-6">
       <header className="flex min-h-[72px] flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] py-4">
         <div>
-          <h1 className="text-lg font-semibold text-[var(--text-base)]">Sessions</h1>
-          <p className="mt-1 text-[10px] text-[var(--text-subtle)]">{runningDevices.length} active {runningDevices.length === 1 ? 'session' : 'sessions'}</p>
+          <h1 className="text-lg font-semibold text-[var(--text-base)]">{t('pages.sessions.title')}</h1>
+          <p className="mt-1 text-[10px] text-[var(--text-subtle)]">{t(runningDevices.length === 1 ? 'pages.sessions.activeOne' : 'pages.sessions.active', { count: runningDevices.length })}</p>
         </div>
         <button type="button" onClick={() => setSettingsOpen(true)} className="flex h-9 items-center gap-2 rounded-lg border border-[var(--border-base)] px-3 text-[10px] text-[var(--text-muted)] hover:border-primary/50 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]">
           <Settings2 size={13} /> Session Settings

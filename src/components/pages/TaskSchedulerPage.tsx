@@ -1,6 +1,7 @@
 import { ListTodo } from 'lucide-react'
 import TestSession from '../test-session'
 import type { ToolbarNotifier } from '../device-control-toolbar'
+import { useI18n } from '../../i18n'
 
 interface TaskSchedulerPageProps {
   activeDevice: string
@@ -15,6 +16,7 @@ export default function TaskSchedulerPage({
   outputDir,
   notify,
 }: TaskSchedulerPageProps) {
+  const { t } = useI18n()
   return (
     <div className="flex min-h-0 flex-1 flex-col px-4 pb-6 lg:px-6">
       <header className="flex min-h-[72px] items-center border-b border-[var(--border-subtle)] py-4">
@@ -23,9 +25,9 @@ export default function TaskSchedulerPage({
             <ListTodo size={16} aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <h1 className="text-lg font-semibold text-[var(--text-base)]">Test Session</h1>
+            <h1 className="text-lg font-semibold text-[var(--text-base)]">{t('pages.testSession.title')}</h1>
             <p className="mt-1 text-[10px] text-[var(--text-subtle)]">
-              Run a scripted test session and export a device summary report.
+              {t('pages.testSession.subtitle')}
             </p>
           </div>
         </div>

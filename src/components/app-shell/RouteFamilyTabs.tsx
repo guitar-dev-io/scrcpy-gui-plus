@@ -1,4 +1,5 @@
 import { useShellUi } from '../../contexts/ShellUiContext'
+import { useI18n } from '../../i18n'
 import { routeFamilyOf, type AppRouteId } from '../../navigation/appRoutes'
 
 /**
@@ -7,13 +8,14 @@ import { routeFamilyOf, type AppRouteId } from '../../navigation/appRoutes'
  */
 export default function RouteFamilyTabs({ route }: { route: AppRouteId }) {
   const { navigate } = useShellUi()
+  const { t } = useI18n()
   const family = routeFamilyOf(route)
   if (!family) return null
 
   return (
     <div
       role="tablist"
-      aria-label={family.label}
+      aria-label={t(`nav.families.${family.id}`)}
       className="flex shrink-0 items-center gap-1 border-b border-[var(--border-subtle)] px-4 pt-3 lg:px-6"
     >
       {family.members.map((member) => {
@@ -33,7 +35,7 @@ export default function RouteFamilyTabs({ route }: { route: AppRouteId }) {
                 : 'border-transparent text-[var(--text-subtle)] hover:text-[var(--text-base)]'
             }`}
           >
-            {member.tab}
+            {t(`nav.tabs.${member.id}`)}
           </button>
         )
       })}

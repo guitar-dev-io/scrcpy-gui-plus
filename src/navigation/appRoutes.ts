@@ -25,6 +25,8 @@ export interface AppRouteDefinition {
   label: string
   path: string
   group: AppRouteGroup
+  /** Set on sidebar entries that stand for a whole route family. */
+  familyId?: AppRouteFamilyId
 }
 
 export const APP_ROUTES: readonly AppRouteDefinition[] = [
@@ -84,7 +86,10 @@ export interface AppRouteFamilyMember {
  * with a tab strip. Every member keeps its own route and hash, so deep links
  * and restored windows still land on the exact page.
  */
+export type AppRouteFamilyId = 'devices' | 'media' | 'automation'
+
 export interface AppRouteFamily {
+  id: AppRouteFamilyId
   label: string
   /** Where the sidebar entry navigates; also supplies its icon. */
   primary: AppRouteId
@@ -93,6 +98,7 @@ export interface AppRouteFamily {
 
 export const APP_ROUTE_FAMILIES: readonly AppRouteFamily[] = [
   {
+    id: 'devices',
     label: 'Devices',
     primary: 'devices',
     members: [
@@ -101,6 +107,7 @@ export const APP_ROUTE_FAMILIES: readonly AppRouteFamily[] = [
     ],
   },
   {
+    id: 'media',
     label: 'Media & History',
     primary: 'screenshots',
     members: [
@@ -110,6 +117,7 @@ export const APP_ROUTE_FAMILIES: readonly AppRouteFamily[] = [
     ],
   },
   {
+    id: 'automation',
     label: 'Automation',
     primary: 'automation',
     members: [
@@ -145,7 +153,7 @@ export function navigationEntries(
     if (placed.has(family)) return
     placed.add(family)
     const primary = routes.find((candidate) => candidate.id === family.primary) ?? route
-    entries.push({ ...primary, label: family.label, group: route.group })
+    entries.push({ ...primary, label: family.label, group: route.group, familyId: family.id })
   })
   return entries
 }

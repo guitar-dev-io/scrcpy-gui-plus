@@ -9,6 +9,7 @@ import {
   X,
 } from 'lucide-react'
 import type { RecordingHistoryEntry } from '../../types/history'
+import { useI18n } from '../../i18n'
 
 export interface RecordingsPageProps {
   /** Existing recording controls. This page never creates or replaces commands. */
@@ -52,15 +53,16 @@ export default function RecordingsPage({
   onRemoveEntry,
   onClearHistory,
 }: RecordingsPageProps) {
+  const { t } = useI18n()
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   return (
     <div className="flex min-h-0 flex-1 flex-col px-4 pb-6 lg:px-6">
       <header className="flex min-h-[72px] flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] py-4">
         <div>
-          <h1 className="text-lg font-semibold text-[var(--text-base)]">Recordings</h1>
+          <h1 className="text-lg font-semibold text-[var(--text-base)]">{t('pages.recordings.title')}</h1>
           <p className="mt-1 text-[10px] text-[var(--text-subtle)]">
-            {history.length} saved {history.length === 1 ? 'recording' : 'recordings'}
+            {t(history.length === 1 ? 'pages.recordings.savedOne' : 'pages.recordings.saved', { count: history.length })}
           </p>
         </div>
         <div className="flex items-center gap-2">

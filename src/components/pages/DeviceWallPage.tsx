@@ -34,6 +34,7 @@ import { UNGROUPED_GROUP_ID } from '../../types/deviceGroups'
 import type { WorkspaceFilter } from '../../types/deviceWorkspace'
 import type { ScrcpyConfig } from '../../hooks/useScrcpy'
 import type { DeviceWallDensity } from '../device-wall/DeviceWallCard'
+import { useI18n } from '../../i18n'
 
 type StatusFilter = 'all' | 'online' | 'busy' | 'offline'
 type NotifyKind = 'success' | 'error' | 'info' | 'warning'
@@ -80,6 +81,7 @@ export default function DeviceWallPage({
   onOpenInfo,
   onSetupAdb,
 }: DeviceWallPageProps) {
+  const { t } = useI18n()
   const ws = useDeviceWorkspace({
     devices,
     customPath,
@@ -257,21 +259,21 @@ export default function DeviceWallPage({
       <header className="flex min-h-[72px] flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] py-4">
         <div>
           <h1 className="text-lg font-semibold text-[var(--text-base)]">
-            Device Wall
+            {t('pages.deviceWall.title')}
           </h1>
           <p className="mt-1 flex items-center gap-3 text-[10px] text-[var(--text-subtle)]">
-            <span>{wallSerials.length} devices</span>
+            <span>{t('pages.deviceWall.devices', { count: wallSerials.length })}</span>
             <span className="flex items-center gap-1 text-emerald-400">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              {counts.online} online
+              {t('pages.deviceWall.online', { count: counts.online })}
             </span>
             <span className="flex items-center gap-1 text-primary">
               <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-              {counts.busy} busy
+              {t('pages.deviceWall.busy', { count: counts.busy })}
             </span>
             <span className="flex items-center gap-1 text-[var(--text-subtle)]">
               <span className="h-1.5 w-1.5 rounded-full bg-[var(--text-subtle)]" />
-              {counts.offline} offline
+              {t('pages.deviceWall.offline', { count: counts.offline })}
             </span>
           </p>
         </div>
