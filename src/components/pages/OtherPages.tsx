@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import type { AppRouteId } from '../../navigation/appRoutes'
+import { routeFamilyOf, type AppRouteId } from '../../navigation/appRoutes'
+import RouteFamilyTabs from '../app-shell/RouteFamilyTabs'
 
 type OtherPageRoute = Exclude<AppRouteId, 'dashboard'>
 
@@ -67,5 +68,11 @@ export default function OtherPages({
     settings,
   }
 
-  return <>{content[route]}</>
+  if (!routeFamilyOf(route)) return <>{content[route]}</>
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <RouteFamilyTabs route={route} />
+      {content[route]}
+    </div>
+  )
 }

@@ -30,6 +30,8 @@ import { useDeviceStatus } from '../../hooks/useDeviceStatus'
 import { connectionTypeOf } from '../../types/deviceStatus'
 import {
   APP_ROUTES,
+  isNavigationEntryActive,
+  navigationEntries,
   type AppRouteDefinition,
   type AppRouteId,
 } from '../../navigation/appRoutes'
@@ -101,10 +103,11 @@ export default function AppNavigation({
     navigationCollapsed: collapsed,
     setNavigationCollapsed: setCollapsed,
   } = useShellUi()
-  const mainRoutes = routes.filter((route) => route.group === 'main')
-  const testingRoutes = routes.filter((route) => route.group === 'testing')
-  const toolRoutes = routes.filter((route) => route.group === 'tools')
-  const systemRoutes = routes.filter((route) => route.group === 'system')
+  const entries = navigationEntries(routes)
+  const mainRoutes = entries.filter((route) => route.group === 'main')
+  const testingRoutes = entries.filter((route) => route.group === 'testing')
+  const toolRoutes = entries.filter((route) => route.group === 'tools')
+  const systemRoutes = entries.filter((route) => route.group === 'system')
   const [openGroups, setOpenGroups] = useState(loadOpenGroups)
   useEffect(() => {
     try {
@@ -156,7 +159,7 @@ export default function AppNavigation({
 
   const renderRouteButton = (route: AppRouteDefinition) => {
     const Icon = routeIcons[route.id]
-    const active = activeRoute === route.id
+    const active = isNavigationEntryActive(route.id, activeRoute)
     return (
       <button
         key={route.id}

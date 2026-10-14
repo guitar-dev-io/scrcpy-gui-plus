@@ -1,3 +1,4 @@
+import type { AppRouteId } from '../../navigation/appRoutes'
 import { fireEvent, render, screen } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -13,7 +14,7 @@ const useDeviceStatusMock = vi.mocked(useDeviceStatus)
 
 function renderNavigation(
   navigation: ReactElement,
-  initialRoute: 'dashboard' | 'devices' = 'dashboard',
+  initialRoute: AppRouteId = 'dashboard',
 ) {
   return render(
     <ShellUiProvider initialRoute={initialRoute} initialOpenWorkspaceTools={[]}>
@@ -37,10 +38,21 @@ describe('AppNavigation', () => {
 
     expect(screen.getByRole('button', { name: 'Devices' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('button', { name: 'Automation' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Script Manager' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Script Manager' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Device Wall' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Media & History' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'QR Studio' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Test Runs' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Test Cases' })).not.toBeInTheDocument()
+  })
+
+  it('marks a family entry current while one of its member pages is open', () => {
+    const wall = renderNavigation(<AppNavigation />, 'device-wall')
+    expect(screen.getByRole('button', { name: 'Devices' })).toHaveAttribute('aria-current', 'page')
+    wall.unmount()
+
+    renderNavigation(<AppNavigation />, 'script-manager')
+    expect(screen.getByRole('button', { name: 'Automation' })).toHaveAttribute('aria-current', 'page')
   })
 
   it('supports a compact state without removing accessible navigation names', () => {

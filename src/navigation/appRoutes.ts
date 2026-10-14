@@ -72,3 +72,86 @@ export function appRouteFromHash(hash: string): AppRouteId {
     'dashboard'
   )
 }
+
+export interface AppRouteFamilyMember {
+  id: AppRouteId
+  /** Label for the family's tab strip; the page keeps its own heading. */
+  tab: string
+}
+
+/**
+ * Destinations that share one sidebar entry and switch between each other
+ * with a tab strip. Every member keeps its own route and hash, so deep links
+ * and restored windows still land on the exact page.
+ */
+export interface AppRouteFamily {
+  label: string
+  /** Where the sidebar entry navigates; also supplies its icon. */
+  primary: AppRouteId
+  members: readonly AppRouteFamilyMember[]
+}
+
+export const APP_ROUTE_FAMILIES: readonly AppRouteFamily[] = [
+  {
+    label: 'Devices',
+    primary: 'devices',
+    members: [
+      { id: 'devices', tab: 'Cards' },
+      { id: 'device-wall', tab: 'Live wall' },
+    ],
+  },
+  {
+    label: 'Media & History',
+    primary: 'screenshots',
+    members: [
+      { id: 'screenshots', tab: 'Screenshots' },
+      { id: 'recordings', tab: 'Recordings' },
+      { id: 'sessions', tab: 'Sessions' },
+    ],
+  },
+  {
+    label: 'Automation',
+    primary: 'automation',
+    members: [
+      { id: 'automation', tab: 'Macros & Batch' },
+      { id: 'script-manager', tab: 'Flows & Scripts' },
+      { id: 'task-scheduler', tab: 'Test Session' },
+    ],
+  },
+]
+
+export function routeFamilyOf(routeId: AppRouteId): AppRouteFamily | undefined {
+  return APP_ROUTE_FAMILIES.find((family) =>
+    family.members.some((member) => member.id === routeId),
+  )
+}
+
+/**
+ * The sidebar's entries: each family collapses into one entry (labelled with
+ * the family name, routed to its primary page) at the position of its first
+ * member in `routes`. Routes outside any family pass through unchanged.
+ */
+export function navigationEntries(
+  routes: readonly AppRouteDefinition[] = APP_ROUTES,
+): AppRouteDefinition[] {
+  const placed = new Set<AppRouteFamily>()
+  const entries: AppRouteDefinition[] = []
+  routes.forEach((route) => {
+    const family = routeFamilyOf(route.id)
+    if (!family) {
+      entries.push(route)
+      return
+    }
+    if (placed.has(family)) return
+    placed.add(family)
+    const primary = routes.find((candidate) => candidate.id === family.primary) ?? route
+    entries.push({ ...primary, label: family.label, group: route.group })
+  })
+  return entries
+}
+
+/** Whether a sidebar entry should show as current for the active route. */
+export function isNavigationEntryActive(entryId: AppRouteId, activeRoute: AppRouteId): boolean {
+  if (entryId === activeRoute) return true
+  return routeFamilyOf(activeRoute)?.primary === entryId
+}
