@@ -535,4 +535,143 @@ export const th: DeepPartialTranslations = {
       invoke_failed: 'ไม่สามารถเชื่อมต่อกับแบ็กเอนด์ได้',
     },
   },
+  simulators: {
+    streamError: 'สตรีมหยุดทำงาน',
+    streamErrorHint_xcode:
+      'โหลดเครื่องมือ Simulator ของ Xcode ไม่ได้ ติดตั้ง Xcode แล้วรัน "sudo xcode-select -s /Applications/Xcode.app" จากนั้นกดเชื่อมต่อใหม่',
+    streamErrorHint_simdeck: 'SimDeck ไม่ตอบสนอง ตรวจว่า SimDeck เปิดอยู่ แล้วกดเชื่อมต่อใหม่',
+    streamErrorHint_generic: 'สตรีม Simulator หยุดโดยไม่คาดคิด ลองเชื่อมต่อใหม่',
+    streamErrorDetails: 'รายละเอียดทางเทคนิค',
+  },
+  settings: {
+    sections: 'หมวดการตั้งค่า',
+    tabs: {
+      general: 'ทั่วไป',
+      advanced: 'ขั้นสูง',
+      shortcuts: 'คีย์ลัด',
+      about: 'เกี่ยวกับ',
+    },
+    tabDescriptions: {
+      general: 'พฤติกรรมเซสชันและการบันทึก',
+      advanced: 'ตัวเลือกการเปิด scrcpy และเครื่องมือ',
+      shortcuts: 'คีย์ลัดบนคีย์บอร์ด',
+      about: 'เวอร์ชันและการวินิจฉัย',
+    },
+  },
+  nav: {
+    primaryNavigation: 'เมนูหลัก',
+    collapseSidebar: 'ย่อแถบด้านข้าง',
+    expandSidebar: 'ขยายแถบด้านข้าง',
+    groups: {
+      main: 'หลัก',
+      testing: 'การทดสอบ',
+      tools: 'เครื่องมือ',
+      system: 'ระบบ',
+    },
+    routes: {
+      dashboard: 'แดชบอร์ด',
+      devices: 'อุปกรณ์',
+      'pair-device': 'เชื่อมต่ออุปกรณ์',
+      'device-wall': 'Device Wall',
+      sessions: 'เซสชัน',
+      screenshots: 'ภาพหน้าจอ',
+      recordings: 'การบันทึกวิดีโอ',
+      automation: 'ระบบอัตโนมัติ',
+      'script-manager': 'จัดการสคริปต์',
+      'task-scheduler': 'เซสชันทดสอบ',
+      'app-manager': 'จัดการแอป',
+      'apk-toolkit': 'เครื่องมือ APK',
+      simulators: 'Device Lab',
+      'file-explorer': 'จัดการไฟล์',
+      'logcat-viewer': 'Logcat',
+      'input-control': 'ควบคุมการป้อนข้อมูล',
+      'qr-studio': 'QR Studio',
+      settings: 'การตั้งค่า',
+    },
+    families: {
+      devices: 'อุปกรณ์',
+      media: 'สื่อและประวัติ',
+      automation: 'ระบบอัตโนมัติ',
+    },
+    tabs: {
+      devices: 'การ์ด',
+      'device-wall': 'จอสด',
+      screenshots: 'ภาพหน้าจอ',
+      recordings: 'การบันทึกวิดีโอ',
+      sessions: 'เซสชัน',
+      automation: 'มาโครและแบตช์',
+      'script-manager': 'Flow และสคริปต์',
+      'task-scheduler': 'เซสชันทดสอบ',
+    },
+  },
+  pages: {
+    devices: {
+      title: 'อุปกรณ์',
+      connected: 'เชื่อมต่ออยู่ {count} เครื่อง',
+      connectedOne: 'เชื่อมต่ออยู่ {count} เครื่อง',
+    },
+    deviceWall: {
+      title: 'Device Wall',
+      devices: '{count} เครื่อง',
+      online: 'ออนไลน์ {count}',
+      busy: 'ใช้งานอยู่ {count}',
+      offline: 'ออฟไลน์ {count}',
+    },
+    connectDevice: {
+      title: 'เชื่อมต่ออุปกรณ์',
+      subtitle:
+        'เลือกวิธีต่อโทรศัพท์ การค้นหาอุปกรณ์ ประวัติ และการต่อใหม่อัตโนมัติใช้ร่วมกันทั้งสามแบบ',
+    },
+    sessions: {
+      title: 'เซสชัน',
+      active: 'กำลังทำงาน {count} เซสชัน',
+      activeOne: 'กำลังทำงาน {count} เซสชัน',
+    },
+    screenshots: {
+      title: 'ภาพหน้าจอ',
+      saved: 'บันทึกไว้ {count} ภาพ',
+      savedOne: 'บันทึกไว้ {count} ภาพ',
+    },
+    recordings: {
+      title: 'การบันทึกวิดีโอ',
+      saved: 'บันทึกไว้ {count} ไฟล์',
+      savedOne: 'บันทึกไว้ {count} ไฟล์',
+    },
+    automation: {
+      title: 'ระบบอัตโนมัติ',
+      subtitle: 'บันทึกมาโคร หรือรัน Maestro flow บนเครื่องปัจจุบัน เครื่องที่เลือก หรือกลุ่มเครื่อง',
+    },
+    scriptManager: {
+      title: 'จัดการสคริปต์',
+      subtitle: 'สร้างสคริปต์ ADB สำหรับแพ็กเกจแอป และรัน smoke test ซ้ำได้',
+    },
+    testSession: {
+      title: 'เซสชันทดสอบ',
+      subtitle: 'รันเซสชันทดสอบตามสคริปต์ และส่งออกรายงานสรุปของอุปกรณ์',
+    },
+    apkToolkit: {
+      title: 'เครื่องมือ APK',
+      subtitle: 'ตรวจสอบและเปรียบเทียบแพ็กเกจ Android ในเครื่องได้โดยไม่ต้องต่ออุปกรณ์',
+    },
+    deviceLab: {
+      title: 'Device Lab',
+      subtitle: 'Simulator จาก SimDeck และอุปกรณ์ Android/iOS จริง แยกตามแหล่งที่มา',
+    },
+    logcat: {
+      title: 'Logcat',
+      subtitle: 'ดู กรอง และส่งออก logcat จากอุปกรณ์ที่เลือก',
+    },
+    performance: {
+      title: 'ประสิทธิภาพ',
+      subtitle: 'ติดตาม FPS บิตเรต codec และเฟรมที่หลุดระหว่างมิเรอร์',
+    },
+    inputControl: {
+      title: 'ควบคุมการป้อนข้อมูล',
+      subtitle: 'สร้างโปรไฟล์ปุ่มบนจอ และผูกปุ่มคีย์บอร์ดกับการแตะ',
+    },
+    settings: {
+      title: 'การตั้งค่า',
+      subtitle: 'ตั้งค่าแอปและการควบคุมอุปกรณ์',
+    },
+  },
 }

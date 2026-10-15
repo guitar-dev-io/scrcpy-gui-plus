@@ -38,6 +38,10 @@ pub struct DeviceStatus {
     pub security_patch: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bootloader: Option<String>,
+    /// Hardware serial (`ro.serialno`). Stable across transports, unlike the
+    /// ADB serial, which is an `ip:port` that changes on every Wi-Fi pairing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hardware_serial: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub uptime_seconds: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -103,6 +107,7 @@ impl DeviceStatus {
             abi: None,
             security_patch: None,
             bootloader: None,
+            hardware_serial: None,
             uptime_seconds: None,
             resolution: None,
             rotation: None,
@@ -349,6 +354,16 @@ pub async fn get_device_display_geometry(
     }
 }
 
+/// Some builds report a placeholder instead of a real serial; those would
+/// merge unrelated phones, so treat them as missing.
+fn is_usable_hardware_serial(value: &str) -> bool {
+    let value = value.trim();
+    !value.is_empty()
+        && !value.eq_ignore_ascii_case("unknown")
+        && !value.chars().all(|c| c == '0')
+        && value != "0123456789ABCDEF"
+}
+
 /// Gather a full status snapshot for a device.
 #[tauri::command]
 pub async fn get_device_status(serial: String, custom_path: Option<String>) -> DeviceStatus {
@@ -371,6 +386,11 @@ pub async fn get_device_status(serial: String, custom_path: Option<String>) -> D
     status.bootloader = getprop(&serial, "ro.bootloader", &custom_path)
         .await
         .filter(|value| !value.eq_ignore_ascii_case("unknown"));
+    status.hardware_serial = match getprop(&serial, "ro.serialno", &custom_path).await {
+        Some(value) => Some(value),
+        None => getprop(&serial, "ro.boot.serialno", &custom_path).await,
+    }
+    .filter(|value| is_usable_hardware_serial(value));
 
     if let Ok(value) = adb::run_adb_text(
         Some(&serial),
@@ -543,6 +563,16 @@ pub async fn get_device_status(serial: String, custom_path: Option<String>) -> D
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn rejects_placeholder_hardware_serials() {
+        assert!(is_usable_hardware_serial("K5J0220408003290"));
+        assert!(!is_usable_hardware_serial(""));
+        assert!(!is_usable_hardware_serial("unknown"));
+        assert!(!is_usable_hardware_serial("0000000000"));
+        assert!(!is_usable_hardware_serial("0123456789ABCDEF"));
+    }
+
     use super::*;
 
     #[test]

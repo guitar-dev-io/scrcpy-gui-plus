@@ -113,19 +113,22 @@ export default function SessionBehavior({ config, setConfig }: SessionBehaviorPr
             aria-checked={checked}
             aria-label={label}
             onClick={() => onChange(!checked)}
-            className="group flex w-full cursor-pointer items-center justify-between gap-3 rounded-[var(--radius-md)] px-2 py-1.5 text-left transition-colors hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
+            className="group flex w-full cursor-pointer items-center justify-between gap-3 rounded-[var(--radius-md)] px-2 py-2 text-left transition-colors hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
         >
-            <div className="flex items-center gap-2 min-w-0">
-                <div className={`p-1 rounded-md shrink-0 transition-colors ${checked ? (danger ? 'bg-red-500/10 text-red-500' : 'bg-primary/10 text-primary') : 'bg-zinc-800/50 text-zinc-500 group-hover:text-zinc-300'}`}>
+            <div className="flex min-w-0 items-start gap-2.5">
+                <div className={`mt-0.5 p-1 rounded-md shrink-0 transition-colors ${checked ? (danger ? 'bg-red-500/10 text-red-500' : 'bg-primary/10 text-primary') : 'bg-[var(--bg-hover)] text-[var(--text-subtle)]'}`}>
                     <Icon size={12} />
                 </div>
-                <div className="flex items-center gap-1.5 min-w-0">
-                    <span className={`truncate text-[var(--font-size-body-sm)] font-medium transition-colors ${checked ? (danger ? 'text-red-400' : 'text-zinc-200') : 'text-zinc-500 group-hover:text-zinc-400'}`}>
+                {/* An off switch is a choice, not a disabled control, so the
+                    label keeps full contrast and the explanation is shown
+                    inline instead of behind a hover-only tooltip. */}
+                <div className="min-w-0">
+                    <span className={`block truncate text-[11px] font-medium ${checked && danger ? 'text-red-400' : 'text-[var(--text-base)]'}`}>
                         {label}
                     </span>
-                    <div className="shrink-0">
-                        <Tooltip text={tooltip} />
-                    </div>
+                    <span className="mt-0.5 block text-[9px] leading-snug text-[var(--text-subtle)]">
+                        {tooltip}
+                    </span>
                 </div>
             </div>
             <div className={`w-6 h-3.5 shrink-0 rounded-full p-0.5 transition-all duration-300 ${checked ? (danger ? 'bg-red-600' : 'bg-primary') : 'bg-zinc-800'}`}>

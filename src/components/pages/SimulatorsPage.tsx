@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import {
   Apple,
   Boxes,
-  MonitorSmartphone,
   RefreshCw,
   Smartphone,
 } from 'lucide-react'
@@ -12,6 +11,8 @@ import IosWorkspaceStage from '../dashboard/IosWorkspaceStage'
 import type { IosDeviceInfo } from '../../hooks/useIosMirror'
 import type { SimScreenshotResult, SimulatorDevice } from '../../types/simDeck'
 import type { ToolbarNotifier } from '../device-control-toolbar'
+import { useI18n } from '../../i18n'
+import PageTitle, { PAGE_HEADER_CLASS } from '../ui/PageTitle'
 
 type DeviceSourceTab = 'simdeck' | 'android' | 'ios'
 
@@ -47,6 +48,7 @@ export default function SimulatorsPage({
   onOpenIos,
   onIosFrame,
 }: SimulatorsPageProps) {
+  const { t } = useI18n()
   const [source, setSource] = useState<DeviceSourceTab>('simdeck')
   const [androidSerial, setAndroidSerial] = useState('')
   const [iosUdid, setIosUdid] = useState('')
@@ -78,21 +80,12 @@ export default function SimulatorsPage({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col px-4 pb-6 lg:px-6">
-      <header className="flex min-h-[72px] flex-wrap items-center gap-4 border-b border-[var(--border-subtle)] py-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-primary/25 bg-primary/10 text-primary">
-            <MonitorSmartphone size={16} aria-hidden="true" />
-          </span>
-          <div className="min-w-0">
-            <h1 className="text-lg font-semibold text-[var(--text-base)]">
-              Device Lab
-            </h1>
-            <p className="mt-1 text-[10px] text-[var(--text-subtle)]">
-              SimDeck simulators and physical Android/iOS devices, separated by
-              source.
-            </p>
-          </div>
-        </div>
+      <header className={PAGE_HEADER_CLASS}>
+        <PageTitle
+          route="simulators"
+          title={t('pages.deviceLab.title')}
+          subtitle={t('pages.deviceLab.subtitle')}
+        />
 
         <div className="ml-auto flex items-center gap-2">
           <div className="flex rounded-xl border border-[var(--border-base)] bg-[var(--bg-surface)] p-1">

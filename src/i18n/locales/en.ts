@@ -736,6 +736,12 @@ export const en = {
     liveView: 'Live View',
     connecting: 'Connecting...',
     streamError: 'Stream stopped',
+    streamErrorHint_xcode:
+      'Xcode Simulator tools could not be loaded. Install Xcode, then run "sudo xcode-select -s /Applications/Xcode.app" and reconnect.',
+    streamErrorHint_simdeck:
+      'SimDeck is not responding. Make sure SimDeck is running, then reconnect.',
+    streamErrorHint_generic: 'The simulator stream stopped unexpectedly. Try reconnecting.',
+    streamErrorDetails: 'Technical details',
     tapToType: 'Type text to send to the simulator',
     status_idle: 'idle',
     status_connecting: 'connecting',
@@ -1438,6 +1444,137 @@ export const en = {
       device_disconnected: 'Device disconnected or not found.',
       timeout: 'The operation timed out.',
       failed: 'Could not list this folder.',
+    },
+  },
+  settings: {
+    sections: 'Settings sections',
+    tabs: {
+      general: 'General',
+      advanced: 'Advanced',
+      shortcuts: 'Shortcuts',
+      about: 'About',
+    },
+    tabDescriptions: {
+      general: 'Session behavior and recording',
+      advanced: 'scrcpy launch options and tools',
+      shortcuts: 'Keyboard shortcuts',
+      about: 'Version and diagnostics',
+    },
+  },
+  nav: {
+    primaryNavigation: 'Primary navigation',
+    collapseSidebar: 'Collapse sidebar',
+    expandSidebar: 'Expand sidebar',
+    groups: {
+      main: 'Main',
+      testing: 'Testing',
+      tools: 'Tools',
+      system: 'System',
+    },
+    routes: {
+      dashboard: 'Dashboard',
+      devices: 'Devices',
+      'pair-device': 'Connect Device',
+      'device-wall': 'Device Wall',
+      sessions: 'Sessions',
+      screenshots: 'Screenshots',
+      recordings: 'Recordings',
+      automation: 'Automation',
+      'script-manager': 'Script Manager',
+      'task-scheduler': 'Test Session',
+      'app-manager': 'App Manager',
+      'apk-toolkit': 'APK Toolkit',
+      simulators: 'Device Lab',
+      'file-explorer': 'File Explorer',
+      'logcat-viewer': 'Logcat Viewer',
+      'input-control': 'Input Control',
+      'qr-studio': 'QR Studio',
+      settings: 'Settings',
+    },
+    families: {
+      devices: 'Devices',
+      media: 'Media & History',
+      automation: 'Automation',
+    },
+    tabs: {
+      devices: 'Cards',
+      'device-wall': 'Live wall',
+      screenshots: 'Screenshots',
+      recordings: 'Recordings',
+      sessions: 'Sessions',
+      automation: 'Macros & Batch',
+      'script-manager': 'Flows & Scripts',
+      'task-scheduler': 'Test Session',
+    },
+  },
+  pages: {
+    devices: {
+      title: 'Devices',
+      connected: '{count} connected devices',
+      connectedOne: '{count} connected device',
+    },
+    deviceWall: {
+      title: 'Device Wall',
+      devices: '{count} devices',
+      online: '{count} online',
+      busy: '{count} busy',
+      offline: '{count} offline',
+    },
+    connectDevice: {
+      title: 'Connect a Device',
+      subtitle:
+        'Pick how the phone is attached. Discovery, history and auto-reconnect are shared across all three.',
+    },
+    sessions: {
+      title: 'Sessions',
+      active: '{count} active sessions',
+      activeOne: '{count} active session',
+    },
+    screenshots: {
+      title: 'Screenshots',
+      saved: '{count} saved screenshots',
+      savedOne: '{count} saved screenshot',
+    },
+    recordings: {
+      title: 'Recordings',
+      saved: '{count} saved recordings',
+      savedOne: '{count} saved recording',
+    },
+    automation: {
+      title: 'Automation',
+      subtitle: 'Record macros or run one Maestro flow across current, selected, or grouped devices.',
+    },
+    scriptManager: {
+      title: 'Script Manager',
+      subtitle: 'Build ADB scripts around an app package and run a repeatable smoke test.',
+    },
+    testSession: {
+      title: 'Test Session',
+      subtitle: 'Run a scripted test session and export a device summary report.',
+    },
+    apkToolkit: {
+      title: 'APK Toolkit',
+      subtitle: 'Inspect and compare local Android packages without connecting a device.',
+    },
+    deviceLab: {
+      title: 'Device Lab',
+      subtitle: 'SimDeck simulators and physical Android/iOS devices, separated by source.',
+    },
+    logcat: {
+      title: 'Logcat Viewer',
+      subtitle: 'Stream, filter, and export logcat output from the active device.',
+    },
+    performance: {
+      title: 'Performance',
+      subtitle: 'Monitor mirroring FPS, bitrate, codec, and dropped frames.',
+    },
+    inputControl: {
+      title: 'Input Control',
+      subtitle: 'Build on-screen keymap profiles and bind keyboard shortcuts to taps.',
+    },
+    settings: {
+      title: 'Settings',
+      subtitle: 'Configure application preferences and existing device controls.',
     },
   },
 }

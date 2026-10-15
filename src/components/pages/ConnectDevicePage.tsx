@@ -19,6 +19,8 @@ import QrPairingDisplay, {
 import { useWirelessPairing } from '../../hooks/useWirelessPairing'
 import { looksLikeIpPort, type PairingOutcome } from '../../types/pairingWizard'
 import type { ToolbarNotifier } from '../device-control-toolbar'
+import { useI18n } from '../../i18n'
+import PageTitle, { PAGE_HEADER_CLASS } from '../ui/PageTitle'
 
 export type ConnectTabId = 'qr' | 'wireless' | 'usb'
 
@@ -160,6 +162,7 @@ export default function ConnectDevicePage({
   companionPanel,
   initialTab = 'qr',
 }: ConnectDevicePageProps) {
+  const { t } = useI18n()
   const wizard = useWirelessPairing({
     pairDevice,
     connectDevice,
@@ -239,16 +242,12 @@ export default function ConnectDevicePage({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col px-4 pb-6 lg:px-6">
-      <header className="flex min-h-[88px] flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] py-5">
-        <div>
-          <h1 className="text-2xl font-bold text-[var(--text-base)]">
-            Connect a Device
-          </h1>
-          <p className="mt-1.5 text-[12px] text-[var(--text-subtle)]">
-            Pick how the phone is attached. Discovery, history and auto-reconnect
-            are shared across all three.
-          </p>
-        </div>
+      <header className={PAGE_HEADER_CLASS}>
+        <PageTitle
+          route="pair-device"
+          title={t('pages.connectDevice.title')}
+          subtitle={t('pages.connectDevice.subtitle')}
+        />
         <span className="flex items-center gap-2 rounded-full border border-[var(--border-base)] px-3 py-1.5 text-[11px] text-[var(--text-muted)]">
           <Smartphone size={13} className="text-primary" />
           {devices.length} connected

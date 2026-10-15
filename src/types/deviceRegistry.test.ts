@@ -1,5 +1,6 @@
 import {
   AGENT_ONLY_ID_PREFIX,
+  collapseStaleWifiRecords,
   deriveDeviceConnectionState,
   deriveDeviceState,
   discoveryRecordsFromResponse,
@@ -8,6 +9,7 @@ import {
   mergeDiscoveryRecords,
   normalizeAdbState,
   type DeviceRegistryMap,
+  type RegisteredDevice,
 } from './deviceRegistry'
 
 describe('device registry', () => {
@@ -284,5 +286,83 @@ describe('mergeDiscoveryRecords auto-match with an Agent placeholder', () => {
     expect(result.registry['192.168.1.50:5555'].agent).toBeUndefined()
     expect(result.registry[`${AGENT_ONLY_ID_PREFIX}agent-1`]).toBeDefined()
     expect(result.registry[`${AGENT_ONLY_ID_PREFIX}agent-2`]).toBeDefined()
+  })
+})
+
+describe('collapseStaleWifiRecords', () => {
+  const record = (
+    serial: string,
+    adbState: RegisteredDevice['adbState'],
+    lastSeen: string,
+  ): RegisteredDevice => ({
+    id: serial,
+    serial,
+    adbState,
+    connectionType: serial.includes(':') ? 'wifi' : 'usb',
+    ipAddress: serial.includes(':') ? serial.split(':')[0] : undefined,
+    firstSeen: '2026-09-01T00:00:00.000Z',
+    lastSeen,
+  })
+
+  it('keeps only the newest stale record per Wi-Fi host', () => {
+    const result = collapseStaleWifiRecords([
+      record('10.0.0.5:38005', 'disconnected', '2026-09-10T10:00:00.000Z'),
+      record('10.0.0.5:41291', 'disconnected', '2026-09-10T12:00:00.000Z'),
+      record('10.0.0.5:43865', 'disconnected', '2026-09-10T11:00:00.000Z'),
+      record('10.0.0.9:36957', 'disconnected', '2026-09-09T11:00:00.000Z'),
+    ])
+    expect(result.map((device) => device.serial)).toEqual([
+      '10.0.0.5:41291',
+      '10.0.0.9:36957',
+    ])
+  })
+
+  it('drops stale records when the same host is online', () => {
+    const result = collapseStaleWifiRecords([
+      record('10.0.0.5:38005', 'disconnected', '2026-09-10T10:00:00.000Z'),
+      record('10.0.0.5:40069', 'device', '2026-09-10T09:00:00.000Z'),
+    ])
+    expect(result.map((device) => device.serial)).toEqual(['10.0.0.5:40069'])
+  })
+
+  const withHardwareSerial = (device: RegisteredDevice, hardwareSerial: string): RegisteredDevice => ({
+    ...device,
+    health: { success: true, hardwareSerial },
+  })
+
+  it('groups stale records from different networks by hardware serial', () => {
+    const result = collapseStaleWifiRecords([
+      withHardwareSerial(record('10.0.0.5:38005', 'disconnected', '2026-09-10T10:00:00.000Z'), 'HW-1'),
+      withHardwareSerial(record('192.168.1.9:36957', 'disconnected', '2026-09-11T10:00:00.000Z'), 'HW-1'),
+      withHardwareSerial(record('192.168.1.10:40001', 'disconnected', '2026-09-09T10:00:00.000Z'), 'HW-2'),
+    ])
+    expect(result.map((device) => device.serial)).toEqual([
+      '192.168.1.9:36957',
+      '192.168.1.10:40001',
+    ])
+  })
+
+  it('drops a stale Wi-Fi record while the same phone is online over USB', () => {
+    const result = collapseStaleWifiRecords([
+      withHardwareSerial(record('10.0.0.5:38005', 'disconnected', '2026-09-10T10:00:00.000Z'), 'HW-1'),
+      withHardwareSerial(record('HW-1', 'device', '2026-09-12T10:00:00.000Z'), 'HW-1'),
+    ])
+    expect(result.map((device) => device.serial)).toEqual(['HW-1'])
+  })
+
+  it('never drops USB records and orders busy, online, then offline', () => {
+    const result = collapseStaleWifiRecords(
+      [
+        record('usb-offline', 'disconnected', '2026-09-12T00:00:00.000Z'),
+        record('usb-online', 'device', '2026-09-01T00:00:00.000Z'),
+        record('usb-busy', 'device', '2026-09-02T00:00:00.000Z'),
+      ],
+      new Set(['usb-busy']),
+    )
+    expect(result.map((device) => device.serial)).toEqual([
+      'usb-busy',
+      'usb-online',
+      'usb-offline',
+    ])
   })
 })

@@ -4,6 +4,7 @@ import CustomCommand from '../custom-command'
 import AppTestPanel from '../script-manager/AppTestPanel'
 import MaestroBuilder from '../maestro-builder/MaestroBuilder'
 import type { ToolbarNotifier } from '../device-control-toolbar'
+import { useI18n } from '../../i18n'
 
 interface ScriptManagerPageProps {
   activeDevice: string
@@ -30,6 +31,7 @@ export default function ScriptManagerPage({
   outputDir,
   notify,
 }: ScriptManagerPageProps) {
+  const { t } = useI18n()
   const [packageName, setPackageName] = useState(() =>
     localStorage.getItem('scrcpy_script_manager_package') ?? '',
   )
@@ -47,9 +49,9 @@ export default function ScriptManagerPage({
             <Braces size={16} aria-hidden="true" />
           </span>
           <div className="min-w-0">
-            <h1 className={tab === 'maestro' ? 'text-[9px] font-semibold text-[var(--text-subtle)]' : 'text-lg font-semibold text-[var(--text-base)]'}>Script Manager</h1>
+            <h1 className={tab === 'maestro' ? 'text-[9px] font-semibold text-[var(--text-subtle)]' : 'text-lg font-semibold text-[var(--text-base)]'}>{t('pages.scriptManager.title')}</h1>
             <p className={`mt-1 text-[10px] text-[var(--text-subtle)] ${tab === 'maestro' ? 'hidden' : ''}`}>
-              Build ADB scripts around an app package and run a repeatable smoke test.
+              {t('pages.scriptManager.subtitle')}
             </p>
           </div>
         </div>

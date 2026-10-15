@@ -127,8 +127,8 @@ export default function SessionControlPanel({
           <div className="space-y-4">
             <section>
               <h2 className="mb-2 text-[9px] font-semibold uppercase tracking-[.08em] text-[var(--text-muted)]">Session</h2>
-              <Switch checked={config.stayAwake || false} onChange={(value) => onUpdateConfig('stayAwake', value)} label="Keep Screen On" />
-              <Switch checked={config.keepActive || false} onChange={(value) => onUpdateConfig('keepActive', value)} label="Stay Awake" />
+              <Switch checked={config.stayAwake || false} onChange={(value) => onUpdateConfig('stayAwake', value)} label="Stay Awake" />
+              <Switch checked={config.keepActive || false} onChange={(value) => onUpdateConfig('keepActive', value)} label="Keep Active" />
               <Switch
                 checked={status?.autoRotate ?? false}
                 disabled={!activeDevice || status?.autoRotate === undefined || Boolean(pending.auto_rotate_on || pending.auto_rotate_off)}

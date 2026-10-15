@@ -196,10 +196,19 @@ export default function QrStudioPage({
         )}
       </div>
 
+      {/*
+        Transient status toast. It lives in a reserved, non-scrolling flex lane
+        (shrink-0) after the scroll panel rather than as an absolute overlay, so
+        it can never paint over scrollable content such as the "Open on all
+        devices" broadcast button in the Device Actions panel. The lane keeps a
+        fixed height whether or not a message is showing, so toasts appear and
+        clear without shifting the layout. Placement (bottom-centered), the
+        role/aria-live announcement and the auto-clear timer are unchanged.
+      */}
       <div
         role="status"
         aria-live="polite"
-        className="pointer-events-none absolute bottom-4 left-1/2 z-10 -translate-x-1/2"
+        className="pointer-events-none flex h-12 shrink-0 items-center justify-center px-4"
       >
         {status && (
           <p className="rounded-lg border border-[#2a3749] bg-[#0d1725] px-4 py-2 text-[11px] text-slate-100 shadow-lg">

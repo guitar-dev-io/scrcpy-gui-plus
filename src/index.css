@@ -571,3 +571,13 @@ body {
 [data-mode='light'] .qr-studio-root .text-zinc-300 {
   color: var(--qr-text);
 }
+
+/* Letter-spaced uppercase labels are a Latin typographic device. On Thai and
+   CJK text the extra tracking splits words into loose characters, so drop it
+   whenever the UI language is one of those scripts. Unlayered, so it wins
+   over the Tailwind tracking-* utilities. */
+:root:lang(th) [class*='tracking-'],
+:root:lang(zh-CN) [class*='tracking-'],
+:root:lang(zh-TW) [class*='tracking-'] {
+  letter-spacing: normal;
+}

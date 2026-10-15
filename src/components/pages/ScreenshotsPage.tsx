@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react'
 import { useI18n } from '../../i18n'
+import PageTitle, { PAGE_HEADER_CLASS } from '../ui/PageTitle'
 import AutoScreenCapturePanel, {
   type AutoScreenCapturePanelProps,
 } from '../auto-capture/AutoScreenCapturePanel'
@@ -283,16 +284,12 @@ export default function ScreenshotsPage({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col px-4 pb-6 lg:px-6">
-      <header className="flex min-h-[72px] flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] py-4">
-        <div>
-          <h1 className="text-lg font-semibold text-[var(--text-base)]">
-            Screenshots
-          </h1>
-          <p className="mt-1 text-[10px] text-[var(--text-subtle)]">
-            {history.length} saved{' '}
-            {history.length === 1 ? 'screenshot' : 'screenshots'}
-          </p>
-        </div>
+      <header className={PAGE_HEADER_CLASS}>
+        <PageTitle
+          route="screenshots"
+          title={t('pages.screenshots.title')}
+          subtitle={t(history.length === 1 ? 'pages.screenshots.savedOne' : 'pages.screenshots.saved', { count: history.length })}
+        />
 
         <div className="flex flex-wrap items-center gap-2">
           {captureSource && (

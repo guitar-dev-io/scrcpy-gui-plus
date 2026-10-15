@@ -111,7 +111,7 @@ export default function TestSession({
     const info = session.summary?.deviceInfo;
 
     const dialogClassName = embedded
-        ? 'relative w-full h-full min-h-0 flex flex-col bg-zinc-950/95 border border-zinc-800 rounded-3xl shadow-2xl overflow-hidden'
+        ? 'relative w-full h-full min-h-0 flex flex-col overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]'
         : 'relative w-full max-w-xl max-h-[90vh] flex flex-col bg-zinc-950/95 border border-zinc-800 rounded-3xl shadow-2xl overflow-hidden backdrop-blur-2xl animate-in zoom-in-95 fade-in duration-200';
 
     return (
@@ -119,16 +119,24 @@ export default function TestSession({
             {!embedded && <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={onClose} />}
             <div className={dialogClassName}>
                 {/* Header */}
-                <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800/60">
+                <div className={`flex items-center justify-between border-b ${embedded ? 'border-[var(--border-subtle)] px-4 py-2.5' : 'border-zinc-800/60 px-6 py-4'}`}>
                     <div className="flex items-center gap-2">
                         <FlaskConical size={18} className="text-primary" />
                         <div>
-                            <h3 className="text-sm font-black uppercase tracking-widest text-white">
-                                {t('testSession.title')}
-                            </h3>
-                            <p className="text-[9px] text-zinc-500 tracking-wide">
+                            {embedded ? (
+                              <h3 className="text-[11px] font-semibold text-[var(--text-base)]">
                                 {activeDevice || t('testSession.noDevice')}
-                            </p>
+                              </h3>
+                            ) : (
+                              <>
+                                <h3 className="text-sm font-black uppercase tracking-widest text-white">
+                                  {t('testSession.title')}
+                                </h3>
+                                <p className="text-[9px] text-zinc-500 tracking-wide">
+                                  {activeDevice || t('testSession.noDevice')}
+                                </p>
+                              </>
+                            )}
                         </div>
                         {session.running && (
                             <span className="flex items-center gap-1 ml-2">

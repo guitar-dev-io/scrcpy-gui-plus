@@ -34,10 +34,14 @@ describe('SessionControlPanel', () => {
     const user = userEvent.setup()
     const { onUpdateConfig, onUpdateDeviceSetting } = renderPanel()
 
-    await user.click(screen.getByRole('switch', { name: 'Keep Screen On' }))
+    await user.click(screen.getByRole('switch', { name: 'Stay Awake' }))
+    await user.click(screen.getByRole('switch', { name: 'Keep Active' }))
     await user.click(screen.getByRole('switch', { name: 'Auto Rotate' }))
 
+    // Same names as Settings > Session Behavior and the scrcpy flags
+    // (--stay-awake, --keep-active), so one label never means two settings.
     expect(onUpdateConfig).toHaveBeenCalledWith('stayAwake', true)
+    expect(onUpdateConfig).toHaveBeenCalledWith('keepActive', true)
     expect(onUpdateDeviceSetting).toHaveBeenCalledWith('auto_rotate_off')
   })
 

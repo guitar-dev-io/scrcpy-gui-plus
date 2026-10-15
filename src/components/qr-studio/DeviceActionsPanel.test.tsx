@@ -45,7 +45,9 @@ const decodeMock = vi.mocked(decodeQrImage)
 const iso = '2026-01-01T00:00:00.000Z'
 function rec(
   id: string,
-  over: Omit<Partial<QrRecord>, 'source'> & { source?: QrRecord['source'] | null } = {},
+  over: Omit<Partial<QrRecord>, 'source'> & {
+    source?: QrRecord['source'] | null
+  } = {},
 ): Record<string, unknown> {
   const { source, ...rest } = over
   return {
@@ -583,6 +585,30 @@ describe('Deep link test', () => {
       screen.getByRole('button', { name: 'Use the Deep Link Builder output' }),
     )
     expect(screen.getByLabelText('URI')).toHaveValue('myapp://built/path')
+  })
+
+  it('keeps the broadcast button and its result strip together in the deep link card after a broadcast', async () => {
+    render(<Harness />)
+    const card = screen.getByRole('region', { name: 'Deep link test' })
+    const broadcast = within(card).getByRole('button', {
+      name: 'Open on all devices',
+    })
+    expect(broadcast).toBeInTheDocument()
+
+    // A broadcast still renders its own result strip below the button, and the
+    // success summary does not remove or replace the button.
+    fireEvent.change(screen.getByLabelText('URI'), {
+      target: { value: 'myapp://item?id=1&x=2' },
+    })
+    fireEvent.click(broadcast)
+    expect(
+      await within(card).findByRole('status', {
+        name: 'Last broadcast result',
+      }),
+    ).toHaveTextContent('Opened on 1 of 1 device')
+    expect(
+      within(card).getByRole('button', { name: 'Open on all devices' }),
+    ).toBeInTheDocument()
   })
 })
 

@@ -275,13 +275,20 @@ describe('QrStudioPage', () => {
   it('keeps all five numbered cards, dropping subtitles in a compact container', () => {
     const wide = renderPage({ initialWidth: 1300 })
     expect(screen.getByRole('tab', { name: 'Templates' })).toBeVisible()
-    expect(screen.getByRole('tablist', { name: 'QR Studio sections' })).not.toHaveAttribute('data-compact')
+    expect(
+      screen.getByRole('tablist', { name: 'QR Studio sections' }),
+    ).not.toHaveAttribute('data-compact')
     wide.unmount()
 
     renderPage({ initialWidth: 900 })
     expect(screen.getAllByRole('tab')).toHaveLength(5)
-    expect(screen.getByRole('tablist', { name: 'QR Studio sections' })).toHaveAttribute('data-compact', 'true')
-    expect(screen.getByRole('tab', { name: 'Templates' })).toHaveAttribute('aria-label', 'Templates')
+    expect(
+      screen.getByRole('tablist', { name: 'QR Studio sections' }),
+    ).toHaveAttribute('data-compact', 'true')
+    expect(screen.getByRole('tab', { name: 'Templates' })).toHaveAttribute(
+      'aria-label',
+      'Templates',
+    )
   })
 
   it('keeps the unsaved draft when switching destinations and back', () => {
@@ -548,7 +555,9 @@ describe('QrStudioPage', () => {
         'aria-selected',
         'true',
       )
-      expect(screen.getByRole('heading', { name: 'Decoder' })).toBeInTheDocument()
+      expect(
+        screen.getByRole('heading', { name: 'Decoder' }),
+      ).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Decoder' })).toHaveAttribute(
         'aria-current',
         'true',
@@ -598,25 +607,40 @@ describe('QrStudioPage', () => {
       expect(root).toHaveAttribute('data-layout', 'wide')
       const form = screen.getByRole('heading', { name: 'Create QR Code' })
       const preview = screen.getByRole('heading', { name: 'Live Preview' })
-      const deviceActions = screen.getByRole('heading', { name: 'Device Actions' })
+      const deviceActions = screen.getByRole('heading', {
+        name: 'Device Actions',
+      })
       const tools = screen.getByRole('heading', { name: 'Tools' })
       const order = (a: Node, b: Node) =>
         Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING)
       expect(order(form, preview)).toBe(true)
       expect(order(preview, deviceActions)).toBe(true)
       expect(order(deviceActions, tools)).toBe(true)
-      expect(screen.getByText(/1024 × 1024 · PNG · Error correction: M/)).toBeInTheDocument()
+      expect(
+        screen.getByText(/1024 × 1024 · PNG · Error correction: M/),
+      ).toBeInTheDocument()
       for (const name of ['Download PNG', 'Download SVG']) {
-        expect(screen.getByRole('button', { name: new RegExp(name) })).toBeInTheDocument()
+        expect(
+          screen.getByRole('button', { name: new RegExp(name) }),
+        ).toBeInTheDocument()
       }
-      expect(screen.getByRole('heading', { name: 'Quality Check' })).toBeInTheDocument()
-      expect(screen.getByRole('heading', { name: 'Decode Test' })).toBeInTheDocument()
-      expect(screen.getByRole('heading', { name: 'Export Options' })).toBeInTheDocument()
+      expect(
+        screen.getByRole('heading', { name: 'Quality Check' }),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByRole('heading', { name: 'Decode Test' }),
+      ).toBeInTheDocument()
+      expect(
+        screen.getByRole('heading', { name: 'Export Options' }),
+      ).toBeInTheDocument()
     })
 
     it('stacks the aside under the preview at 1024 and toggles QR Code / Design View', () => {
       const { container } = renderPage({ initialWidth: 1024 })
-      expect(container.querySelector('[data-layout]')).toHaveAttribute('data-layout', 'medium')
+      expect(container.querySelector('[data-layout]')).toHaveAttribute(
+        'data-layout',
+        'medium',
+      )
       expect(screen.getByRole('heading', { name: 'Tools' })).toBeInTheDocument()
       const qr = screen.getByRole('button', { name: 'QR Code' })
       const design = screen.getByRole('button', { name: 'Design View' })
@@ -629,18 +653,48 @@ describe('QrStudioPage', () => {
 
     it('jumps to the real destinations from the aside shortcut cards', () => {
       renderPage({ initialWidth: 1300 })
-      fireEvent.click(screen.getByRole('button', { name: 'Open Device Actions' }))
-      expect(screen.getByRole('tab', { name: 'Device Actions' })).toHaveAttribute('aria-selected', 'true')
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Open Device Actions' }),
+      )
+      expect(
+        screen.getByRole('tab', { name: 'Device Actions' }),
+      ).toHaveAttribute('aria-selected', 'true')
       openTab('Create')
       fireEvent.click(screen.getByRole('button', { name: 'Open Tools' }))
-      expect(screen.getByRole('tab', { name: 'Tools' })).toHaveAttribute('aria-selected', 'true')
+      expect(screen.getByRole('tab', { name: 'Tools' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      )
+    })
+
+    it('keeps the status toast in a reserved non-scrolling lane so it never overlays the scroll panel', () => {
+      const { container } = renderPage()
+      const root = container.firstElementChild as HTMLElement
+      const panel = root.querySelector('[role=tabpanel]') as HTMLElement
+      const statusLane = root.querySelector(
+        ':scope > [role=status][aria-live=polite]',
+      ) as HTMLElement
+      expect(statusLane).toBeTruthy()
+      // The toast lane is a flow sibling after the scroll panel, not an absolute
+      // overlay painted over it, so it cannot cover controls like the Device
+      // Actions broadcast button while the panel is scrolled.
+      expect(statusLane.className).not.toMatch(/\babsolute\b/)
+      expect(statusLane.className).toMatch(/\bshrink-0\b/)
+      expect(
+        panel.compareDocumentPosition(statusLane) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy()
     })
 
     it('marks the page root with the qr-studio-root token scope', () => {
       const { container } = renderPage()
       expect(container.firstElementChild).toHaveClass('qr-studio-root')
-      expect(screen.getByRole('heading', { name: 'Create QR Code' }).className).toContain('var(--qr-text)')
-      expect(screen.getByRole('heading', { name: 'Live Preview' }).className).toContain('var(--qr-text)')
+      expect(
+        screen.getByRole('heading', { name: 'Create QR Code' }).className,
+      ).toContain('var(--qr-text)')
+      expect(
+        screen.getByRole('heading', { name: 'Live Preview' }).className,
+      ).toContain('var(--qr-text)')
     })
 
     it('shows only the friendly desktop message when the Tauri runtime is missing', async () => {
@@ -650,10 +704,16 @@ describe('QrStudioPage', () => {
       )
       vi.spyOn(console, 'error').mockImplementation(() => undefined)
       renderPage({ initialWidth: 1300 })
-      fireEvent.change(screen.getByLabelText('URL'), { target: { value: 'https://example.com' } })
+      fireEvent.change(screen.getByLabelText('URL'), {
+        target: { value: 'https://example.com' },
+      })
       const status = await screen.findAllByText('Requires the desktop app')
       expect(status.length).toBeGreaterThan(0)
-      expect(screen.queryByText(/Cannot read properties|reading 'invoke'|Preview failed/)).not.toBeInTheDocument()
+      expect(
+        screen.queryByText(
+          /Cannot read properties|reading 'invoke'|Preview failed/,
+        ),
+      ).not.toBeInTheDocument()
     })
   })
 })

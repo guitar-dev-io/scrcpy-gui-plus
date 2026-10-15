@@ -1,3 +1,5 @@
+import type { AppRouteId } from '../../navigation/appRoutes'
+import { I18nProvider } from '../../i18n'
 import { fireEvent, render, screen } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -13,7 +15,7 @@ const useDeviceStatusMock = vi.mocked(useDeviceStatus)
 
 function renderNavigation(
   navigation: ReactElement,
-  initialRoute: 'dashboard' | 'devices' = 'dashboard',
+  initialRoute: AppRouteId = 'dashboard',
 ) {
   return render(
     <ShellUiProvider initialRoute={initialRoute} initialOpenWorkspaceTools={[]}>
@@ -37,10 +39,36 @@ describe('AppNavigation', () => {
 
     expect(screen.getByRole('button', { name: 'Devices' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('button', { name: 'Automation' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Script Manager' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Script Manager' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Device Wall' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Shell Terminal' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Media & History' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'QR Studio' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Test Runs' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Test Cases' })).not.toBeInTheDocument()
+  })
+
+  it('translates entries, families and group headers', () => {
+    render(
+      <I18nProvider initialLocale="th">
+        <ShellUiProvider initialRoute="device-wall" initialOpenWorkspaceTools={[]}>
+          <AppNavigation />
+        </ShellUiProvider>
+      </I18nProvider>,
+    )
+
+    expect(screen.getByRole('button', { name: 'อุปกรณ์' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('button', { name: 'สื่อและประวัติ' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'เครื่องมือ' })).toBeInTheDocument()
+  })
+
+  it('marks a family entry current while one of its member pages is open', () => {
+    const wall = renderNavigation(<AppNavigation />, 'device-wall')
+    expect(screen.getByRole('button', { name: 'Devices' })).toHaveAttribute('aria-current', 'page')
+    wall.unmount()
+
+    renderNavigation(<AppNavigation />, 'script-manager')
+    expect(screen.getByRole('button', { name: 'Automation' })).toHaveAttribute('aria-current', 'page')
   })
 
   it('supports a compact state without removing accessible navigation names', () => {
@@ -56,13 +84,14 @@ describe('AppNavigation', () => {
   it('collapses navigation groups and remembers their state', () => {
     const firstRender = renderNavigation(<AppNavigation />)
 
+    expect(screen.getByRole('button', { name: 'App Manager' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Tools' }))
-    expect(screen.queryByRole('button', { name: 'Shell Terminal' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'App Manager' })).not.toBeInTheDocument()
 
     firstRender.unmount()
     renderNavigation(<AppNavigation />)
     expect(screen.getByRole('button', { name: 'Tools' })).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByRole('button', { name: 'Shell Terminal' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'App Manager' })).not.toBeInTheDocument()
   })
 
   it('shows verified device metadata and exposes the real session action', () => {

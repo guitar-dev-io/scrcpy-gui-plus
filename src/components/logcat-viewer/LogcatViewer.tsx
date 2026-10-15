@@ -94,7 +94,7 @@ export default function LogcatViewer({
   const disabled = !activeDevice
 
   const dialogClassName = embedded
-    ? 'relative w-full h-full min-h-0 flex flex-col bg-zinc-950/95 border border-zinc-800 rounded-3xl shadow-2xl overflow-hidden'
+    ? 'relative w-full h-full min-h-0 flex flex-col overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]'
     : 'relative w-full max-w-4xl max-h-[90vh] flex flex-col bg-zinc-950/95 border border-zinc-800 rounded-3xl shadow-2xl overflow-hidden backdrop-blur-2xl animate-in zoom-in-95 fade-in duration-200'
 
   return (
@@ -107,16 +107,24 @@ export default function LogcatViewer({
       )}
       <div role={embedded ? undefined : 'dialog'} aria-modal={embedded ? undefined : true} aria-labelledby={embedded ? undefined : 'logcat-viewer-title'} className={dialogClassName}>
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800/60">
+        <div className={`flex items-center justify-between border-b ${embedded ? 'border-[var(--border-subtle)] px-4 py-2.5' : 'border-zinc-800/60 px-6 py-4'}`}>
           <div className="flex items-center gap-2">
             <ScrollText size={18} className="text-primary" />
             <div>
-              <h3 id="logcat-viewer-title" className="text-sm font-black uppercase tracking-widest text-white">
-                {t('logcat.title')}
-              </h3>
-              <p className="text-[9px] text-zinc-500 tracking-wide">
-                {activeDevice || t('logcat.noDevice')}
-              </p>
+              {embedded ? (
+                <h3 id="logcat-viewer-title" className="text-[11px] font-semibold text-[var(--text-base)]">
+                  {activeDevice || t('logcat.noDevice')}
+                </h3>
+              ) : (
+                <>
+                  <h3 id="logcat-viewer-title" className="text-sm font-black uppercase tracking-widest text-white">
+                    {t('logcat.title')}
+                  </h3>
+                  <p className="text-[9px] text-zinc-500 tracking-wide">
+                    {activeDevice || t('logcat.noDevice')}
+                  </p>
+                </>
+              )}
             </div>
             {logcat.running && (
               <span className="flex items-center gap-1 ml-2">

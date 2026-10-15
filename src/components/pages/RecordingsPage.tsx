@@ -9,6 +9,8 @@ import {
   X,
 } from 'lucide-react'
 import type { RecordingHistoryEntry } from '../../types/history'
+import { useI18n } from '../../i18n'
+import PageTitle, { PAGE_HEADER_CLASS } from '../ui/PageTitle'
 
 export interface RecordingsPageProps {
   /** Existing recording controls. This page never creates or replaces commands. */
@@ -52,17 +54,17 @@ export default function RecordingsPage({
   onRemoveEntry,
   onClearHistory,
 }: RecordingsPageProps) {
+  const { t } = useI18n()
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   return (
     <div className="flex min-h-0 flex-1 flex-col px-4 pb-6 lg:px-6">
-      <header className="flex min-h-[72px] flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] py-4">
-        <div>
-          <h1 className="text-lg font-semibold text-[var(--text-base)]">Recordings</h1>
-          <p className="mt-1 text-[10px] text-[var(--text-subtle)]">
-            {history.length} saved {history.length === 1 ? 'recording' : 'recordings'}
-          </p>
-        </div>
+      <header className={PAGE_HEADER_CLASS}>
+        <PageTitle
+          route="recordings"
+          title={t('pages.recordings.title')}
+          subtitle={t(history.length === 1 ? 'pages.recordings.savedOne' : 'pages.recordings.saved', { count: history.length })}
+        />
         <div className="flex items-center gap-2">
           <span
             className={`rounded-md border px-2.5 py-1.5 text-[9px] font-medium ${

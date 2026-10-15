@@ -26,6 +26,7 @@ import type {
   CompanionScreenState,
 } from '../../types/companion'
 import {
+  collapseStaleWifiRecords,
   deriveDeviceConnectionState,
   deriveDeviceState,
   type RegisteredDevice,
@@ -33,6 +34,8 @@ import {
 import { connectionTypeOf, formatKb } from '../../types/deviceStatus'
 import { useDeviceRecoverySnapshot } from '../../hooks/useDeviceRecoverySnapshot'
 import { deviceConnectionPresentation } from '../../types/deviceConnectionPresentation'
+import { useI18n } from '../../i18n'
+import PageTitle, { PAGE_HEADER_CLASS } from '../ui/PageTitle'
 
 type DeviceFilter = 'all' | 'online' | 'busy' | 'warning' | 'offline'
 type DeviceDensity = 'grid' | 'list'
@@ -467,24 +470,25 @@ export default function DevicesPage({
   iosReady = false,
   onViewIos,
 }: DevicesPageProps) {
+  const { t } = useI18n()
   const [toolsOpen, setToolsOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<DeviceFilter>('all')
   const [density, setDensity] = useState<DeviceDensity>('grid')
   const runningSet = useMemo(() => new Set(runningDevices), [runningDevices])
   const androidDevices = useMemo(() => {
-    const registryBySerial = new Map(
-      registeredDevices.map((device) => [device.serial, device]),
-    )
-    const serials = [
-      ...registeredDevices.map((device) => device.serial),
-      ...devices.filter((serial) => !registryBySerial.has(serial)),
+    const collapsed = collapseStaleWifiRecords(registeredDevices, runningSet)
+    const registered = new Set(registeredDevices.map((device) => device.serial))
+    return [
+      ...collapsed.map((device) => ({
+        serial: device.serial,
+        registeredDevice: device as RegisteredDevice | undefined,
+      })),
+      ...devices
+        .filter((serial) => !registered.has(serial))
+        .map((serial) => ({ serial, registeredDevice: undefined })),
     ]
-    return serials.map((serial) => ({
-      serial,
-      registeredDevice: registryBySerial.get(serial),
-    }))
-  }, [devices, registeredDevices])
+  }, [devices, registeredDevices, runningSet])
   const filteredAndroidDevices = useMemo(() => {
     const query = search.trim().toLowerCase()
     return androidDevices.filter(({ serial, registeredDevice }) => {
@@ -533,16 +537,12 @@ export default function DevicesPage({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col px-4 pb-6 lg:px-6">
-      <header className="flex min-h-[72px] flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] py-4">
-        <div>
-          <h1 className="text-lg font-semibold text-[var(--text-base)]">
-            Devices
-          </h1>
-          <p className="mt-1 text-[10px] text-[var(--text-subtle)]">
-            {connectedDeviceCount} connected{' '}
-            {connectedDeviceCount === 1 ? 'device' : 'devices'}
-          </p>
-        </div>
+      <header className={PAGE_HEADER_CLASS}>
+        <PageTitle
+          route="devices"
+          title={t('pages.devices.title')}
+          subtitle={t(connectedDeviceCount === 1 ? 'pages.devices.connectedOne' : 'pages.devices.connected', { count: connectedDeviceCount })}
+        />
         <div className="flex items-center gap-2">
           <button
             type="button"

@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
+  APP_ROUTE_FAMILIES,
   APP_ROUTES,
   appRouteFromHash,
   appRouteToHash,
+  isNavigationEntryActive,
+  navigationEntries,
+  routeFamilyOf,
 } from './appRoutes'
 
 describe('app route registry', () => {
@@ -23,7 +27,6 @@ describe('app route registry', () => {
       'simulators',
       'file-explorer',
       'logcat-viewer',
-      'performance',
       'input-control',
       'qr-studio',
       'settings',
@@ -40,8 +43,41 @@ describe('app route registry', () => {
     expect(appRouteFromHash('#/pair-device')).toBe('pair-device')
     // Retired path, aliased so old hashes still resolve.
     expect(appRouteFromHash('#/wireless-adb')).toBe('pair-device')
+    expect(appRouteFromHash('#/performance')).toBe('dashboard')
     expect(appRouteFromHash('#/settings/')).toBe('settings')
     expect(appRouteFromHash('#/unknown')).toBe('dashboard')
     expect(appRouteFromHash('')).toBe('dashboard')
+  })
+
+  it('collapses route families into one sidebar entry each', () => {
+    expect(navigationEntries().map((entry) => `${entry.id}:${entry.label}`)).toEqual([
+      'dashboard:Dashboard',
+      'devices:Devices',
+      'pair-device:Connect Device',
+      'screenshots:Media & History',
+      'automation:Automation',
+      'app-manager:App Manager',
+      'apk-toolkit:APK Toolkit',
+      'simulators:Device Lab',
+      'file-explorer:File Explorer',
+      'logcat-viewer:Logcat Viewer',
+      'input-control:Input Control',
+      'qr-studio:QR Studio',
+      'settings:Settings',
+    ])
+  })
+
+  it('keeps every family member routable and marks its entry active', () => {
+    const ids = new Set(APP_ROUTES.map((route) => route.id))
+    for (const family of APP_ROUTE_FAMILIES) {
+      expect(ids.has(family.primary)).toBe(true)
+      for (const member of family.members) {
+        expect(ids.has(member.id)).toBe(true)
+        expect(routeFamilyOf(member.id)).toBe(family)
+        expect(isNavigationEntryActive(family.primary, member.id)).toBe(true)
+      }
+    }
+    expect(isNavigationEntryActive('devices', 'screenshots')).toBe(false)
+    expect(routeFamilyOf('settings')).toBeUndefined()
   })
 })

@@ -2,8 +2,16 @@ import { friendlyMessage } from '../../services/tauriRuntime'
 import { useCallback, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { launchDeepLink } from '../../services/deepLinkService'
-import { captureAndDecode as captureAndDecodeService, sendQrToDevice } from '../../services/qrDeviceService'
-import { detectType, launchableUri, validateUri } from '../../services/qrEncoders'
+import { listSimulators, simulatorAction } from '../../services/simDeckService'
+import {
+  captureAndDecode as captureAndDecodeService,
+  sendQrToDevice,
+} from '../../services/qrDeviceService'
+import {
+  detectType,
+  launchableUri,
+  validateUri,
+} from '../../services/qrEncoders'
 import { qrFileName } from '../../services/qrStudioService'
 import { needsLaunchConfirm } from '../../services/qrStudioStore'
 import type { QrContentType, QrRecord } from '../../types/qrStudio'
@@ -14,12 +22,19 @@ import { renderPngBase64, type QrRenderable } from './qrDownloads'
 import { hasAndroidTarget } from './QrDeviceSelect'
 
 export const CONNECT_TEXT = 'Connect an Android device to use this action'
+export const BROADCAST_CONNECT_TEXT = 'Connect a device to broadcast this link'
 export const NOT_LAUNCHABLE = 'This type is not a launchable link'
 export const INVALID_PHONE = 'Invalid phone number'
 export const NO_HANDLER = 'No app on the device handles this link'
 export const SEND_PNG_SIZE = 1024
 
-export type DeviceActionKey = 'send' | 'open' | 'capture' | 'deeplink' | 'decoded'
+export type DeviceActionKey =
+  | 'send'
+  | 'open'
+  | 'capture'
+  | 'deeplink'
+  | 'decoded'
+  | 'broadcast'
 
 export interface ActionState {
   status: 'idle' | 'running' | 'success' | 'error'
@@ -45,7 +60,10 @@ export interface LaunchInfo {
   confirm: boolean
 }
 
-function resolveUri(content: string, type: QrContentType): { uri: string | null; reason: string | null } {
+function resolveUri(
+  content: string,
+  type: QrContentType,
+): { uri: string | null; reason: string | null } {
   const uri = launchableUri(content, type)
   if (uri) return { uri, reason: null }
   return { uri: null, reason: type === 'sms' ? INVALID_PHONE : NOT_LAUNCHABLE }
@@ -54,16 +72,23 @@ function resolveUri(content: string, type: QrContentType): { uri: string | null;
 export function launchInfo(target: LaunchTarget): LaunchInfo {
   switch (target.kind) {
     case 'typed': {
-      if (!target.uri.trim()) return { uri: null, reason: 'Enter a URI to open', confirm: false }
+      if (!target.uri.trim())
+        return { uri: null, reason: 'Enter a URI to open', confirm: false }
       const error = validateUri(target.uri)
       return error
         ? { uri: null, reason: error, confirm: false }
         : { uri: target.uri.trim(), reason: null, confirm: false }
     }
     case 'draft':
-      return { ...resolveUri(target.content, target.contentType), confirm: false }
+      return {
+        ...resolveUri(target.content, target.contentType),
+        confirm: false,
+      }
     case 'record':
-      return { ...resolveUri(target.record.content, target.record.contentType), confirm: needsLaunchConfirm(target.record) }
+      return {
+        ...resolveUri(target.record.content, target.record.contentType),
+        confirm: needsLaunchConfirm(target.record),
+      }
     case 'decoded': {
       const text = target.text.trim()
       // A decoded `sms:` link is already a view URI; `SMSTO:` goes through smsToViewUri.
@@ -82,7 +107,11 @@ interface DeviceError {
 }
 
 function describeError(result: DeviceError, fallback: string): string {
-  if (result.errorCode === 'no_handler' || /Activity not started/i.test(result.error ?? '')) return NO_HANDLER
+  if (
+    result.errorCode === 'no_handler' ||
+    /Activity not started/i.test(result.error ?? '')
+  )
+    return NO_HANDLER
   const message = result.error?.trim() || fallback
   return result.errorCode ? `${message} (${result.errorCode})` : message
 }
@@ -106,6 +135,8 @@ interface Pending {
   key: DeviceActionKey
   running: boolean
   error?: string
+  /** When true, confirming fans the URI out to every device instead of just one. */
+  broadcast?: boolean
 }
 
 type Outcome = { ok: true; message: string } | { ok: false; message: string }
@@ -133,7 +164,17 @@ export interface UseDeviceActions {
   openReason: (target: LaunchTarget | null) => string | null
   sendReason: (item: QrRenderable | null) => string | null
   captureReason: () => string | null
-  openOnDevice: (target: LaunchTarget, options?: { packageName?: string; key?: DeviceActionKey }) => void
+  openOnDevice: (
+    target: LaunchTarget,
+    options?: { packageName?: string; key?: DeviceActionKey },
+  ) => void
+  /** Null when broadcast can run, otherwise the visible reason it cannot. */
+  broadcastReason: (target: LaunchTarget | null) => string | null
+  /** Fan the URI out to every connected Android device and every booted iOS Simulator. */
+  openOnAllDevices: (
+    target: LaunchTarget,
+    options?: { packageName?: string },
+  ) => void
   sendToDevice: (item: QrRenderable) => Promise<void>
   captureAndDecode: () => Promise<void>
   /** Render once in the host. Shows the launch confirmation as an alertdialog. */
@@ -155,30 +196,49 @@ export function useDeviceActions({
   const hasDevice = hasAndroidTarget(devices, activeDevice)
   const serial = hasDevice ? activeDevice : ''
   const deviceName = deviceLabels?.[serial] ?? serial
-  const [snapshot, setSnapshot] = useState<Snapshot>({ device: '', actions: {}, capture: null })
+  const [snapshot, setSnapshot] = useState<Snapshot>({
+    device: '',
+    actions: {},
+    capture: null,
+  })
   const [pending, setPending] = useState<Pending | null>(null)
   const running = useRef(new Set<string>())
 
   // Results belong to one device: switching device simply hides them.
-  const view: Snapshot = snapshot.device === serial ? snapshot : { device: serial, actions: {}, capture: null }
+  const view: Snapshot =
+    snapshot.device === serial
+      ? snapshot
+      : { device: serial, actions: {}, capture: null }
   const pendingView = pending && pending.serial === serial ? pending : null
 
-  const patch = useCallback((device: string, change: (current: Snapshot) => Partial<Snapshot>) => {
-    setSnapshot((current) => {
-      const base: Snapshot = current.device === device ? current : { device, actions: {}, capture: null }
-      return { ...base, ...change(base) }
-    })
-  }, [])
+  const patch = useCallback(
+    (device: string, change: (current: Snapshot) => Partial<Snapshot>) => {
+      setSnapshot((current) => {
+        const base: Snapshot =
+          current.device === device
+            ? current
+            : { device, actions: {}, capture: null }
+        return { ...base, ...change(base) }
+      })
+    },
+    [],
+  )
 
   const setAction = useCallback(
     (device: string, key: DeviceActionKey, state: ActionState) =>
-      patch(device, (current) => ({ actions: { ...current.actions, [key]: state } })),
+      patch(device, (current) => ({
+        actions: { ...current.actions, [key]: state },
+      })),
     [patch],
   )
 
   /** Runs one action with double-submit prevention. Resolves null when it was already running. */
   const execute = useCallback(
-    async (key: DeviceActionKey, device: string, job: () => Promise<Outcome>): Promise<Outcome | null> => {
+    async (
+      key: DeviceActionKey,
+      device: string,
+      job: () => Promise<Outcome>,
+    ): Promise<Outcome | null> => {
       const guard = `${device}:${key}`
       if (running.current.has(guard)) return null
       running.current.add(guard)
@@ -188,11 +248,17 @@ export function useDeviceActions({
         outcome = await job()
       } catch (error) {
         console.error(`QR Studio: device action "${key}" failed`, error)
-        outcome = { ok: false, message: friendlyMessage(error, 'Unexpected error') }
+        outcome = {
+          ok: false,
+          message: friendlyMessage(error, 'Unexpected error'),
+        }
       } finally {
         running.current.delete(guard)
       }
-      setAction(device, key, { status: outcome.ok ? 'success' : 'error', message: outcome.message })
+      setAction(device, key, {
+        status: outcome.ok ? 'success' : 'error',
+        message: outcome.message,
+      })
       // A modal (including the launch confirmation) shows the error inline instead.
       if (!outcome.ok && !getOverlayStack().some((entry) => entry.modal)) {
         notify('QR Studio device action failed', outcome.message, 'error')
@@ -203,10 +269,26 @@ export function useDeviceActions({
   )
 
   const launch = useCallback(
-    (device: string, name: string, key: DeviceActionKey, target: LaunchTarget, uri: string, packageName?: string) =>
+    (
+      device: string,
+      name: string,
+      key: DeviceActionKey,
+      target: LaunchTarget,
+      uri: string,
+      packageName?: string,
+    ) =>
       execute(key, device, async () => {
-        const result = await launchDeepLink(device, uri, packageName, customPath)
-        if (!result.success) return { ok: false, message: describeError(result, 'Could not open the link') }
+        const result = await launchDeepLink(
+          device,
+          uri,
+          packageName,
+          customPath,
+        )
+        if (!result.success)
+          return {
+            ok: false,
+            message: describeError(result, 'Could not open the link'),
+          }
         if (target.kind === 'record') onUsed?.(target.record.id)
         onStatus?.(`Opened on ${name}`)
         return { ok: true, message: `Opened on ${name}` }
@@ -214,8 +296,88 @@ export function useDeviceActions({
     [customPath, execute, onStatus, onUsed],
   )
 
+  const broadcast = useCallback(
+    (target: LaunchTarget, uri: string, packageName?: string) =>
+      execute('broadcast', serial, async () => {
+        type Job = { label: string; run: () => Promise<Outcome> }
+        const androidJobs: Job[] = devices.map((s) => ({
+          label: deviceLabels?.[s] ?? s,
+          run: async () => {
+            const result = await launchDeepLink(s, uri, packageName, customPath)
+            return result.success
+              ? { ok: true, message: '' }
+              : {
+                  ok: false,
+                  message: describeError(result, 'Could not open the link'),
+                }
+          },
+        }))
+
+        // iOS is read lazily and must never block or fail the Android broadcast.
+        let booted: Array<{ udid: string; name: string }> = []
+        try {
+          const sims = await listSimulators(customPath)
+          booted = sims
+            .filter((sim) => sim.isBooted)
+            .map((sim) => ({ udid: sim.udid, name: sim.name || sim.udid }))
+        } catch {
+          booted = []
+        }
+        const iosJobs: Job[] = booted.map((sim) => ({
+          label: sim.name,
+          run: async () => {
+            const result = await simulatorAction(
+              sim.udid,
+              'openUrl',
+              { url: uri },
+              customPath,
+            )
+            return result.success
+              ? { ok: true, message: '' }
+              : {
+                  ok: false,
+                  message: describeError(result, 'Could not open the link'),
+                }
+          },
+        }))
+
+        const jobs = [...androidJobs, ...iosJobs]
+        if (jobs.length === 0)
+          return { ok: false, message: 'No connected devices to broadcast to' }
+
+        const settled = await Promise.allSettled(jobs.map((job) => job.run()))
+        const failures: string[] = []
+        settled.forEach((result, index) => {
+          if (result.status === 'fulfilled' && result.value.ok) return
+          const message =
+            result.status === 'fulfilled'
+              ? result.value.message
+              : friendlyMessage(result.reason, 'Unexpected error')
+          failures.push(`${jobs[index].label}: ${message}`)
+        })
+
+        const total = jobs.length
+        const succeeded = total - failures.length
+        if (target.kind === 'record' && succeeded > 0)
+          onUsed?.(target.record.id)
+        const summary = `Opened on ${succeeded} of ${total} device${total === 1 ? '' : 's'}`
+        if (failures.length === 0) {
+          onStatus?.(summary)
+          return { ok: true, message: summary }
+        }
+        return { ok: false, message: `${summary}. ${failures.join('; ')}` }
+      }),
+    [customPath, devices, deviceLabels, execute, onStatus, onUsed, serial],
+  )
+
   const openReason = (target: LaunchTarget | null): string | null => {
     if (!hasDevice) return CONNECT_TEXT
+    if (!target) return 'Choose something to open'
+    return launchInfo(target).reason
+  }
+
+  const broadcastReason = (target: LaunchTarget | null): string | null => {
+    if (devices.length === 0) return BROADCAST_CONNECT_TEXT
     if (!target) return 'Choose something to open'
     return launchInfo(target).reason
   }
@@ -233,20 +395,61 @@ export function useDeviceActions({
     if (!info.uri) return
     const key = options?.key ?? (target.kind === 'typed' ? 'deeplink' : 'open')
     if (info.confirm) {
-      setPending({ serial, target, uri: info.uri, packageName: options?.packageName, key, running: false })
+      setPending({
+        serial,
+        target,
+        uri: info.uri,
+        packageName: options?.packageName,
+        key,
+        running: false,
+      })
       return
     }
     void launch(serial, deviceName, key, target, info.uri, options?.packageName)
+  }
+
+  const openOnAllDevices: UseDeviceActions['openOnAllDevices'] = (
+    target,
+    options,
+  ) => {
+    if (devices.length === 0) return
+    const info = launchInfo(target)
+    if (!info.uri) return
+    if (info.confirm) {
+      setPending({
+        serial,
+        target,
+        uri: info.uri,
+        packageName: options?.packageName,
+        key: 'broadcast',
+        running: false,
+        broadcast: true,
+      })
+      return
+    }
+    void broadcast(target, info.uri, options?.packageName)
   }
 
   const confirmPending = async () => {
     const current = pendingView
     if (!current || current.running) return
     setPending({ ...current, running: true, error: undefined })
-    const outcome = await launch(current.serial, deviceName, current.key, current.target, current.uri, current.packageName)
+    const outcome = current.broadcast
+      ? await broadcast(current.target, current.uri, current.packageName)
+      : await launch(
+          current.serial,
+          deviceName,
+          current.key,
+          current.target,
+          current.uri,
+          current.packageName,
+        )
     if (!outcome) return
     if (outcome.ok) setPending(null)
-    else setPending((latest) => (latest ? { ...latest, running: false, error: outcome.message } : latest))
+    else
+      setPending((latest) =>
+        latest ? { ...latest, running: false, error: outcome.message } : latest,
+      )
   }
 
   const sendToDevice = async (item: QrRenderable) => {
@@ -256,8 +459,17 @@ export function useDeviceActions({
     await execute('send', device, async () => {
       const filename = qrFileName(item.name, 'png')
       const pngBase64 = await renderPngBase64(item, SEND_PNG_SIZE)
-      const result = await sendQrToDevice(device, filename, pngBase64, customPath)
-      if (!result.success) return { ok: false, message: describeError(result, 'Could not send the image') }
+      const result = await sendQrToDevice(
+        device,
+        filename,
+        pngBase64,
+        customPath,
+      )
+      if (!result.success)
+        return {
+          ok: false,
+          message: describeError(result, 'Could not send the image'),
+        }
       const remote = result.pathOnDevice?.split('/').pop() || filename
       onStatus?.(`Saved to Downloads/${remote} on ${name}`)
       return {
@@ -273,8 +485,17 @@ export function useDeviceActions({
     patch(device, () => ({ capture: null }))
     await execute('capture', device, async () => {
       const result = await captureAndDecodeService(device, customPath)
-      if (!result.success) return { ok: false, message: describeError(result, 'Could not capture the device screen') }
-      patch(device, () => ({ capture: { texts: result.texts, thumbnailPngBase64: result.thumbnailPngBase64 } }))
+      if (!result.success)
+        return {
+          ok: false,
+          message: describeError(result, 'Could not capture the device screen'),
+        }
+      patch(device, () => ({
+        capture: {
+          texts: result.texts,
+          thumbnailPngBase64: result.thumbnailPngBase64,
+        },
+      }))
       return {
         ok: true,
         message:
@@ -295,10 +516,19 @@ export function useDeviceActions({
       role="alertdialog"
       footer={
         <>
-          <Button variant="secondary" size="sm" data-autofocus="" onClick={() => setPending(null)}>
+          <Button
+            variant="secondary"
+            size="sm"
+            data-autofocus=""
+            onClick={() => setPending(null)}
+          >
             Cancel
           </Button>
-          <Button size="sm" disabled={pendingView?.running} onClick={() => void confirmPending()}>
+          <Button
+            size="sm"
+            disabled={pendingView?.running}
+            onClick={() => void confirmPending()}
+          >
             Open on device
           </Button>
         </>
@@ -333,6 +563,8 @@ export function useDeviceActions({
     sendReason,
     captureReason,
     openOnDevice,
+    broadcastReason,
+    openOnAllDevices,
     sendToDevice,
     captureAndDecode,
     launchDialog,

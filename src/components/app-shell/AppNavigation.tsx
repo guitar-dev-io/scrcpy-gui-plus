@@ -1,45 +1,25 @@
 import {
-  AppWindow,
   BatteryMedium,
-  Bot,
-  Braces,
   ChevronLeft,
   ChevronRight,
-  Folder,
-  Gauge,
-  Grid3x3,
-  Image,
-  Keyboard,
-  LayoutDashboard,
-  ListTodo,
-  MonitorPlay,
-  MonitorSmartphone,
-  PackageSearch,
-  Plus,
-  QrCode,
-  ScrollText,
-  Settings,
   Smartphone,
-  SquareTerminal,
-  Video,
   Wifi,
-  type LucideIcon,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useDeviceStatus } from '../../hooks/useDeviceStatus'
 import { connectionTypeOf } from '../../types/deviceStatus'
+import { useI18n } from '../../i18n'
+import { ROUTE_ICONS } from '../../navigation/routeIcons'
 import {
   APP_ROUTES,
+  isNavigationEntryActive,
+  navigationEntries,
   type AppRouteDefinition,
-  type AppRouteId,
 } from '../../navigation/appRoutes'
 import { classNames } from '../ui/classNames'
 import { useShellUi } from '../../contexts/ShellUiContext'
 
-export type NavigationActionId = 'shell-terminal'
-
 interface AppNavigationProps {
-  actions?: Partial<Record<NavigationActionId, () => void>>
   routes?: readonly AppRouteDefinition[]
   activeDevice?: string
   customPath?: string
@@ -47,33 +27,7 @@ interface AppNavigationProps {
   onStopSession?: () => void
 }
 
-const routeIcons: Record<AppRouteId, LucideIcon> = {
-  dashboard: LayoutDashboard,
-  devices: Smartphone,
-  'pair-device': Plus,
-  'device-wall': Grid3x3,
-  sessions: MonitorPlay,
-  screenshots: Image,
-  recordings: Video,
-  'file-explorer': Folder,
-  'app-manager': AppWindow,
-  'apk-toolkit': PackageSearch,
-  simulators: MonitorSmartphone,
-  'logcat-viewer': ScrollText,
-  performance: Gauge,
-  'input-control': Keyboard,
-  'qr-studio': QrCode,
-  automation: Bot,
-  'script-manager': Braces,
-  'task-scheduler': ListTodo,
-  settings: Settings,
-}
 
-const shellTerminalItem = {
-  id: 'shell-terminal' as const,
-  label: 'Shell Terminal',
-  icon: SquareTerminal,
-}
 
 type CollapsibleGroup = 'testing' | 'tools' | 'system'
 const NAV_GROUPS_STORAGE_KEY = 'scrcpy-gui-plus:navigation-groups'
@@ -88,7 +42,6 @@ function loadOpenGroups(): Record<CollapsibleGroup, boolean> {
 }
 
 export default function AppNavigation({
-  actions = {},
   routes = APP_ROUTES,
   activeDevice = '',
   customPath,
@@ -101,10 +54,12 @@ export default function AppNavigation({
     navigationCollapsed: collapsed,
     setNavigationCollapsed: setCollapsed,
   } = useShellUi()
-  const mainRoutes = routes.filter((route) => route.group === 'main')
-  const testingRoutes = routes.filter((route) => route.group === 'testing')
-  const toolRoutes = routes.filter((route) => route.group === 'tools')
-  const systemRoutes = routes.filter((route) => route.group === 'system')
+  const { t } = useI18n()
+  const entries = navigationEntries(routes)
+  const mainRoutes = entries.filter((route) => route.group === 'main')
+  const testingRoutes = entries.filter((route) => route.group === 'testing')
+  const toolRoutes = entries.filter((route) => route.group === 'tools')
+  const systemRoutes = entries.filter((route) => route.group === 'system')
   const [openGroups, setOpenGroups] = useState(loadOpenGroups)
   useEffect(() => {
     try {
@@ -155,27 +110,30 @@ export default function AppNavigation({
     )
 
   const renderRouteButton = (route: AppRouteDefinition) => {
-    const Icon = routeIcons[route.id]
-    const active = activeRoute === route.id
+    const Icon = ROUTE_ICONS[route.id]
+    const active = isNavigationEntryActive(route.id, activeRoute)
+    const label = route.familyId
+      ? t(`nav.families.${route.familyId}`)
+      : t(`nav.routes.${route.id}`)
     return (
       <button
         key={route.id}
         type="button"
         onClick={() => onNavigate(route.id)}
         aria-current={active ? 'page' : undefined}
-        aria-label={route.label}
-        title={route.label}
+        aria-label={label}
+        title={label}
         className={itemClass(active)}
       >
         <Icon size={16} className="shrink-0" />
-        {renderLabel(route.label)}
+        {renderLabel(label)}
       </button>
     )
   }
 
   return (
     <nav
-      aria-label="Primary navigation"
+      aria-label={t('nav.primaryNavigation')}
       data-collapsed={collapsed ? 'true' : 'false'}
       className={classNames(
         'flex h-full flex-col border-r border-[var(--border-subtle)] bg-[var(--bg-sidebar)] transition-[width] duration-[var(--duration-slow)] max-[1180px]:w-[64px]',
@@ -195,8 +153,8 @@ export default function AppNavigation({
           type="button"
           onClick={() => setCollapsed(!collapsed)}
           className="ml-auto flex h-7 w-7 items-center justify-center rounded-full border border-[var(--border-base)] text-[var(--text-subtle)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-base)] max-[1180px]:hidden"
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={collapsed ? t('nav.expandSidebar') : t('nav.collapseSidebar')}
+          title={collapsed ? t('nav.expandSidebar') : t('nav.collapseSidebar')}
         >
           {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
         </button>
@@ -206,7 +164,7 @@ export default function AppNavigation({
         <section aria-label="Main navigation">
           {!collapsed && (
             <p className="mb-1.5 px-3 text-[9px] font-semibold uppercase tracking-[0.14em] text-[var(--text-subtle)] max-[1180px]:hidden">
-              Main
+              {t('nav.groups.main')}
             </p>
           )}
           <div className="space-y-0.5">{mainRoutes.map(renderRouteButton)}</div>
@@ -214,31 +172,20 @@ export default function AppNavigation({
 
         {testingRoutes.length > 0 && (
           <section aria-label="Testing navigation">
-            {groupHeader('testing', 'Testing')}
+            {groupHeader('testing', t('nav.groups.testing'))}
             {(collapsed || openGroups.testing) && <div className="space-y-0.5">{testingRoutes.map(renderRouteButton)}</div>}
           </section>
         )}
 
         <section aria-label="Tools navigation">
-          {groupHeader('tools', 'Tools')}
+          {groupHeader('tools', t('nav.groups.tools'))}
           {(collapsed || openGroups.tools) && <div className="space-y-0.5">
-            {toolRoutes[0] && renderRouteButton(toolRoutes[0])}
-            <button
-              type="button"
-              onClick={actions['shell-terminal']}
-              aria-label={shellTerminalItem.label}
-              title={shellTerminalItem.label}
-              className={itemClass()}
-            >
-              <shellTerminalItem.icon size={16} className="shrink-0" />
-              {renderLabel(shellTerminalItem.label)}
-            </button>
-            {toolRoutes.slice(1).map(renderRouteButton)}
+            {toolRoutes.map(renderRouteButton)}
           </div>}
         </section>
 
         <section aria-label="System navigation">
-          {groupHeader('system', 'System')}
+          {groupHeader('system', t('nav.groups.system'))}
           {(collapsed || openGroups.system) && <div className="space-y-0.5">{systemRoutes.map(renderRouteButton)}</div>}
         </section>
       </div>

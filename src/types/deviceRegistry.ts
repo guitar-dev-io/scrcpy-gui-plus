@@ -383,3 +383,68 @@ export function markAgentDisconnected(
     [key]: { ...device, agent: { ...device.agent, connected: false } },
   }
 }
+
+const DEVICE_STATE_ORDER: Record<DeviceDerivedState, number> = {
+  busy: 0,
+  online: 1,
+  warning: 2,
+  offline: 3,
+}
+
+/**
+ * Who a record belongs to, for collapsing duplicates: the hardware serial
+ * when the device reported one, otherwise the Wi-Fi host. USB records have
+ * no identity here, so they are never collapsed.
+ */
+function physicalIdentity(device: RegisteredDevice): string | undefined {
+  const hardwareSerial = device.health?.hardwareSerial?.trim()
+  if (hardwareSerial) return `hw:${hardwareSerial}`
+  if (device.connectionType !== 'wifi') return undefined
+  const host = device.ipAddress || device.serial.split(':')[0]
+  return host ? `host:${host}` : undefined
+}
+
+/**
+ * Wireless debugging hands out a new port on every pairing, so one phone
+ * leaves a trail of `ip:port` records behind (and a new IP on another
+ * network). Collapse that trail for the device list: records are grouped by
+ * hardware serial when known, otherwise by Wi-Fi host. A stale Wi-Fi record
+ * is dropped when its group has an online record, and otherwise only the
+ * most recently seen stale Wi-Fi record per group is kept. USB and online
+ * records are never dropped. The result is ordered busy → online → warning →
+ * offline, newest first.
+ */
+export function collapseStaleWifiRecords(
+  devices: readonly RegisteredDevice[],
+  runningSerials: ReadonlySet<string> = new Set(),
+): RegisteredDevice[] {
+  const onlineIdentities = new Set<string>()
+  const newestStaleByIdentity = new Map<string, RegisteredDevice>()
+  devices.forEach((device) => {
+    const identity = physicalIdentity(device)
+    if (!identity) return
+    if (device.adbState === 'device') {
+      onlineIdentities.add(identity)
+      return
+    }
+    if (device.connectionType !== 'wifi') return
+    const kept = newestStaleByIdentity.get(identity)
+    if (!kept || device.lastSeen > kept.lastSeen) newestStaleByIdentity.set(identity, device)
+  })
+
+  const stateOf = (device: RegisteredDevice) =>
+    deriveDeviceState(device, runningSerials.has(device.serial))
+  return devices
+    .filter((device) => {
+      if (device.adbState === 'device' || device.connectionType !== 'wifi') return true
+      const identity = physicalIdentity(device)
+      if (!identity) return true
+      if (onlineIdentities.has(identity)) return false
+      return newestStaleByIdentity.get(identity) === device
+    })
+    .sort(
+      (a, b) =>
+        DEVICE_STATE_ORDER[stateOf(a)] - DEVICE_STATE_ORDER[stateOf(b)] ||
+        b.lastSeen.localeCompare(a.lastSeen),
+    )
+}

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import type { AppRouteId } from '../../navigation/appRoutes'
+import { routeFamilyOf, type AppRouteId } from '../../navigation/appRoutes'
+import RouteFamilyTabs from '../app-shell/RouteFamilyTabs'
 
 type OtherPageRoute = Exclude<AppRouteId, 'dashboard'>
 
@@ -16,7 +17,6 @@ interface OtherPagesProps {
   apkToolkit: ReactNode
   simulators: ReactNode
   logcatViewer: ReactNode
-  performance: ReactNode
   inputControl: ReactNode
   qrStudio: ReactNode
   automation: ReactNode
@@ -38,7 +38,6 @@ export default function OtherPages({
   apkToolkit,
   simulators,
   logcatViewer,
-  performance,
   inputControl,
   qrStudio,
   automation,
@@ -58,8 +57,7 @@ export default function OtherPages({
     'apk-toolkit': apkToolkit,
     simulators,
     'logcat-viewer': logcatViewer,
-    performance,
-    'input-control': inputControl,
+      'input-control': inputControl,
     'qr-studio': qrStudio,
     automation,
     'script-manager': scriptManager,
@@ -67,5 +65,11 @@ export default function OtherPages({
     settings,
   }
 
-  return <>{content[route]}</>
+  if (!routeFamilyOf(route)) return <>{content[route]}</>
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <RouteFamilyTabs route={route} />
+      {content[route]}
+    </div>
+  )
 }
