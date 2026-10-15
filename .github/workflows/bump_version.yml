@@ -51,7 +51,7 @@ jobs:
       - name: Update Android version metadata
         run: |
           VERSION_CODE=$(NEW_VERSION="$NEW_VERSION" node -e '
-            const match = /^(\\d+)\\.(\\d+)\\.(\\d+)$/.exec(process.env.NEW_VERSION);
+            const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(process.env.NEW_VERSION);
             if (!match) throw new Error(`Unsupported release version: ${process.env.NEW_VERSION}`);
             const code = Number(match[1]) * 1000000 + Number(match[2]) * 1000 + Number(match[3]);
             if (!Number.isSafeInteger(code) || code <= 0 || code > 2100000000) {
