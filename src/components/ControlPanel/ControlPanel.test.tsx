@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ControlPanel from '.';
@@ -42,6 +42,12 @@ function renderControlPanel(config: ScrcpyConfig, support: RenderDriverSupport, 
     );
 
     return setConfig;
+}
+
+// The panel has other selects whose value is also "Auto" (hardware decoding), so
+// renderer assertions must look inside the Graphics Renderer field only.
+function rendererField(): HTMLElement {
+    return screen.getByText('Graphics Renderer').parentElement as HTMLElement;
 }
 
 async function openRendererSelect(user: ReturnType<typeof userEvent.setup>) {
@@ -94,7 +100,7 @@ describe('ControlPanel renderer selector', () => {
         });
 
         it('shows auto renderer value by default', () => {
-            expect(screen.getByText('Auto')).toBeInTheDocument();
+            expect(within(rendererField()).getByText('Auto')).toBeInTheDocument();
         });
 
         it('shows supported renderer option', async () => {
@@ -121,7 +127,7 @@ describe('ControlPanel renderer selector', () => {
             const user = userEvent.setup();
             const setConfig = renderControlPanel(createConfig({ renderDriver: 'direct3d' }), supportedRenderers);
             await openRendererSelect(user);
-            await user.click(screen.getByText('Auto'));
+            await user.click(within(rendererField()).getByText('Auto'));
             expect(setConfig).toHaveBeenCalledWith(expect.objectContaining({ renderDriver: undefined }));
         });
     });

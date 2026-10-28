@@ -1693,7 +1693,7 @@ fn default_route_ipv4() -> Option<Ipv4Addr> {
 /// survive a multi-homed desktop: the QR carries all of them and the Agent tries
 /// each in turn, so a VPN owning the default route or a second active network no
 /// longer produces an unreachable pairing code.
-fn lan_host_candidates() -> Vec<Ipv4Addr> {
+pub(crate) fn lan_host_candidates() -> Vec<Ipv4Addr> {
     let mut preferred: Vec<Ipv4Addr> = Vec::new();
     let mut fallback: Vec<Ipv4Addr> = Vec::new();
 

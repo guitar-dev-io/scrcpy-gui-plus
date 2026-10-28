@@ -24,6 +24,8 @@ mod macos_capture;
 mod macro_player;
 mod maestro;
 mod qr_device;
+mod screen_share;
+mod screen_share_video;
 mod screenshot;
 mod simdeck;
 mod system;
@@ -38,6 +40,7 @@ use embed_mirror::EmbedMirrorState;
 use embed_session::EmbedSessionState;
 use ios::IosState;
 use logcat::LogcatState;
+use screen_share::ScreenShareState;
 use simdeck::SimDeckState;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -138,6 +141,8 @@ pub fn run() {
 
             app.manage(AutoCaptureState::default());
 
+            app.manage(ScreenShareState::default());
+
             app.manage(apk_optional_tools::ApkOptionalToolsState::default());
 
             // Show splashscreen instantly
@@ -185,6 +190,10 @@ pub fn run() {
             screenshot::capture_screenshot,
             screenshot::capture_scroll_screenshot,
             screenshot::capture_preview_frame,
+            screen_share::screen_share_start,
+            screen_share::screen_share_stop,
+            screen_share::screen_share_extend,
+            screen_share::screen_share_status,
             screenshot::save_external_screenshot,
             macos_capture::capture_macos_screenshot,
             screenshot::get_default_screenshot_dir,
@@ -308,6 +317,7 @@ pub fn run() {
                 app.state::<maestro::MaestroState>().cancel_all();
                 app.state::<CompanionState>().shutdown();
                 app.state::<AutoCaptureState>().shutdown();
+                app.state::<ScreenShareState>().stop_all_blocking();
             }
         })
         .run(tauri::generate_context!())

@@ -15,6 +15,7 @@ import {
   ListChecks,
   Monitor,
   Play,
+  Share2,
   SlidersHorizontal,
   Square,
   Terminal,
@@ -36,6 +37,9 @@ import DeviceStagePanel from './DeviceStagePanel'
 import DeviceHeader from './DeviceHeader'
 import { openMirrorWindow } from '../../windows/mirrorWindow'
 import SessionControlPanel from './SessionControlPanel'
+import ScreenSharePanel from '../simulators/ScreenSharePanel'
+import { useI18n } from '../../i18n'
+import { Popover } from '../ui'
 import TestRunnerPanel from '../test-runner'
 import { useShellUi } from '../../contexts/ShellUiContext'
 
@@ -279,6 +283,7 @@ export default function DashboardLayout({
   compactWorkspace = false,
   companion,
 }: DashboardLayoutProps) {
+  const { t } = useI18n()
   const {
     dashboardBottomTab: bottomTab,
     selectDashboardBottomTab: onBottomTabChange,
@@ -618,6 +623,16 @@ export default function DashboardLayout({
           )
         })}
       </div>
+      <Popover
+        triggerLabel={t('screenSharing.buttonLabel')}
+        trigger={<><Share2 size={12} /> {t('screenSharing.button')}</>}
+        triggerClassName={`flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-base)] px-3 text-[9px] font-semibold text-[var(--text-subtle)] transition-colors hover:border-primary/40 hover:text-primary disabled:opacity-35 ${focusRing}`}
+        contentClassName="w-64 p-4"
+        placement="bottom-end"
+        disabled={!activeDevice}
+      >
+        <ScreenSharePanel className="" serial={activeDevice} name={status?.model} customPath={customPath} />
+      </Popover>
       <button
         type="button"
         onClick={effectiveSessionRunning ? stopActiveSession : startActiveSession}
