@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { Check, Clock, Copy, Loader2, ShieldAlert, Share2, Square } from 'lucide-react'
+import { useI18n } from '../../i18n'
 
 interface ScreenShareInfo {
   serial: string
@@ -15,13 +16,9 @@ interface ScreenShareInfo {
   controllers: string[]
 }
 
+/** Mirrors the backend's default share lifetime and the Extend button's step. */
+const DEFAULT_EXPIRY_MINUTES = 30
 const EXTEND_MINUTES = 30
-
-function describeExpiry(seconds: number): string {
-  if (seconds < 60) return 'less than a minute'
-  const minutes = Math.ceil(seconds / 60)
-  return `${minutes} min`
-}
 
 interface ScreenSharePanelProps {
   serial: string
@@ -58,6 +55,11 @@ async function copyText(text: string): Promise<boolean> {
 }
 
 export default function ScreenSharePanel({ serial, name, customPath, className }: ScreenSharePanelProps) {
+  const { t } = useI18n()
+  const describeExpiry = (seconds: number): string =>
+    seconds < 60
+      ? t('screenSharing.lessThanMinute')
+      : t('screenSharing.minutes', { count: Math.ceil(seconds / 60) })
   const [info, setInfo] = useState<ScreenShareInfo | null>(null)
   const [qrSvg, setQrSvg] = useState('')
   const [busy, setBusy] = useState(false)
@@ -110,7 +112,7 @@ export default function ScreenSharePanel({ serial, name, customPath, className }
             setInfo(status)
           } else {
             setInfo(null)
-            setNotice('Sharing ended. Links no longer work.')
+            setNotice(t('screenSharing.ended'))
           }
         })
         .catch(() => {})
@@ -162,11 +164,11 @@ export default function ScreenSharePanel({ serial, name, customPath, className }
       setCopied(which)
       window.setTimeout(() => setCopied(null), 1500)
     } else {
-      setError('Could not copy automatically. Click the link to select it, then press Cmd/Ctrl+C.')
+      setError(t('screenSharing.copyFailed'))
     }
-  }, [info])
+  }, [info, t])
 
-  const linkRow = (label: string, url: string, which: 'view' | 'control') => (
+  const linkRow = (label: string, copyLabel: string, url: string, which: 'view' | 'control') => (
     <div>
       <p className="mb-1 text-[9px] font-bold uppercase tracking-wider text-zinc-400">{label}</p>
       <div className="flex items-start gap-1.5">
@@ -174,8 +176,8 @@ export default function ScreenSharePanel({ serial, name, customPath, className }
         <button
           type="button"
           onClick={() => void copy(which)}
-          title={`Copy ${label.toLowerCase()}`}
-          aria-label={`Copy ${label.toLowerCase()}`}
+          title={copyLabel}
+          aria-label={copyLabel}
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900/50 text-zinc-300 hover:border-primary/30 hover:text-primary"
         >
           {copied === which ? <Check size={12} /> : <Copy size={12} />}
@@ -186,11 +188,11 @@ export default function ScreenSharePanel({ serial, name, customPath, className }
 
   return (
     <section className={className ?? 'mt-4 border-t border-zinc-800/60 pt-4'}>
-      <p className="text-[10px] font-black uppercase tracking-widest text-zinc-300">Share screen</p>
+      <p className="text-[10px] font-black uppercase tracking-widest text-zinc-300">{t('screenSharing.title')}</p>
       {!info ? (
         <>
           <p className="mt-2 text-[9px] leading-relaxed text-zinc-500">
-            Let anyone on the same Wi-Fi/LAN watch this screen in a browser.
+            {t('screenSharing.intro')}
           </p>
           <label className="mt-3 flex cursor-pointer items-start gap-2 text-[9px] leading-relaxed text-zinc-400">
             <input
@@ -200,19 +202,19 @@ export default function ScreenSharePanel({ serial, name, customPath, className }
               className="mt-0.5 accent-[var(--primary)]"
             />
             <span>
-              Allow viewers to control the device (tap, swipe, Back/Home). Anyone with the control link can operate it.
+              {t('screenSharing.allowControl')}
             </span>
           </label>
           <p className="mt-2 flex items-center gap-1.5 text-[9px] text-zinc-500">
-            <Clock size={11} /> Stops by itself after 30 min. You can extend it.
+            <Clock size={11} /> {t('screenSharing.expiryNote', { count: DEFAULT_EXPIRY_MINUTES })}
           </p>
           {confirmingControl ? (
-            <div className="mt-3 space-y-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3" role="alertdialog" aria-label="Confirm remote control">
+            <div className="mt-3 space-y-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3" role="alertdialog" aria-label={t('screenSharing.confirmTitle')}>
               <p className="flex items-center gap-1.5 text-[10px] font-bold text-amber-300">
-                <ShieldAlert size={13} /> Let people operate this device?
+                <ShieldAlert size={13} /> {t('screenSharing.confirmTitle')}
               </p>
               <p className="text-[9px] leading-relaxed text-amber-200/80">
-                Anyone on your network who gets the control link can tap, swipe and press Back/Home on it, and can see everything on screen. The link is not encrypted. Share it only with people you trust.
+                {t('screenSharing.confirmBody')}
               </p>
               <div className="grid grid-cols-2 gap-2">
                 <button
@@ -221,14 +223,14 @@ export default function ScreenSharePanel({ serial, name, customPath, className }
                   disabled={busy}
                   className="flex items-center justify-center gap-1.5 rounded-lg bg-amber-500/20 px-2 py-2 text-[9px] font-black uppercase tracking-wider text-amber-200 hover:bg-amber-500/30 disabled:opacity-40"
                 >
-                  {busy && <Loader2 size={12} className="animate-spin" />} Allow control
+                  {busy && <Loader2 size={12} className="animate-spin" />} {t('screenSharing.confirmAllow')}
                 </button>
                 <button
                   type="button"
                   onClick={() => setConfirmingControl(false)}
                   className="rounded-lg border border-zinc-700 px-2 py-2 text-[9px] font-bold text-zinc-300 hover:bg-zinc-800"
                 >
-                  Cancel
+                  {t('screenSharing.cancel')}
                 </button>
               </div>
             </div>
@@ -240,7 +242,7 @@ export default function ScreenSharePanel({ serial, name, customPath, className }
               className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900/50 px-3 py-2.5 text-[9px] font-black uppercase tracking-wider text-zinc-300 hover:border-primary/30 hover:bg-primary/10 hover:text-primary disabled:opacity-40"
             >
               {busy ? <Loader2 size={13} className="animate-spin" /> : <Share2 size={13} />}
-              Start sharing
+              {t('screenSharing.start')}
             </button>
           )}
         </>
@@ -249,31 +251,36 @@ export default function ScreenSharePanel({ serial, name, customPath, className }
           {qrSvg && (
             <div
               className="mx-auto w-32 rounded-lg bg-white p-1.5 [&>svg]:h-full [&>svg]:w-full"
-              aria-label={info.controlUrl ? 'Control link QR code' : 'Share link QR code'}
+              aria-label={info.controlUrl ? t('screenSharing.qrControl') : t('screenSharing.qrShare')}
               dangerouslySetInnerHTML={{ __html: qrSvg }}
             />
           )}
-          {info.controlUrl && linkRow('Control link', info.controlUrl, 'control')}
-          {linkRow(info.controlUrl ? 'View-only link' : 'Link', info.url, 'view')}
+          {info.controlUrl && linkRow(t('screenSharing.controlLink'), t('screenSharing.copyControl'), info.controlUrl, 'control')}
+          {linkRow(
+            info.controlUrl ? t('screenSharing.viewLink') : t('screenSharing.link'),
+            info.controlUrl ? t('screenSharing.copyView') : t('screenSharing.copyLink'),
+            info.url,
+            'view',
+          )}
           <p className="text-[9px] text-zinc-500">
-            {info.viewers} viewer{info.viewers === 1 ? '' : 's'} watching
+            {t('screenSharing.viewers', { count: info.viewers })}
           </p>
           {info.controllers.length > 0 && (
             <p className="flex items-start gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-[9px] text-amber-200" role="status">
               <ShieldAlert size={12} className="mt-px shrink-0" />
-              <span>Controlling now: {info.controllers.join(', ')}</span>
+              <span>{t('screenSharing.controlling', { addresses: info.controllers.join(', ') })}</span>
             </p>
           )}
           <div className="flex items-center justify-between gap-2 text-[9px] text-zinc-500">
             <span className="flex items-center gap-1.5">
-              <Clock size={11} /> Stops in {describeExpiry(info.expiresInSecs)}
+              <Clock size={11} /> {t('screenSharing.stopsIn', { time: describeExpiry(info.expiresInSecs) })}
             </span>
             <button
               type="button"
               onClick={() => void extend()}
               className="rounded-md border border-zinc-800 px-2 py-1 font-bold text-zinc-300 hover:border-primary/30 hover:text-primary"
             >
-              +{EXTEND_MINUTES} min
+              {t('screenSharing.extend', { count: EXTEND_MINUTES })}
             </button>
           </div>
           <button
@@ -281,7 +288,7 @@ export default function ScreenSharePanel({ serial, name, customPath, className }
             onClick={() => void stop()}
             className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-red-500/30 bg-red-500/10 px-2 py-2 text-[9px] font-bold text-red-300 hover:bg-red-500/20"
           >
-            <Square size={11} /> Stop sharing
+            <Square size={11} /> {t('screenSharing.stop')}
           </button>
         </div>
       )}

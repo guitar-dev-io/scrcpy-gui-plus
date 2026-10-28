@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { I18nProvider } from '../../i18n'
 import ScreenSharePanel from './ScreenSharePanel'
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn() }))
@@ -105,5 +106,37 @@ describe('ScreenSharePanel', () => {
 
     await waitFor(() => expect(screen.getByText(/sharing ended/i)).toBeInTheDocument())
     expect(screen.getByRole('button', { name: /start sharing/i })).toBeInTheDocument()
+  })
+
+  it('shows the panel in the selected language and keeps the dynamic values', async () => {
+    routeInvoke({
+      screen_share_status: () => info({ controllers: ['192.168.1.20'], expiresInSecs: 240, viewers: 3 }),
+      generate_qr_svg: () => '<svg/>',
+    })
+    render(
+      <I18nProvider initialLocale="th">
+        <ScreenSharePanel serial="SER1" />
+      </I18nProvider>,
+    )
+
+    expect(await screen.findByText('หยุดในอีก 4 นาที')).toBeInTheDocument()
+    expect(screen.getByText('กำลังดูอยู่: 3')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('กำลังควบคุมอยู่: 192.168.1.20')
+    expect(screen.getByRole('button', { name: '+30 นาที' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'หยุดแชร์' })).toBeInTheDocument()
+  })
+
+  it('offers the start button and confirmation in the selected language', async () => {
+    routeInvoke({ screen_share_status: () => null })
+    render(
+      <I18nProvider initialLocale="th">
+        <ScreenSharePanel serial="SER1" />
+      </I18nProvider>,
+    )
+
+    fireEvent.click(await screen.findByRole('checkbox'))
+    fireEvent.click(screen.getByRole('button', { name: 'เริ่มแชร์' }))
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('ให้คนอื่นควบคุมอุปกรณ์นี้ไหม?')
+    expect(screen.getByRole('button', { name: 'ยกเลิก' })).toBeInTheDocument()
   })
 })
