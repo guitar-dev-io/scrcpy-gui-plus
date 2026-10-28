@@ -155,4 +155,51 @@ describe('WorkspaceTabBar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close iOS workspace for ios-udid' }))
     expect(onCloseDevice).toHaveBeenCalledWith('ios-udid')
   })
+
+  describe('tab strip scrolling', () => {
+    function overflow(strip: HTMLElement, scrollWidth: number, clientWidth: number) {
+      Object.defineProperty(strip, 'scrollWidth', { configurable: true, value: scrollWidth })
+      Object.defineProperty(strip, 'clientWidth', { configurable: true, value: clientWidth })
+    }
+
+    it('hides the native scrollbar', () => {
+      renderWorkspace(<WorkspaceTabBar {...baseProps} />)
+      expect(screen.getByRole('tablist', { name: 'Open workspaces' }).className).toContain(
+        '[&::-webkit-scrollbar]:hidden',
+      )
+    })
+
+    it('turns a vertical wheel into sideways scrolling only when the tabs overflow', () => {
+      renderWorkspace(<WorkspaceTabBar {...baseProps} />)
+      const strip = screen.getByRole('tablist', { name: 'Open workspaces' })
+
+      overflow(strip, 300, 300)
+      fireEvent.wheel(strip, { deltaY: 40 })
+      expect(strip.scrollLeft).toBe(0)
+
+      overflow(strip, 900, 300)
+      fireEvent.wheel(strip, { deltaY: 40 })
+      expect(strip.scrollLeft).toBe(40)
+
+      fireEvent.wheel(strip, { deltaX: 80, deltaY: 10 })
+      expect(strip.scrollLeft).toBe(40)
+    })
+
+    it('scrolls the selected tab into view when the active device changes', () => {
+      const scrollIntoView = vi.fn()
+      Element.prototype.scrollIntoView = scrollIntoView
+      const props = { ...baseProps, deviceWorkspaces: ['a', 'b'], runningDevices: ['a', 'b'] }
+      const view = renderWorkspace(<WorkspaceTabBar {...props} activeDevice="a" />)
+      scrollIntoView.mockClear()
+
+      view.rerender(
+        <ShellUiProvider initialRoute="dashboard" initialOpenWorkspaceTools={[]}>
+          <WorkspaceTabBar {...props} activeDevice="b" />
+        </ShellUiProvider>,
+      )
+
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' })
+      expect(scrollIntoView.mock.contexts[scrollIntoView.mock.contexts.length - 1]).toBe(screen.getByRole('tab', { name: /^b/ }))
+    })
+  })
 })

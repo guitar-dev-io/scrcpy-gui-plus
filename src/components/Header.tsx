@@ -16,7 +16,7 @@ import {
   BatteryMedium,
   Command,
   Wifi,
-  UserCircle,
+  Globe,
   X,
 } from 'lucide-react'
 import { SUPPORTED_LOCALES, useI18n, type Locale } from '../i18n'
@@ -211,7 +211,7 @@ export default function Header({
             <HelpCircle size={15} />
           </button>
           <button type="button" onClick={() => { setShowLangMenu((open) => !open); setShowAppearance(false) }} className={iconButton} title={`${t('header.languageLabel')} · v${version}`} aria-label={`${t('header.languageLabel')} · v${version}`} aria-expanded={showLangMenu} aria-controls="language-menu" aria-haspopup="menu">
-            <UserCircle size={19} />
+            <Globe size={17} />
           </button>
 
           {showAppearance && (
