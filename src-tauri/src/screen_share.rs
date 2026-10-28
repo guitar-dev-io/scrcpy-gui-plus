@@ -177,61 +177,49 @@ fn escape_html(text: &str) -> String {
         .replace('"', "&quot;")
 }
 
-fn viewer_page(title: &str, token: &str) -> String {
-    let title = escape_html(title);
-    format!(
-        "<!doctype html><html><head><meta charset=\"utf-8\">\
-<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
-<title>{title}</title><style>\
-html,body{{margin:0;height:100%;background:#05070b;color:#9aa3b2;font:14px system-ui,sans-serif}}\
-body{{display:flex;align-items:center;justify-content:center}}\
-img{{max-width:100vw;max-height:100vh;object-fit:contain}}\
-</style></head><body><img alt=\"{title}\" src=\"/s/{token}/stream\"></body></html>"
-    )
+const PAGE: &str = include_str!("screen_share_page.html");
+
+/// Keeps the `<!--tag-->…<!--/tag-->` blocks of the page template when `keep`
+/// is set and drops them otherwise; the marker comments themselves always go.
+fn strip_blocks(html: &str, tag: &str, keep: bool) -> String {
+    let open = format!("<!--{tag}-->");
+    let close = format!("<!--/{tag}-->");
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(start) = rest.find(&open) {
+        out.push_str(&rest[..start]);
+        let inner = &rest[start + open.len()..];
+        let end = inner.find(&close).unwrap_or(inner.len());
+        if keep {
+            out.push_str(&inner[..end]);
+        }
+        rest = inner.get(end + close.len()..).unwrap_or("");
+    }
+    out.push_str(rest);
+    out
 }
 
-const CONTROL_PAGE: &str = r#"<!doctype html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
-<title>__TITLE__</title><style>
-html,body{margin:0;height:100%;background:#05070b;color:#e5e7eb;font:14px system-ui,sans-serif}
-body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px}
-#s{max-width:100vw;max-height:calc(100vh - 60px);object-fit:contain;touch-action:none;
-user-select:none;-webkit-user-select:none;cursor:pointer}
-#bar{display:flex;gap:8px;height:44px}
-button{min-width:64px;border:1px solid #2a3140;border-radius:10px;background:#111827;
-color:inherit;font:inherit;cursor:pointer}
-button:active{background:#1f2937}
-</style></head><body>
-<img id="s" alt="__TITLE__" draggable="false" src="__BASE__/stream">
-<div id="bar">
-<button data-k="back">Back</button><button data-k="home">Home</button>
-<button data-k="recents">Recents</button><button data-k="volume_down">Vol -</button>
-<button data-k="volume_up">Vol +</button>
-</div>
-<script>
-const base="__BASE__",key="__KEY__",img=document.getElementById("s");
-let start=null;
-const point=e=>{const r=img.getBoundingClientRect();
-return{x:Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)),
-y:Math.min(1,Math.max(0,(e.clientY-r.top)/r.height)),t:Date.now()}};
-const send=q=>fetch(base+"/input?k="+key+"&"+q,{method:"POST"}).catch(()=>{});
-img.addEventListener("pointerdown",e=>{e.preventDefault();img.setPointerCapture(e.pointerId);start=point(e)});
-img.addEventListener("pointerup",e=>{
-if(!start)return;const a=start,b=point(e);start=null;
-const dur=Math.max(60,Math.min(2000,b.t-a.t));
-const moved=Math.hypot(b.x-a.x,b.y-a.y)>0.02;
-if(!moved&&dur<400)send("a=tap&x="+a.x.toFixed(4)+"&y="+a.y.toFixed(4));
-else send("a=swipe&x="+a.x.toFixed(4)+"&y="+a.y.toFixed(4)+"&x2="+b.x.toFixed(4)+"&y2="+b.y.toFixed(4)+"&d="+dur);
-});
-img.addEventListener("pointercancel",()=>{start=null});
-document.querySelectorAll("button[data-k]").forEach(b=>b.onclick=()=>send("a=key&code="+b.dataset.k));
-</script></body></html>"#;
-
-fn control_page(title: &str, token: &str, key: &str) -> String {
-    CONTROL_PAGE
+/// The browser page for one share. The view-only page is built without any of
+/// the control markup or script, so it has nothing that could send input.
+fn render_page(title: &str, token: &str, control_key: Option<&str>) -> String {
+    let (mode, badge) = match control_key {
+        Some(_) => ("control", "Control"),
+        None => ("view", "View only"),
+    };
+    strip_blocks(PAGE, "control", control_key.is_some())
         .replace("__TITLE__", &escape_html(title))
         .replace("__BASE__", &format!("/s/{token}"))
-        .replace("__KEY__", key)
+        .replace("__MODE__", mode)
+        .replace("__BADGE__", badge)
+        .replace("__KEY__", control_key.unwrap_or(""))
+}
+
+fn viewer_page(title: &str, token: &str) -> String {
+    render_page(title, token, None)
+}
+
+fn control_page(title: &str, token: &str, key: &str) -> String {
+    render_page(title, token, Some(key))
 }
 
 async fn respond(stream: &mut TcpStream, status: &str, content_type: &str, body: &[u8]) {
@@ -677,6 +665,10 @@ mod tests {
         assert!(reply.starts_with("HTTP/1.1 403"), "{reply}");
         let reply = request(port, "GET /s/tok/c/guess HTTP/1.1\r\nHost: x\r\n\r\n").await;
         assert!(reply.starts_with("HTTP/1.1 404"), "{reply}");
+        // the view page carries no control markup or input script at all
+        let page = request(port, "GET /s/tok HTTP/1.1\r\nHost: x\r\n\r\n").await;
+        assert!(page.starts_with("HTTP/1.1 200") && page.contains("View only"), "{page}");
+        assert!(!page.contains("data-k") && !page.contains("/input") && !page.contains("__"));
     }
 
     #[tokio::test]
@@ -691,6 +683,6 @@ mod tests {
         assert!(reply.starts_with("HTTP/1.1 400"), "{reply}");
         let reply = request(port, "GET /s/tok/c/secretkey HTTP/1.1\r\nHost: x\r\n\r\n").await;
         assert!(reply.starts_with("HTTP/1.1 200") && reply.contains("data-k=\"home\""), "{reply}");
-        assert!(reply.contains("secretkey"));
+        assert!(reply.contains("secretkey") && !reply.contains("__") && !reply.contains("<!--"));
     }
 }
