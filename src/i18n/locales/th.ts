@@ -626,6 +626,7 @@ export const th: DeepPartialTranslations = {
     tabs: {
       devices: 'การ์ด',
       'device-wall': 'จอสด',
+      'pair-device': 'เชื่อมต่อ',
       screenshots: 'ภาพหน้าจอ',
       recordings: 'การบันทึกวิดีโอ',
       sessions: 'เซสชัน',

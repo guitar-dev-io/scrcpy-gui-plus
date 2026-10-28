@@ -1529,6 +1529,7 @@ export const en = {
     tabs: {
       devices: 'Cards',
       'device-wall': 'Live wall',
+      'pair-device': 'Connect',
       screenshots: 'Screenshots',
       recordings: 'Recordings',
       sessions: 'Sessions',
