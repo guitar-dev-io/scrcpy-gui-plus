@@ -16,6 +16,7 @@ import { useDeviceActions } from '../../hooks/useDeviceActions'
 import { useDevicePreview } from '../../hooks/useLivePreview'
 import type { DeviceActionId } from '../../types/deviceControl'
 import type { ToolbarNotifier } from '../device-control-toolbar'
+import ScreenSharePanel from './ScreenSharePanel'
 
 interface PhysicalAndroidStageProps {
   serial: string
@@ -125,6 +126,7 @@ export default function PhysicalAndroidStage({
           <p className="mt-4 border-t border-zinc-800/60 pt-4 text-[9px] leading-relaxed text-zinc-500">
             This lightweight preview does not compete with an existing embedded scrcpy session. Open the full workspace for touch, keyboard and low-latency video.
           </p>
+          <ScreenSharePanel serial={serial} name={name} customPath={customPath} />
           {onOpenWorkspace && (
             <button
               type="button"
