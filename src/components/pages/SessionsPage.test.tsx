@@ -20,7 +20,7 @@ const completed: SessionHistoryEntry = {
   endedAt: '2026-01-01T11:01:05Z',
   durationMs: 3_665_000,
   status: 'completed',
-  config: { ...DEFAULT_SCRCPY_CONFIG, res: '1080', bitrate: '16' },
+  config: { ...DEFAULT_SCRCPY_CONFIG, res: '1080', bitrate: 16 },
 }
 
 function renderPage(props: Partial<ComponentProps<typeof SessionsPage>> = {}) {
