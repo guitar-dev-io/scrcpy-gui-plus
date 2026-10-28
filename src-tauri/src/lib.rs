@@ -25,6 +25,7 @@ mod macro_player;
 mod maestro;
 mod qr_device;
 mod screen_share;
+mod screen_share_video;
 mod screenshot;
 mod simdeck;
 mod system;

@@ -372,10 +372,22 @@ impl VideoHub {
     }
 
     fn attach_remote(&mut self, subscriber_id: String) -> Result<Receiver<Vec<u8>>, String> {
+        self.attach_remote_with_headroom(subscriber_id, None)
+    }
+
+    /// `headroom` sizes the queue as the cached GOP plus that many live
+    /// packets, for viewers on a fast link that must start from a long GOP.
+    /// `None` keeps the fixed queue used for mobile companions.
+    fn attach_remote_with_headroom(
+        &mut self,
+        subscriber_id: String,
+        headroom: Option<usize>,
+    ) -> Result<Receiver<Vec<u8>>, String> {
         // Enough room for decoder configuration plus a normal GOP, while still
         // bounded. If priming cannot fit, fail instead of starting permanently
         // behind the live stream.
-        let (sender, receiver) = sync_channel(128);
+        let capacity = headroom.map_or(128, |extra| (self.current_gop.len() + 2 + extra).max(128));
+        let (sender, receiver) = sync_channel(capacity);
         if self.width > 0 && self.height > 0 {
             sender
                 .try_send(dimension_message(self.width, self.height))
@@ -472,6 +484,25 @@ impl EmbedSessionState {
         serial: &str,
         subscriber_id: String,
     ) -> Result<(String, Receiver<Vec<u8>>), String> {
+        self.remote_video_subscribe_with_headroom(serial, subscriber_id, None)
+    }
+
+    /// Like [`Self::remote_video_subscribe`] but sizes the queue from the
+    /// cached GOP; used by LAN screen sharing.
+    pub(crate) fn remote_video_subscribe_roomy(
+        &self,
+        serial: &str,
+        subscriber_id: String,
+    ) -> Result<(String, Receiver<Vec<u8>>), String> {
+        self.remote_video_subscribe_with_headroom(serial, subscriber_id, Some(256))
+    }
+
+    fn remote_video_subscribe_with_headroom(
+        &self,
+        serial: &str,
+        subscriber_id: String,
+        headroom: Option<usize>,
+    ) -> Result<(String, Receiver<Vec<u8>>), String> {
         let sessions = self
             .sessions
             .lock()
@@ -491,7 +522,7 @@ impl EmbedSessionState {
             .video
             .lock()
             .map_err(|_| "The embedded video stream is unavailable".to_string())?
-            .attach_remote(subscriber_id)?;
+            .attach_remote_with_headroom(subscriber_id, headroom)?;
         Ok((session_id.clone(), receiver))
     }
 

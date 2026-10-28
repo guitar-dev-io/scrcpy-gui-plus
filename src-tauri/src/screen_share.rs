@@ -10,15 +10,18 @@
 //! serves a page that sends taps, swipes and a few hardware keys back to the
 //! device through `adb shell input`. The plain view link never accepts input.
 
+use crate::embed_session::{self, control, EmbedSessionState};
+use crate::screen_share_video::{Fmp4Muxer, MuxEvent};
 use crate::{adb, screenshot};
 use image::{codecs::jpeg::JpegEncoder, imageops::FilterType, DynamicImage};
 use rand::RngExt;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
-use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
-use tauri::State;
+use tauri::{AppHandle, Manager, State, Window};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
@@ -36,6 +39,15 @@ const CONTROL_FPS: u32 = 4;
 const MIN_SWIPE_MS: u32 = 50;
 const MAX_SWIPE_MS: u32 = 2000;
 const BOUNDARY: &str = "scrcpyguiframe";
+/// How long the device's scrcpy session stays up after the last video viewer
+/// leaves, so a page reload or reconnect does not restart it.
+const VIDEO_IDLE_RELEASE_SECS: u64 = 20;
+const VIDEO_INIT_TIMEOUT_SECS: u64 = 10;
+const SCROLL_STEPS: u32 = 8;
+const SCROLL_STEP_MS: u64 = 16;
+/// Lease ids for the shared embedded session. Kept far above the small
+/// counters other remote features use so the two never collide.
+static NEXT_LEASE: AtomicU64 = AtomicU64::new(1 << 48);
 
 type Frame = Option<Arc<Vec<u8>>>;
 
@@ -50,6 +62,25 @@ fn key_code(name: &str) -> Option<&'static str> {
         "volume_down" => "KEYCODE_VOLUME_DOWN",
         _ => return None,
     })
+}
+
+/// Android key codes for the control-socket path.
+fn control_keycode(name: &str) -> Option<u32> {
+    Some(match name {
+        "back" => control::KEYCODE_BACK,
+        "home" => control::KEYCODE_HOME,
+        "recents" => control::KEYCODE_APP_SWITCH,
+        "volume_up" => 24,
+        "volume_down" => 25,
+        _ => return None,
+    })
+}
+
+/// What a share needs from the running app to start the scrcpy session that
+/// feeds smooth video and real touch input. Absent in unit tests.
+struct Host {
+    app: AppHandle,
+    window: Window,
 }
 
 /// State one running share needs in every connection handler.
@@ -67,6 +98,13 @@ struct Shared {
     input_lock: tokio::sync::Mutex<()>,
     /// One full-resolution capture at a time, so a held button cannot pile up adb calls.
     capture_lock: tokio::sync::Mutex<()>,
+    host: Option<Host>,
+    /// Lease id on the device's embedded scrcpy session while video viewers exist.
+    lease: tokio::sync::Mutex<Option<u64>>,
+    video_viewers: AtomicUsize,
+    /// Size of the scrcpy video frame, which touch coordinates are relative to.
+    video_width: AtomicU32,
+    video_height: AtomicU32,
 }
 
 struct ShareSession {
@@ -371,13 +409,120 @@ async fn handle_capture(stream: &mut TcpStream, shared: &Shared) {
     }
 }
 
-async fn handle_input(stream: &mut TcpStream, shared: &Shared, query: &str) {
-    let authorized = match (&shared.control_key, query_param(query, "k")) {
-        (Some(expected), Some(given)) => expected == given,
-        _ => false,
-    };
-    if !authorized {
+/// Control socket of the device's scrcpy session, when one is running.
+fn control_socket(shared: &Shared) -> Option<Arc<tokio::sync::Mutex<TcpStream>>> {
+    let host = shared.host.as_ref()?;
+    host.app
+        .state::<EmbedSessionState>()
+        .remote_control_for_serial(&shared.serial)
+        .ok()
+}
+
+fn authorized(shared: &Shared, query: &str) -> bool {
+    matches!(
+        (&shared.control_key, query_param(query, "k")),
+        (Some(expected), Some(given)) if expected == given
+    )
+}
+
+fn fraction(query: &str, name: &str) -> Option<f64> {
+    let value: f64 = query_param(query, name)?.parse().ok()?;
+    value.is_finite().then_some(value)
+}
+
+async fn send_touch(
+    handle: &Arc<tokio::sync::Mutex<TcpStream>>,
+    action: u8,
+    x: f64,
+    y: f64,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    let (px, py) = embed_session::validate_touch(
+        x.clamp(0.0, 1.0) * f64::from(width.saturating_sub(1)),
+        y.clamp(0.0, 1.0) * f64::from(height.saturating_sub(1)),
+        width,
+        height,
+    )?;
+    let pressure = if action == control::ACTION_UP { 0.0 } else { 1.0 };
+    let message =
+        control::encode_touch(action, 0, px, py, width as u16, height as u16, pressure);
+    embed_session::write_control(handle, &message).await
+}
+
+/// Real touch input through scrcpy's control socket: `a=down|move|up` follow a
+/// finger, `a=scroll` plays a short drag from a point by a fraction of the screen.
+async fn handle_touch(stream: &mut TcpStream, shared: &Shared, query: &str) {
+    if !authorized(shared, query) {
         return respond(stream, "403 Forbidden", "text/plain", b"control not allowed").await;
+    }
+    let Some(handle) = control_socket(shared) else {
+        return respond(stream, "409 Conflict", "text/plain", b"no live video session").await;
+    };
+    let width = shared.video_width.load(Ordering::Relaxed);
+    let height = shared.video_height.load(Ordering::Relaxed);
+    if width == 0 || height == 0 {
+        return respond(stream, "409 Conflict", "text/plain", b"no video frame yet").await;
+    }
+    let (Some(x), Some(y)) = (fraction(query, "x"), fraction(query, "y")) else {
+        return respond(stream, "400 Bad Request", "text/plain", b"bad coordinates").await;
+    };
+    let result = match query_param(query, "a") {
+        Some(name @ ("down" | "move" | "up")) => {
+            let action = control::touch_action_code(name).unwrap_or(control::ACTION_MOVE);
+            send_touch(&handle, action, x, y, width, height).await
+        }
+        Some("scroll") => {
+            let (Some(dx), Some(dy)) = (fraction(query, "dx"), fraction(query, "dy")) else {
+                return respond(stream, "400 Bad Request", "text/plain", b"bad scroll").await;
+            };
+            let _ordered = shared.input_lock.lock().await;
+            scroll_drag(&handle, (x, y), (dx, dy), width, height).await
+        }
+        _ => return respond(stream, "400 Bad Request", "text/plain", b"unknown action").await,
+    };
+    match result {
+        Ok(()) => respond(stream, "204 No Content", "text/plain", b"").await,
+        Err(error) => respond(stream, "502 Bad Gateway", "text/plain", error.as_bytes()).await,
+    }
+}
+
+/// A finger drag from `from` by `delta`, ending inside the screen.
+async fn scroll_drag(
+    handle: &Arc<tokio::sync::Mutex<TcpStream>>,
+    from: (f64, f64),
+    delta: (f64, f64),
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    let to = ((from.0 + delta.0).clamp(0.0, 1.0), (from.1 + delta.1).clamp(0.0, 1.0));
+    send_touch(handle, control::ACTION_DOWN, from.0, from.1, width, height).await?;
+    for step in 1..=SCROLL_STEPS {
+        sleep(Duration::from_millis(SCROLL_STEP_MS)).await;
+        let t = f64::from(step) / f64::from(SCROLL_STEPS);
+        let at = (from.0 + (to.0 - from.0) * t, from.1 + (to.1 - from.1) * t);
+        send_touch(handle, control::ACTION_MOVE, at.0, at.1, width, height).await?;
+    }
+    send_touch(handle, control::ACTION_UP, to.0, to.1, width, height).await
+}
+
+async fn handle_input(stream: &mut TcpStream, shared: &Shared, query: &str) {
+    if !authorized(shared, query) {
+        return respond(stream, "403 Forbidden", "text/plain", b"control not allowed").await;
+    }
+    // With a live scrcpy session a key press goes through its control socket,
+    // which is much faster than spawning `adb shell input`.
+    if query_param(query, "a") == Some("key") {
+        let code = query_param(query, "code").and_then(control_keycode);
+        if let (Some(code), Some(handle)) = (code, control_socket(shared)) {
+            let down = control::encode_keycode(control::KEY_ACTION_DOWN, code, 0, 0);
+            let up = control::encode_keycode(control::KEY_ACTION_UP, code, 0, 0);
+            let sent = embed_session::write_control(&handle, &down).await.is_ok()
+                && embed_session::write_control(&handle, &up).await.is_ok();
+            if sent {
+                return respond(stream, "204 No Content", "text/plain", b"").await;
+            }
+        }
     }
     let args = match input_args(shared, query) {
         Ok(args) => args,
@@ -400,6 +545,172 @@ async fn handle_input(stream: &mut TcpStream, shared: &Shared, query: &str) {
     }
 }
 
+/// Ends the device session lease once nobody has watched the video for a while.
+async fn release_idle_lease(shared: &Shared) {
+    let Some(host) = &shared.host else { return };
+    let mut lease = shared.lease.lock().await;
+    if shared.video_viewers.load(Ordering::Relaxed) > 0 {
+        return;
+    }
+    if let Some(generation) = lease.take() {
+        embed_session::release_remote_session_lease(&host.app, &host.window, generation).await;
+    }
+}
+
+/// Starts (or joins) the device's scrcpy session and subscribes to its H.264
+/// stream. The viewer count is raised under the lease lock so an idle release
+/// can never race a viewer that is just arriving.
+async fn open_video(shared: &Arc<Shared>) -> Result<VideoSubscription, String> {
+    let host = shared
+        .host
+        .as_ref()
+        .ok_or_else(|| "Smooth video is not available here".to_string())?;
+    let mut lease = shared.lease.lock().await;
+    let state = host.app.state::<EmbedSessionState>();
+    if lease.is_none() {
+        let generation = NEXT_LEASE.fetch_add(1, Ordering::Relaxed);
+        embed_session::ensure_remote_embedded_session(
+            host.window.clone(),
+            &state,
+            shared.serial.clone(),
+            shared.custom_path.clone(),
+            generation,
+        )
+        .await?;
+        *lease = Some(generation);
+    }
+    let subscriber = new_token();
+    let (session_id, packets) = state.remote_video_subscribe_roomy(&shared.serial, subscriber.clone())?;
+    shared.video_viewers.fetch_add(1, Ordering::Relaxed);
+    Ok(VideoSubscription {
+        shared: shared.clone(),
+        session_id,
+        subscriber,
+        packets: Some(packets),
+    })
+}
+
+/// One viewer's subscription; dropping it detaches from the stream and starts
+/// the idle countdown when it was the last one.
+struct VideoSubscription {
+    shared: Arc<Shared>,
+    session_id: String,
+    subscriber: String,
+    packets: Option<Receiver<Vec<u8>>>,
+}
+
+impl Drop for VideoSubscription {
+    fn drop(&mut self) {
+        if let Some(host) = &self.shared.host {
+            host.app
+                .state::<EmbedSessionState>()
+                .remote_video_detach(&self.session_id, &self.subscriber);
+        }
+        if self.shared.video_viewers.fetch_sub(1, Ordering::Relaxed) == 1 {
+            let shared = self.shared.clone();
+            tokio::spawn(async move {
+                sleep(Duration::from_secs(VIDEO_IDLE_RELEASE_SECS)).await;
+                release_idle_lease(&shared).await;
+            });
+        }
+    }
+}
+
+/// Writes one length-prefixed unit: `[len:u32 BE][bytes]`.
+async fn write_unit(stream: &mut TcpStream, bytes: &[u8]) -> bool {
+    let mut unit = Vec::with_capacity(4 + bytes.len());
+    unit.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
+    unit.extend_from_slice(bytes);
+    stream.write_all(&unit).await.is_ok()
+}
+
+fn remember_video_size(shared: &Shared, message: &[u8]) {
+    if message.first() == Some(&2) && message.len() >= 9 {
+        shared
+            .video_width
+            .store(u32::from_be_bytes(message[1..5].try_into().unwrap()), Ordering::Relaxed);
+        shared
+            .video_height
+            .store(u32::from_be_bytes(message[5..9].try_into().unwrap()), Ordering::Relaxed);
+    }
+}
+
+/// Streams the device's H.264 as length-prefixed fragmented-MP4 units. The
+/// response carries the `X-Codec` string; the first unit is the init segment.
+async fn handle_video(
+    stream: &mut TcpStream,
+    shared: &Arc<Shared>,
+    shutdown: &mut watch::Receiver<bool>,
+) {
+    let mut subscription = match open_video(shared).await {
+        Ok(subscription) => subscription,
+        Err(error) => {
+            return respond(stream, "503 Service Unavailable", "text/plain", error.as_bytes()).await
+        }
+    };
+    let Some(packets) = subscription.packets.take() else { return };
+    let (sender, mut messages) = tokio::sync::mpsc::channel::<Vec<u8>>(256);
+    // The hub hands out a blocking receiver; bridge it without blocking the runtime.
+    tokio::task::spawn_blocking(move || {
+        while let Ok(message) = packets.recv() {
+            if sender.blocking_send(message).is_err() {
+                break;
+            }
+        }
+    });
+
+    let mut muxer = Fmp4Muxer::new();
+    let init = tokio::time::timeout(Duration::from_secs(VIDEO_INIT_TIMEOUT_SECS), async {
+        while let Some(message) = messages.recv().await {
+            remember_video_size(shared, &message);
+            for event in muxer.push(&message) {
+                if let MuxEvent::Init { codec, bytes } = event {
+                    return Some((codec, bytes));
+                }
+            }
+        }
+        None
+    })
+    .await
+    .ok()
+    .flatten();
+    let Some((codec, init)) = init else {
+        return respond(stream, "503 Service Unavailable", "text/plain", b"no video from the device").await;
+    };
+
+    let head = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nX-Codec: {codec}\r\n\
+Cache-Control: no-store\r\nConnection: close\r\n\r\n"
+    );
+    if stream.write_all(head.as_bytes()).await.is_err() || !write_unit(stream, &init).await {
+        return;
+    }
+    let mut inbound = [0u8; 64];
+    loop {
+        tokio::select! {
+            message = messages.recv() => {
+                let Some(message) = message else { return };
+                remember_video_size(shared, &message);
+                for event in muxer.push(&message) {
+                    match event {
+                        MuxEvent::Fragment(bytes) => {
+                            if !write_unit(stream, &bytes).await {
+                                return;
+                            }
+                        }
+                        // A new codec configuration needs a new init segment:
+                        // end the stream so the page reconnects.
+                        MuxEvent::Reconfigured => return,
+                        MuxEvent::Init { .. } => {}
+                    }
+                }
+            }
+            _ = shutdown.changed() => return,
+            _ = stream.read(&mut inbound) => return,
+        }
+    }
+}
+
 async fn handle_connection(
     mut stream: TcpStream,
     shared: Arc<Shared>,
@@ -417,6 +728,9 @@ async fn handle_connection(
     if method == "POST" && path == format!("{base}/input") {
         return handle_input(&mut stream, &shared, query).await;
     }
+    if method == "POST" && path == format!("{base}/touch") {
+        return handle_touch(&mut stream, &shared, query).await;
+    }
     if method != "GET" {
         return respond(&mut stream, "405 Method Not Allowed", "text/plain", b"").await;
     }
@@ -430,6 +744,9 @@ async fn handle_connection(
             return respond(&mut stream, "200 OK", "text/html; charset=utf-8", page.as_bytes())
                 .await;
         }
+    }
+    if path == format!("{base}/video") {
+        return handle_video(&mut stream, &shared, &mut shutdown).await;
     }
     if path == format!("{base}/capture.png") {
         return handle_capture(&mut stream, &shared).await;
@@ -506,7 +823,8 @@ fn info_for(serial: &str, session: &ShareSession) -> ScreenShareInfo {
         url: session.url.clone(),
         control_url: session.control_url.clone(),
         port: session.port,
-        viewers: session.shared.viewers.load(Ordering::Relaxed),
+        viewers: session.shared.viewers.load(Ordering::Relaxed)
+            + session.shared.video_viewers.load(Ordering::Relaxed),
     }
 }
 
@@ -518,6 +836,7 @@ pub async fn screen_share_start(
     fps: Option<u32>,
     title: Option<String>,
     allow_control: Option<bool>,
+    window: Window,
 ) -> Result<ScreenShareInfo, String> {
     let serial = serial.trim().to_string();
     adb::validate_serial(&serial).map_err(|error| error.message())?;
@@ -554,6 +873,14 @@ pub async fn screen_share_start(
         height: AtomicU32::new(0),
         input_lock: tokio::sync::Mutex::new(()),
         capture_lock: tokio::sync::Mutex::new(()),
+        host: Some(Host {
+            app: window.app_handle().clone(),
+            window,
+        }),
+        lease: tokio::sync::Mutex::new(None),
+        video_viewers: AtomicUsize::new(0),
+        video_width: AtomicU32::new(0),
+        video_height: AtomicU32::new(0),
     });
     let (frame_tx, frame_rx) = watch::channel::<Frame>(None);
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -601,12 +928,23 @@ pub async fn screen_share_start(
 }
 
 #[tauri::command]
-pub fn screen_share_stop(state: State<'_, ScreenShareState>, serial: String) {
-    if let Ok(mut sessions) = state.sessions.lock() {
-        if let Some(session) = sessions.remove(serial.trim()) {
-            let _ = session.shutdown.send(true);
-        }
+pub async fn screen_share_stop(
+    state: State<'_, ScreenShareState>,
+    serial: String,
+) -> Result<(), String> {
+    let session = state
+        .sessions
+        .lock()
+        .map_err(|e| e.to_string())?
+        .remove(serial.trim());
+    if let Some(session) = session {
+        let _ = session.shutdown.send(true);
+        // Give viewers up to the idle window to leave on their own, then
+        // drop the device session regardless: the share is over.
+        session.shared.video_viewers.store(0, Ordering::Relaxed);
+        release_idle_lease(&session.shared).await;
     }
+    Ok(())
 }
 
 #[tauri::command]
@@ -639,6 +977,11 @@ mod tests {
             height: AtomicU32::new(height),
             input_lock: tokio::sync::Mutex::new(()),
             capture_lock: tokio::sync::Mutex::new(()),
+            host: None,
+            lease: tokio::sync::Mutex::new(None),
+            video_viewers: AtomicUsize::new(0),
+            video_width: AtomicU32::new(0),
+            video_height: AtomicU32::new(0),
         }
     }
 
@@ -746,5 +1089,29 @@ mod tests {
         let reply = request(port, "GET /s/tok/c/secretkey HTTP/1.1\r\nHost: x\r\n\r\n").await;
         assert!(reply.starts_with("HTTP/1.1 200") && reply.contains("data-k=\"home\""), "{reply}");
         assert!(reply.contains("secretkey") && !reply.contains("__") && !reply.contains("<!--"));
+    }
+
+    fn post_to(path: &str, q: &str) -> String {
+        format!("POST /s/tok/{path}?{q} HTTP/1.1\r\nHost: x\r\n\r\n")
+    }
+
+    #[tokio::test]
+    async fn touch_needs_the_key_and_a_live_video_session() {
+        let port = serve(shared(Some("secretkey"), 1000, 2000)).await;
+        let reply = request(port, &post_to("touch", "k=wrong&a=down&x=0.5&y=0.5")).await;
+        assert!(reply.starts_with("HTTP/1.1 403"), "{reply}");
+        // right key, but there is no scrcpy session to send it to
+        let reply = request(port, &post_to("touch", "k=secretkey&a=down&x=0.5&y=0.5")).await;
+        assert!(reply.starts_with("HTTP/1.1 409"), "{reply}");
+        let view_only = serve(shared(None, 1000, 2000)).await;
+        let reply = request(view_only, &post_to("touch", "k=x&a=down&x=0.5&y=0.5")).await;
+        assert!(reply.starts_with("HTTP/1.1 403"), "view-only share must refuse touch: {reply}");
+    }
+
+    #[tokio::test]
+    async fn video_is_unavailable_without_the_app() {
+        let port = serve(shared(None, 0, 0)).await;
+        let reply = request(port, "GET /s/tok/video HTTP/1.1\r\nHost: x\r\n\r\n").await;
+        assert!(reply.starts_with("HTTP/1.1 503"), "{reply}");
     }
 }

@@ -49,12 +49,15 @@ body{
   position:relative;line-height:0;overflow:hidden;border-radius:33px;background:#000;
   min-width:min(66vw,250px);min-height:min(60vh,500px);
 }
-#s{
+#s,#v{
   display:block;border-radius:33px;user-select:none;-webkit-user-select:none;
   max-width:min(88vw,430px);max-height:calc(100dvh - 92px);
   opacity:0;transition:opacity .35s ease;
 }
-.live #s{opacity:1}
+.live #s,.live #v{opacity:1}
+#v{display:none;background:#000;pointer-events:none}
+body.video #v{display:block}
+body.video #s{display:none}
 #fx{position:absolute;inset:0;touch-action:none;overflow:hidden}
 .control #fx{cursor:pointer}
 .wait{
@@ -86,6 +89,7 @@ button{
 }
 button:hover{background:rgba(255,255,255,.09);border-color:var(--line)}
 button:active,button.hit{transform:scale(.92);background:rgba(255,90,95,.2);border-color:rgba(255,90,95,.5);color:#fff}
+button.on{color:var(--accent);background:rgba(255,90,95,.12);border-color:rgba(255,90,95,.35)}
 button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 button svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 button::after{ /* tooltip */
@@ -107,8 +111,8 @@ button:hover::after{opacity:1}
   .rail i{width:1px;height:auto;margin:6px 2px}
   button{width:44px;height:44px}
   button::after{display:none}
-  #s{max-height:calc(100dvh - 200px)}
-  .device{padding:8px;border-radius:36px}.screen,#s{border-radius:28px}
+  #s,#v{max-height:calc(100dvh - 200px)}
+  .device{padding:8px;border-radius:36px}.screen,#s,#v{border-radius:28px}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
@@ -118,7 +122,8 @@ button:hover::after{opacity:1}
 <main class="deck">
   <div class="device">
     <div class="screen">
-      <img id="s" alt="__TITLE__" draggable="false" src="__BASE__/stream">
+      <video id="v" muted playsinline autoplay disablepictureinpicture></video>
+      <img id="s" alt="__TITLE__" draggable="false">
       <div id="fx"></div>
       <div class="wait" id="wait"><div class="spin"></div><span id="waitmsg">Connecting to device…</span></div>
     </div>
@@ -133,6 +138,7 @@ button:hover::after{opacity:1}
     <button data-k="volume_down" data-tip="Volume down (PgDn)" aria-label="Volume down"><svg viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M16 12h4"/></svg></button>
     <i></i>
 <!--/control-->
+    <button id="frm" data-tip="Include device frame in captures" aria-label="Include device frame in captures" aria-pressed="false"><svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.6"/><path d="M10.5 5h3"/></svg></button>
     <button id="cap" data-tip="Capture screenshot" aria-label="Capture screenshot"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></button>
     <button id="fs" data-tip="Fullscreen" aria-label="Fullscreen"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
   </nav>
@@ -142,19 +148,94 @@ button:hover::after{opacity:1}
 (()=>{
 const base="__BASE__",$=id=>document.getElementById(id);
 const img=$("s"),wait=$("wait"),waitmsg=$("waitmsg"),toast=$("toast");
-let live=false,retry=0;
+let live=false,retry=0,mode="",everLive=false;
+const vid=$("v");
 const setLive=on=>{
   if(on===live)return;live=on;
+  if(on)everLive=true;
   document.body.classList.toggle("live",on);
   if(!on)waitmsg.textContent="Reconnecting…";
 };
-img.addEventListener("load",()=>{retry=0;setLive(true)});
-img.addEventListener("error",()=>{
-  setLive(false);
-  setTimeout(()=>{img.src=base+"/stream?t="+Date.now()},Math.min(5000,1000+retry++*800));
-});
-// Some browsers never fire load for a multipart stream, so also watch the size.
-setInterval(()=>{if(img.naturalWidth>0)setLive(true)},600);
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+// Compatibility mode: a stream of still frames, used when smooth video is unavailable.
+function useStills(){
+  mode="stills";
+  document.body.classList.remove("video");
+  $("chip").title="Compatibility mode (still frames)";
+  const open=()=>{img.src=base+"/stream?t="+Date.now()};
+  img.addEventListener("load",()=>{retry=0;setLive(true)});
+  img.addEventListener("error",()=>{
+    setLive(false);
+    setTimeout(open,Math.min(5000,1000+retry++*800));
+  });
+  // Some browsers never fire load for a multipart stream, so also watch the size.
+  setInterval(()=>{if(img.naturalWidth>0)setLive(true)},600);
+  open();
+}
+
+// Smooth mode: H.264 from the device, repackaged as fragmented MP4 and played with
+// Media Source Extensions. The stream is a sequence of [length:u32][unit] records.
+async function playVideoOnce(){
+  const res=await fetch(base+"/video",{cache:"no-store"});
+  if(!res.ok||!res.body)throw new Error("video "+res.status);
+  const mime='video/mp4; codecs="'+res.headers.get("X-Codec")+'"';
+  if(!MediaSource.isTypeSupported(mime))throw new Error("codec "+mime);
+  const ms=new MediaSource();
+  vid.src=URL.createObjectURL(ms);
+  await new Promise(r=>ms.addEventListener("sourceopen",r,{once:true}));
+  const sb=ms.addSourceBuffer(mime),queue=[];
+  const pump=()=>{
+    if(sb.updating||!queue.length||ms.readyState!=="open")return;
+    try{sb.appendBuffer(queue.shift())}catch(e){queue.length=0}
+  };
+  // Keep the newest frame on screen: jump forward whenever playback falls behind.
+  const chase=()=>{
+    const b=vid.buffered;if(!b.length)return;
+    const end=b.end(b.length-1);
+    if(vid.paused)vid.play().catch(()=>{});
+    if(end-vid.currentTime>.12)vid.currentTime=end-.02;
+  };
+  sb.addEventListener("updateend",()=>{pump();chase()});
+  const tidy=setInterval(()=>{
+    if(sb.updating||ms.readyState!=="open")return;
+    const b=vid.buffered;
+    if(b.length&&vid.currentTime-b.start(0)>6)try{sb.remove(0,vid.currentTime-2)}catch(e){}
+    if(b.length&&vid.readyState<3&&b.end(b.length-1)>vid.currentTime)vid.currentTime=b.end(b.length-1)-.001;
+  },250);
+  const reader=res.body.getReader();
+  let pending=new Uint8Array(0);
+  try{
+    for(;;){
+      const {value,done}=await reader.read();
+      if(done)break;
+      const joined=new Uint8Array(pending.length+value.length);
+      joined.set(pending);joined.set(value,pending.length);pending=joined;
+      for(;;){
+        if(pending.length<4)break;
+        const size=new DataView(pending.buffer,pending.byteOffset).getUint32(0);
+        if(pending.length<4+size)break;
+        queue.push(pending.slice(4,4+size));pending=pending.subarray(4+size);
+      }
+      pump();
+    }
+  }finally{clearInterval(tidy);reader.cancel().catch(()=>{})}
+}
+vid.addEventListener("loadeddata",()=>{retry=0;setLive(true)});
+async function runVideo(){
+  mode="video";
+  document.body.classList.add("video");
+  $("chip").title="Smooth video";
+  for(;;){
+    try{await playVideoOnce()}catch(e){
+      // Never got a picture: fall back to still frames instead of retrying forever.
+      if(!everLive){mode="";useStills();return}
+    }
+    setLive(false);
+    await sleep(Math.min(4000,600+retry++*500));
+  }
+}
+if(window.MediaSource)runVideo();else useStills();
 $("fs").addEventListener("click",()=>{
   const d=document;
   if(d.fullscreenElement){d.exitFullscreen()}
@@ -163,14 +244,55 @@ $("fs").addEventListener("click",()=>{
 let toastTimer;
 const say=(m,ok)=>{toast.textContent=m;toast.classList.toggle("ok",!!ok);toast.classList.add("show");
   clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove("show"),2400)};
+// Optional device bezel around captured screenshots, remembered per browser.
+let framed=false;
+try{framed=localStorage.getItem("screenShareFrame")==="1"}catch(e){}
+const frm=$("frm"),syncFrame=()=>{frm.classList.toggle("on",framed);frm.setAttribute("aria-pressed",String(framed))};
+syncFrame();
+frm.addEventListener("click",()=>{
+  framed=!framed;syncFrame();
+  try{localStorage.setItem("screenShareFrame",framed?"1":"0")}catch(e){}
+  say(framed?"Captures will include the device frame":"Captures will be the screen only",true);
+});
+function roundRect(g,x,y,w,h,r){
+  r=Math.max(0,Math.min(r,w/2,h/2));
+  g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);
+  g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath();
+}
+// Draws the screenshot inside a bezel on a transparent canvas, sized from the screen width.
+async function withDeviceFrame(blob){
+  const bmp=await createImageBitmap(blob),w=bmp.width,h=bmp.height;
+  const bezel=Math.round(w*.045),margin=Math.round(w*.07),radius=Math.round(w*.1);
+  const bw=w+2*bezel,bh=h+2*bezel,c=document.createElement("canvas");
+  c.width=bw+2*margin;c.height=bh+2*margin;
+  const g=c.getContext("2d"),x=margin,y=margin;
+  g.save();
+  g.shadowColor="rgba(0,0,0,.5)";g.shadowBlur=margin*.6;g.shadowOffsetY=margin*.25;
+  const body=g.createLinearGradient(x,y,x+bw,y+bh);
+  body.addColorStop(0,"#2b3242");body.addColorStop(.55,"#12161f");body.addColorStop(1,"#1b2130");
+  roundRect(g,x,y,bw,bh,radius);g.fillStyle=body;g.fill();
+  g.restore();
+  roundRect(g,x+.5,y+.5,bw-1,bh-1,radius);
+  g.strokeStyle="rgba(255,255,255,.14)";g.lineWidth=Math.max(2,w*.003);g.stroke();
+  g.save();
+  roundRect(g,x+bezel,y+bezel,w,h,radius-bezel);g.clip();
+  g.drawImage(bmp,x+bezel,y+bezel);
+  g.restore();
+  const slitW=w*.16,slitH=Math.max(4,bezel*.28);
+  roundRect(g,x+(bw-slitW)/2,y+(bezel-slitH)/2,slitW,slitH,slitH/2);
+  g.fillStyle="#05070b";g.fill();
+  return new Promise((res,rej)=>c.toBlob(b=>b?res(b):rej(new Error("encode")),"image/png"));
+}
 let capturing=false;
 $("cap").addEventListener("click",async()=>{
   if(capturing||!live)return;capturing=true;$("cap").classList.add("hit");
   try{
     const r=await fetch(base+"/capture.png",{cache:"no-store"});
     if(!r.ok)throw new Error(r.status);
-    const name=((r.headers.get("Content-Disposition")||"").match(/filename="([^"]+)"/)||[])[1]||"screenshot.png";
-    const url=URL.createObjectURL(await r.blob());
+    let name=((r.headers.get("Content-Disposition")||"").match(/filename="([^"]+)"/)||[])[1]||"screenshot.png";
+    let shot=await r.blob();
+    if(framed){shot=await withDeviceFrame(shot);name=name.replace(/\.png$/i,"")+"-framed.png"}
+    const url=URL.createObjectURL(shot);
     const a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();
     setTimeout(()=>URL.revokeObjectURL(url),10000);say("Saved "+name,true);
   }catch(e){say("Could not capture the screen")}
@@ -190,23 +312,53 @@ const spot=(cls,x,y,ms)=>{const n=document.createElement("i");n.className=cls;
   n.style.left=x+"px";n.style.top=y+"px";fx.appendChild(n);setTimeout(()=>n.remove(),ms)};
 let start=null,lastTrail=0;
 fx.addEventListener("contextmenu",e=>e.preventDefault());
+// Smooth mode follows the pointer with real touch events, so dragging scrolls
+// live. Events are sent one at a time in order, and queued moves collapse.
+const touchQueue=[];let touchBusy=false;
+const touch=(a,p,extra)=>{
+  const q="a="+a+"&x="+p.x.toFixed(4)+"&y="+p.y.toFixed(4)+(extra||"");
+  if(a==="move"&&touchQueue.length&&touchQueue[touchQueue.length-1].move)touchQueue[touchQueue.length-1].q=q;
+  else touchQueue.push({q,move:a==="move"});
+  pumpTouch();
+};
+async function pumpTouch(){
+  if(touchBusy)return;touchBusy=true;
+  while(touchQueue.length){
+    const {q}=touchQueue.shift();
+    try{
+      const r=await fetch(base+"/touch?k="+key+"&"+q,{method:"POST"});
+      if(r.status===403)say("Control is not allowed for this link");
+      else if(r.status===409)say("Device session is starting, try again");
+      else if(!r.ok)say("The device did not accept that input");
+    }catch(e){say("Lost connection to the host");touchQueue.length=0}
+  }
+  touchBusy=false;
+}
+let dragging=false;
 fx.addEventListener("pointerdown",e=>{
   if(e.button>0)return;e.preventDefault();fx.setPointerCapture(e.pointerId);
   start=point(e);spot("rip",start.px,start.py,520);
+  if(mode==="video"){dragging=true;touch("down",start)}
 });
 fx.addEventListener("pointermove",e=>{
-  if(!start)return;const n=Date.now();
+  if(!start)return;
+  if(mode==="video"){touch("move",point(e));return}
+  const n=Date.now();
   if(n-lastTrail<24)return;lastTrail=n;const p=point(e);spot("tr",p.px,p.py,450);
 });
 fx.addEventListener("pointerup",e=>{
   if(!start)return;const a=start,b=point(e);start=null;
+  if(dragging){dragging=false;touch("up",b);return}
   const dur=Math.max(60,Math.min(2000,b.t-a.t));
   const moved=Math.hypot(b.x-a.x,b.y-a.y)>0.02;
   const f=v=>v.toFixed(4);
   if(!moved&&dur<400)send("a=tap&x="+f(a.x)+"&y="+f(a.y));
   else send("a=swipe&x="+f(a.x)+"&y="+f(a.y)+"&x2="+f(b.x)+"&y2="+f(b.y)+"&d="+dur);
 });
-fx.addEventListener("pointercancel",()=>{start=null});
+fx.addEventListener("pointercancel",()=>{
+  if(dragging&&start){dragging=false;touch("up",start)}
+  start=null;
+});
 // Wheel / trackpad scrolling becomes a short swipe, like a finger flick on a phone.
 let wheelX=0,wheelY=0,wheelAt=null,wheelTimer=0,wheelBusy=false;
 fx.addEventListener("wheel",e=>{
@@ -217,6 +369,7 @@ fx.addEventListener("wheel",e=>{
   wheelAt={x:clamp((e.clientX-r.left)/r.width),y:clamp((e.clientY-r.top)/r.height)};
   if(!wheelTimer)wheelTimer=setTimeout(flushWheel,90);
 },{passive:false});
+const scrollBy=(x,y,dx,dy)=>fetch(base+"/touch?k="+key+"&a=scroll&x="+x.toFixed(4)+"&y="+y.toFixed(4)+"&dx="+dx.toFixed(4)+"&dy="+dy.toFixed(4),{method:"POST"}).catch(()=>{});
 async function flushWheel(){
   wheelTimer=0;
   if(wheelBusy){wheelTimer=setTimeout(flushWheel,90);return}
@@ -231,7 +384,8 @@ async function flushWheel(){
   const x1=inset(at.x+vx/2),y1=inset(at.y+vy/2),x2=inset(x1-vx),y2=inset(y1-vy);
   const f=v=>v.toFixed(4),dur=Math.round(180+Math.hypot(vx,vy)*500);
   wheelBusy=true;
-  await send("a=swipe&x="+f(x1)+"&y="+f(y1)+"&x2="+f(x2)+"&y2="+f(y2)+"&d="+dur);
+  if(mode==="video")await scrollBy(x1,y1,x2-x1,y2-y1);
+  else await send("a=swipe&x="+f(x1)+"&y="+f(y1)+"&x2="+f(x2)+"&y2="+f(y2)+"&d="+dur);
   wheelBusy=false;
 }
 const press=name=>{
@@ -243,7 +397,14 @@ document.querySelectorAll("button[data-k]").forEach(b=>b.addEventListener("click
 const keys={Escape:"back",Home:"home",End:"recents",PageUp:"volume_up",PageDown:"volume_down"};
 const scrollKeys={ArrowUp:"x=.5&y=.35&x2=.5&y2=.65",ArrowDown:"x=.5&y=.65&x2=.5&y2=.35",ArrowLeft:"x=.3&y=.5&x2=.7&y2=.5",ArrowRight:"x=.7&y=.5&x2=.3&y2=.5"};
 addEventListener("keydown",e=>{
-  if(scrollKeys[e.key]){e.preventDefault();send("a=swipe&"+scrollKeys[e.key]+"&d=260");return}
+  if(scrollKeys[e.key]){
+    e.preventDefault();
+    if(mode==="video"){
+      const m=Object.fromEntries(scrollKeys[e.key].split("&").map(kv=>kv.split("=")));
+      scrollBy(+m.x,+m.y,+m.x2-+m.x,+m.y2-+m.y);
+    }else send("a=swipe&"+scrollKeys[e.key]+"&d=260");
+    return;
+  }
   const name=keys[e.key];if(!name||e.repeat)return;e.preventDefault();press(name);
 });
 <!--/control-->
