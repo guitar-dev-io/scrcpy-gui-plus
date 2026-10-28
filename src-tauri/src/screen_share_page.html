@@ -157,6 +157,8 @@ const setLive=on=>{
   if(!on)waitmsg.textContent="Reconnecting…";
 };
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+// Shares stop by themselves, so repeated failures usually mean this one is over.
+const ENDED="This share has ended, or the host is offline.";
 
 // Compatibility mode: a stream of still frames, used when smooth video is unavailable.
 function useStills(){
@@ -167,6 +169,7 @@ function useStills(){
   img.addEventListener("load",()=>{retry=0;setLive(true)});
   img.addEventListener("error",()=>{
     setLive(false);
+    if(retry>=4)waitmsg.textContent=ENDED;
     setTimeout(open,Math.min(5000,1000+retry++*800));
   });
   // Some browsers never fire load for a multipart stream, so also watch the size.
@@ -244,6 +247,7 @@ async function runVideo(){
       if(!everLive){mode="";useStills();return}
     }
     setLive(false);
+    if(retry>=4)waitmsg.textContent=ENDED;
     await sleep(Math.min(4000,600+retry++*500));
   }
 }

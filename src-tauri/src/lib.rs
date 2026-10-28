@@ -192,6 +192,7 @@ pub fn run() {
             screenshot::capture_preview_frame,
             screen_share::screen_share_start,
             screen_share::screen_share_stop,
+            screen_share::screen_share_extend,
             screen_share::screen_share_status,
             screenshot::save_external_screenshot,
             macos_capture::capture_macos_screenshot,

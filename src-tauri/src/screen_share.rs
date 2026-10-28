@@ -16,15 +16,17 @@ use crate::{adb, screenshot};
 use image::{codecs::jpeg::JpegEncoder, imageops::FilterType, DynamicImage};
 use rand::RngExt;
 use serde::Serialize;
+use serde_json::json;
 use std::collections::HashMap;
-use std::net::Ipv4Addr;
+use std::net::{IpAddr, Ipv4Addr};
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Manager, State, Window};
+use tauri::{AppHandle, Emitter, Manager, State, Window};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
+use std::time::Instant;
 use tokio::time::{sleep, Duration};
 
 const CAPTURE_TIMEOUT_SECS: u64 = 12;
@@ -43,6 +45,16 @@ const BOUNDARY: &str = "scrcpyguiframe";
 /// leaves, so a page reload or reconnect does not restart it.
 const VIDEO_IDLE_RELEASE_SECS: u64 = 20;
 const VIDEO_INIT_TIMEOUT_SECS: u64 = 10;
+/// A share stops by itself so a forgotten link does not stay usable.
+const DEFAULT_EXPIRY_MINUTES: u32 = 30;
+const MAX_EXPIRY_MINUTES: u32 = 480;
+/// A viewer counts as "controlling" this long after its last accepted input.
+const CONTROL_ACTIVE_SECS: u64 = 120;
+/// Accepted control requests per second per share. A dragging finger sends
+/// about 60 moves a second; this leaves room for that and little more.
+const MAX_CONTROL_PER_SECOND: u32 = 400;
+const MAX_VIDEO_VIEWERS: usize = 4;
+const MAX_STILL_VIEWERS: usize = 8;
 const SCROLL_STEPS: u32 = 8;
 const SCROLL_STEP_MS: u64 = 16;
 /// Lease ids for the shared embedded session. Kept far above the small
@@ -105,6 +117,72 @@ struct Shared {
     /// Size of the scrcpy video frame, which touch coordinates are relative to.
     video_width: AtomicU32,
     video_height: AtomicU32,
+    /// When the share stops by itself; moved forward by extending.
+    expires_at: Mutex<Instant>,
+    /// Addresses that recently had control input accepted, for the app to show.
+    controllers: Mutex<HashMap<IpAddr, Instant>>,
+    control_rate: Mutex<RateWindow>,
+}
+
+/// Counts events in one-second windows.
+struct RateWindow {
+    started: Instant,
+    count: u32,
+}
+
+impl RateWindow {
+    fn new(now: Instant) -> Self {
+        Self { started: now, count: 0 }
+    }
+
+    fn allow(&mut self, now: Instant, limit: u32) -> bool {
+        if now.duration_since(self.started) >= Duration::from_secs(1) {
+            self.started = now;
+            self.count = 0;
+        }
+        self.count += 1;
+        self.count <= limit
+    }
+}
+
+/// Equal-length comparison that does not stop at the first differing byte.
+fn constant_time_eq(a: &str, b: &str) -> bool {
+    a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
+impl Shared {
+    fn remaining(&self) -> Duration {
+        self.expires_at
+            .lock()
+            .map(|at| at.saturating_duration_since(Instant::now()))
+            .unwrap_or_default()
+    }
+
+    fn set_expiry(&self, from_now: Duration) {
+        if let Ok(mut at) = self.expires_at.lock() {
+            *at = Instant::now() + from_now;
+        }
+    }
+
+    /// Records accepted control input from `ip`; true when this address was not
+    /// already active, so the caller can announce it once.
+    fn note_controller(&self, ip: IpAddr, now: Instant) -> bool {
+        let Ok(mut seen) = self.controllers.lock() else { return false };
+        seen.retain(|_, at| now.duration_since(*at) < Duration::from_secs(CONTROL_ACTIVE_SECS));
+        seen.insert(ip, now).is_none()
+    }
+
+    fn active_controllers(&self) -> Vec<String> {
+        let now = Instant::now();
+        let Ok(seen) = self.controllers.lock() else { return Vec::new() };
+        let mut ips: Vec<String> = seen
+            .iter()
+            .filter(|(_, at)| now.duration_since(**at) < Duration::from_secs(CONTROL_ACTIVE_SECS))
+            .map(|(ip, _)| ip.to_string())
+            .collect();
+        ips.sort();
+        ips
+    }
 }
 
 struct ShareSession {
@@ -112,7 +190,7 @@ struct ShareSession {
     control_url: Option<String>,
     port: u16,
     shared: Arc<Shared>,
-    shutdown: watch::Sender<bool>,
+    shutdown: Arc<watch::Sender<bool>>,
 }
 
 #[derive(Default)]
@@ -138,6 +216,10 @@ pub struct ScreenShareInfo {
     pub control_url: Option<String>,
     pub port: u16,
     pub viewers: usize,
+    /// Seconds until the share stops by itself.
+    pub expires_in_secs: u64,
+    /// Addresses that recently controlled the device.
+    pub controllers: Vec<String>,
 }
 
 fn new_token() -> String {
@@ -418,11 +500,37 @@ fn control_socket(shared: &Shared) -> Option<Arc<tokio::sync::Mutex<TcpStream>>>
         .ok()
 }
 
-fn authorized(shared: &Shared, query: &str) -> bool {
-    matches!(
-        (&shared.control_key, query_param(query, "k")),
-        (Some(expected), Some(given)) if expected == given
-    )
+/// Everything a control request must pass before it touches the device: the
+/// share's control key, a request budget, and a record of who is sending it.
+fn control_gate(
+    shared: &Shared,
+    query: &str,
+    peer: IpAddr,
+) -> Result<(), (&'static str, &'static [u8])> {
+    let key_ok = match (&shared.control_key, query_param(query, "k")) {
+        (Some(expected), Some(given)) => constant_time_eq(expected, given),
+        _ => false,
+    };
+    if !key_ok {
+        return Err(("403 Forbidden", b"control not allowed"));
+    }
+    let allowed = shared
+        .control_rate
+        .lock()
+        .map(|mut window| window.allow(Instant::now(), MAX_CONTROL_PER_SECOND))
+        .unwrap_or(false);
+    if !allowed {
+        return Err(("429 Too Many Requests", b"slow down"));
+    }
+    if shared.note_controller(peer, Instant::now()) {
+        if let Some(host) = &shared.host {
+            let _ = host.window.emit(
+                "scrcpy-log",
+                format!("[SHARE] {peer} is controlling {}", shared.serial),
+            );
+        }
+    }
+    Ok(())
 }
 
 fn fraction(query: &str, name: &str) -> Option<f64> {
@@ -452,9 +560,9 @@ async fn send_touch(
 
 /// Real touch input through scrcpy's control socket: `a=down|move|up` follow a
 /// finger, `a=scroll` plays a short drag from a point by a fraction of the screen.
-async fn handle_touch(stream: &mut TcpStream, shared: &Shared, query: &str) {
-    if !authorized(shared, query) {
-        return respond(stream, "403 Forbidden", "text/plain", b"control not allowed").await;
+async fn handle_touch(stream: &mut TcpStream, shared: &Shared, query: &str, peer: IpAddr) {
+    if let Err((status, reason)) = control_gate(shared, query, peer) {
+        return respond(stream, status, "text/plain", reason).await;
     }
     let Some(handle) = control_socket(shared) else {
         return respond(stream, "409 Conflict", "text/plain", b"no live video session").await;
@@ -506,9 +614,9 @@ async fn scroll_drag(
     send_touch(handle, control::ACTION_UP, to.0, to.1, width, height).await
 }
 
-async fn handle_input(stream: &mut TcpStream, shared: &Shared, query: &str) {
-    if !authorized(shared, query) {
-        return respond(stream, "403 Forbidden", "text/plain", b"control not allowed").await;
+async fn handle_input(stream: &mut TcpStream, shared: &Shared, query: &str, peer: IpAddr) {
+    if let Err((status, reason)) = control_gate(shared, query, peer) {
+        return respond(stream, status, "text/plain", reason).await;
     }
     // With a live scrcpy session a key press goes through its control socket,
     // which is much faster than spawning `adb shell input`.
@@ -566,6 +674,9 @@ async fn open_video(shared: &Arc<Shared>) -> Result<VideoSubscription, String> {
         .as_ref()
         .ok_or_else(|| "Smooth video is not available here".to_string())?;
     let mut lease = shared.lease.lock().await;
+    if shared.video_viewers.load(Ordering::Relaxed) >= MAX_VIDEO_VIEWERS {
+        return Err("Too many people are watching this share".to_string());
+    }
     let state = host.app.state::<EmbedSessionState>();
     if lease.is_none() {
         let generation = NEXT_LEASE.fetch_add(1, Ordering::Relaxed);
@@ -717,6 +828,10 @@ async fn handle_connection(
     frames: watch::Receiver<Frame>,
     mut shutdown: watch::Receiver<bool>,
 ) {
+    let peer = stream
+        .peer_addr()
+        .map(|address| address.ip())
+        .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED));
     let Some(request) = read_request(&mut stream).await else {
         return;
     };
@@ -726,10 +841,10 @@ async fn handle_connection(
     let base = format!("/s/{}", shared.token);
 
     if method == "POST" && path == format!("{base}/input") {
-        return handle_input(&mut stream, &shared, query).await;
+        return handle_input(&mut stream, &shared, query, peer).await;
     }
     if method == "POST" && path == format!("{base}/touch") {
-        return handle_touch(&mut stream, &shared, query).await;
+        return handle_touch(&mut stream, &shared, query, peer).await;
     }
     if method != "GET" {
         return respond(&mut stream, "405 Method Not Allowed", "text/plain", b"").await;
@@ -750,6 +865,10 @@ async fn handle_connection(
     }
     if path == format!("{base}/capture.png") {
         return handle_capture(&mut stream, &shared).await;
+    }
+    let is_still_stream = path == format!("{base}/stream") || path == format!("{base}/frame.jpg");
+    if is_still_stream && shared.viewers.load(Ordering::Relaxed) >= MAX_STILL_VIEWERS {
+        return respond(&mut stream, "503 Service Unavailable", "text/plain", b"too many viewers").await;
     }
     if path == format!("{base}/frame.jpg") {
         let _guard = ViewerGuard::new(shared.viewers.clone());
@@ -825,6 +944,64 @@ fn info_for(serial: &str, session: &ShareSession) -> ScreenShareInfo {
         port: session.port,
         viewers: session.shared.viewers.load(Ordering::Relaxed)
             + session.shared.video_viewers.load(Ordering::Relaxed),
+        expires_in_secs: session.shared.remaining().as_secs(),
+        controllers: session.shared.active_controllers(),
+    }
+}
+
+/// Share lifetime from a requested number of minutes, within sane bounds.
+fn expiry(minutes: Option<u32>) -> Duration {
+    Duration::from_secs(u64::from(minutes.unwrap_or(DEFAULT_EXPIRY_MINUTES).clamp(1, MAX_EXPIRY_MINUTES)) * 60)
+}
+
+/// Stops one share and gives the device session back. Used by the Stop button
+/// and by expiry.
+async fn end_share(state: &ScreenShareState, serial: &str) {
+    let session = state
+        .sessions
+        .lock()
+        .ok()
+        .and_then(|mut sessions| sessions.remove(serial));
+    if let Some(session) = session {
+        let _ = session.shutdown.send(true);
+        session.shared.video_viewers.store(0, Ordering::Relaxed);
+        release_idle_lease(&session.shared).await;
+    }
+}
+
+/// Ends the share when its deadline passes, unless it was extended meanwhile.
+async fn expiry_task(
+    shared: Arc<Shared>,
+    shutdown_tx: Arc<watch::Sender<bool>>,
+    mut shutdown: watch::Receiver<bool>,
+) {
+    loop {
+        let wait = shared.remaining();
+        tokio::select! {
+            _ = sleep(wait) => {
+                if !shared.remaining().is_zero() {
+                    continue;
+                }
+                match &shared.host {
+                    Some(host) => {
+                        end_share(&host.app.state::<ScreenShareState>(), &shared.serial).await;
+                        let _ = host.window.emit(
+                            "screen-share-ended",
+                            json!({ "serial": shared.serial, "reason": "expired" }),
+                        );
+                        let _ = host.window.emit(
+                            "scrcpy-log",
+                            format!("[SHARE] sharing {} stopped: it expired", shared.serial),
+                        );
+                    }
+                    None => {
+                        let _ = shutdown_tx.send(true);
+                    }
+                }
+                return;
+            }
+            _ = shutdown.changed() => return,
+        }
     }
 }
 
@@ -836,6 +1013,7 @@ pub async fn screen_share_start(
     fps: Option<u32>,
     title: Option<String>,
     allow_control: Option<bool>,
+    expires_minutes: Option<u32>,
     window: Window,
 ) -> Result<ScreenShareInfo, String> {
     let serial = serial.trim().to_string();
@@ -881,9 +1059,14 @@ pub async fn screen_share_start(
         video_viewers: AtomicUsize::new(0),
         video_width: AtomicU32::new(0),
         video_height: AtomicU32::new(0),
+        expires_at: Mutex::new(Instant::now() + expiry(expires_minutes)),
+        controllers: Mutex::new(HashMap::new()),
+        control_rate: Mutex::new(RateWindow::new(Instant::now())),
     });
     let (frame_tx, frame_rx) = watch::channel::<Frame>(None);
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    let shutdown_tx = Arc::new(shutdown_tx);
+    tokio::spawn(expiry_task(shared.clone(), shutdown_tx.clone(), shutdown_rx.clone()));
 
     tokio::spawn(capture_loop(
         shared.clone(),
@@ -935,19 +1118,24 @@ pub async fn screen_share_stop(
     state: State<'_, ScreenShareState>,
     serial: String,
 ) -> Result<(), String> {
-    let session = state
-        .sessions
-        .lock()
-        .map_err(|e| e.to_string())?
-        .remove(serial.trim());
-    if let Some(session) = session {
-        let _ = session.shutdown.send(true);
-        // Give viewers up to the idle window to leave on their own, then
-        // drop the device session regardless: the share is over.
-        session.shared.video_viewers.store(0, Ordering::Relaxed);
-        release_idle_lease(&session.shared).await;
-    }
+    end_share(&state, serial.trim()).await;
     Ok(())
+}
+
+/// Pushes the share's deadline `minutes` from now.
+#[tauri::command]
+pub fn screen_share_extend(
+    state: State<'_, ScreenShareState>,
+    serial: String,
+    minutes: Option<u32>,
+) -> Result<ScreenShareInfo, String> {
+    let serial = serial.trim();
+    let sessions = state.sessions.lock().map_err(|e| e.to_string())?;
+    let session = sessions
+        .get(serial)
+        .ok_or_else(|| "This device is not being shared".to_string())?;
+    session.shared.set_expiry(expiry(minutes));
+    Ok(info_for(serial, session))
 }
 
 #[tauri::command]
@@ -985,6 +1173,9 @@ mod tests {
             video_viewers: AtomicUsize::new(0),
             video_width: AtomicU32::new(0),
             video_height: AtomicU32::new(0),
+            expires_at: Mutex::new(Instant::now() + Duration::from_secs(3600)),
+            controllers: Mutex::new(HashMap::new()),
+            control_rate: Mutex::new(RateWindow::new(Instant::now())),
         }
     }
 
@@ -1095,6 +1286,71 @@ mod tests {
         // Trimming the buffer by time cuts the key frame the picture depends on and
         // freezes the video until the next one (about every 10 s), so it must stay out.
         assert!(!reply.contains("sb.remove"), "page must not trim the media buffer itself");
+        assert!(reply.contains("This share has ended"), "viewers are told when the share is over");
+    }
+
+    const PEER: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 20));
+
+    #[test]
+    fn keys_compare_without_short_circuiting() {
+        assert!(constant_time_eq("abc123", "abc123"));
+        assert!(!constant_time_eq("abc123", "abc124"));
+        assert!(!constant_time_eq("abc123", "abc12"));
+        assert!(!constant_time_eq("", "a"));
+    }
+
+    #[test]
+    fn rate_window_allows_a_budget_per_second() {
+        let t0 = Instant::now();
+        let mut window = RateWindow::new(t0);
+        assert!((0..3).all(|_| window.allow(t0, 3)));
+        assert!(!window.allow(t0, 3), "fourth request in the same second is refused");
+        assert!(window.allow(t0 + Duration::from_secs(1), 3), "a new second starts a new budget");
+    }
+
+    #[test]
+    fn gate_checks_the_key_before_spending_budget_and_then_rate_limits() {
+        let sh = shared(Some("secretkey"), 1, 1);
+        for _ in 0..1000 {
+            assert_eq!(control_gate(&sh, "k=wrong", PEER).unwrap_err().0, "403 Forbidden");
+        }
+        for n in 0..MAX_CONTROL_PER_SECOND {
+            assert!(control_gate(&sh, "k=secretkey", PEER).is_ok(), "request {n} within budget");
+        }
+        assert_eq!(control_gate(&sh, "k=secretkey", PEER).unwrap_err().0, "429 Too Many Requests");
+        assert_eq!(control_gate(&shared(None, 1, 1), "k=secretkey", PEER).unwrap_err().0, "403 Forbidden");
+    }
+
+    #[test]
+    fn controllers_are_announced_once_and_listed() {
+        let sh = shared(Some("k"), 1, 1);
+        let t0 = Instant::now();
+        assert!(sh.note_controller(PEER, t0), "first input from an address is new");
+        assert!(!sh.note_controller(PEER, t0 + Duration::from_secs(10)));
+        assert_eq!(sh.active_controllers(), ["192.168.1.20"]);
+        let later = t0 + Duration::from_secs(10 + CONTROL_ACTIVE_SECS + 1);
+        assert!(sh.note_controller(PEER, later), "an address that went quiet is announced again");
+    }
+
+    #[tokio::test]
+    async fn share_stops_itself_on_expiry_and_extending_postpones_it() {
+        let sh = Arc::new(shared(Some("k"), 1, 1));
+        sh.set_expiry(Duration::from_millis(80));
+        let (tx, rx) = watch::channel(false);
+        tokio::spawn(expiry_task(sh.clone(), Arc::new(tx), rx.clone()));
+        sleep(Duration::from_millis(40)).await;
+        sh.set_expiry(Duration::from_millis(200));
+        sleep(Duration::from_millis(120)).await;
+        assert!(!*rx.borrow(), "the original deadline passed but the share was extended");
+        sleep(Duration::from_millis(220)).await;
+        assert!(*rx.borrow(), "the extended deadline passed");
+    }
+
+    #[test]
+    fn requested_lifetime_is_bounded() {
+        assert_eq!(expiry(None), Duration::from_secs(30 * 60));
+        assert_eq!(expiry(Some(0)), Duration::from_secs(60));
+        assert_eq!(expiry(Some(u32::MAX)), Duration::from_secs(u64::from(MAX_EXPIRY_MINUTES) * 60));
     }
 
     fn post_to(path: &str, q: &str) -> String {
