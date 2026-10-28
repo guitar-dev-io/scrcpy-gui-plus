@@ -38,6 +38,7 @@ export const en = {
       system: 'System',
     },
     languageLabel: 'Language',
+    more: 'More',
     tagline: 'Mirror & Control Android // Devices Easily',
     scrcpyEngine: 'Scrcpy Engine',
     scrcpyReady: 'Scrcpy Ready',
