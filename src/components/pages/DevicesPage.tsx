@@ -78,18 +78,19 @@ function CompanionDeviceCard({
   screenState: CompanionScreenState
   onView: () => void
 }) {
+  const { t } = useI18n()
   const screenSupported =
     device.transport === 'lan-tcp' &&
     device.capabilities.includes('start_screen_share')
   const ConnectionIcon = device.transport === 'lan-tcp' ? Wifi : Usb
   const screenLabel =
     screenState === 'streaming'
-      ? 'Screen streaming'
+      ? t('pages.devices.screenStreaming')
       : screenState === 'reconnecting'
-        ? 'Screen reconnecting'
+        ? t('pages.devices.screenReconnecting')
         : screenSupported
-          ? 'Ready to share screen'
-          : 'Screen requires QR / LAN'
+          ? t('pages.devices.screenReady')
+          : t('pages.devices.screenRequiresLan')
 
   return (
     <article className="rounded-xl border border-sky-500/25 bg-[var(--bg-surface)] p-4 shadow-[0_14px_36px_rgba(0,0,0,.16)] transition-colors hover:border-sky-400/45">
@@ -100,13 +101,13 @@ function CompanionDeviceCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h2 className="truncate text-[12px] font-semibold text-[var(--text-base)]">
-              {device.name || 'Android Companion'}
+              {device.name || t('pages.devices.androidCompanion')}
             </h2>
             <span className="rounded bg-sky-500/15 px-1.5 py-0.5 text-[8px] font-semibold text-sky-300">
-              Companion
+              {t('pages.devices.companion')}
             </span>
             <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[8px] font-semibold text-emerald-400">
-              Connected
+              {t('pages.devices.connectedBadge')}
             </span>
           </div>
           <p className="mt-1 truncate font-mono text-[9px] text-[var(--text-subtle)]">
@@ -116,19 +117,19 @@ function CompanionDeviceCard({
       </div>
       <div className="mt-4 grid grid-cols-3 gap-4 border-y border-[var(--border-subtle)] py-3 text-[9px]">
         <div>
-          <span className="block text-[var(--text-subtle)]">App</span>
+          <span className="block text-[var(--text-subtle)]">{t('pages.devices.app')}</span>
           <span className="mt-1 block truncate text-[var(--text-muted)]">
             {device.appVersion || '—'}
           </span>
         </div>
         <div>
-          <span className="block text-[var(--text-subtle)]">Protocol</span>
+          <span className="block text-[var(--text-subtle)]">{t('pages.devices.protocol')}</span>
           <span className="mt-1 block text-[var(--text-muted)]">
             v{device.protocol}
           </span>
         </div>
         <div>
-          <span className="block text-[var(--text-subtle)]">Connection</span>
+          <span className="block text-[var(--text-subtle)]">{t('pages.devices.connection')}</span>
           <span className="mt-1 flex items-center gap-1 text-[var(--text-muted)]">
             <ConnectionIcon size={11} />
             {device.transport === 'lan-tcp' ? 'LAN' : device.transport}
@@ -145,12 +146,12 @@ function CompanionDeviceCard({
           disabled={!screenSupported}
           title={
             screenSupported
-              ? 'Open the Companion screen workspace'
-              : 'Screen streaming requires a QR / LAN Companion connection'
+              ? t('pages.devices.openCompanionWorkspace')
+              : t('pages.devices.streamingRequiresLan')
           }
           className="flex h-8 items-center gap-1.5 rounded-md bg-sky-500/15 px-3 text-[9px] font-semibold text-sky-300 hover:bg-sky-500/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] disabled:cursor-not-allowed disabled:opacity-40"
         >
-          <Eye size={11} /> Open Workspace
+          <Eye size={11} /> {t('pages.devices.openWorkspace')}
         </button>
       </div>
     </article>
@@ -164,6 +165,7 @@ function IosDeviceCard({
   device: IosDeviceInfo
   onView: () => void
 }) {
+  const { t } = useI18n()
   const ConnectionIcon = device.connectionType.toLowerCase().includes('usb')
     ? Usb
     : Wifi
@@ -182,7 +184,7 @@ function IosDeviceCard({
               iOS
             </span>
             <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[8px] font-semibold text-emerald-400">
-              Available
+              {t('pages.devices.available')}
             </span>
           </div>
           <p className="mt-1 truncate font-mono text-[9px] text-[var(--text-subtle)]">
@@ -192,19 +194,19 @@ function IosDeviceCard({
       </div>
       <div className="mt-4 grid grid-cols-3 gap-4 border-y border-[var(--border-subtle)] py-3 text-[9px]">
         <div>
-          <span className="block text-[var(--text-subtle)]">Product</span>
+          <span className="block text-[var(--text-subtle)]">{t('pages.devices.product')}</span>
           <span className="mt-1 block truncate text-[var(--text-muted)]">
             {device.productType || '—'}
           </span>
         </div>
         <div>
-          <span className="block text-[var(--text-subtle)]">System</span>
+          <span className="block text-[var(--text-subtle)]">{t('pages.devices.system')}</span>
           <span className="mt-1 block text-[var(--text-muted)]">
             iOS {device.productVersion || '—'}
           </span>
         </div>
         <div>
-          <span className="block text-[var(--text-subtle)]">Connection</span>
+          <span className="block text-[var(--text-subtle)]">{t('pages.devices.connection')}</span>
           <span className="mt-1 flex items-center gap-1 text-[var(--text-muted)]">
             <ConnectionIcon size={11} />
             {device.connectionType || '—'}
@@ -213,14 +215,14 @@ function IosDeviceCard({
       </div>
       <div className="mt-3 flex items-center justify-between gap-3">
         <span className="text-[9px] text-[var(--text-subtle)]">
-          View-only developer stream
+          {t('pages.devices.viewOnlyStream')}
         </span>
         <button
           type="button"
           onClick={onView}
           className="flex h-8 items-center gap-1.5 rounded-md bg-primary/15 px-3 text-[9px] font-semibold text-primary hover:bg-primary/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
         >
-          <Eye size={11} /> Open Workspace
+          <Eye size={11} /> {t('pages.devices.openWorkspace')}
         </button>
       </div>
     </article>
@@ -258,6 +260,7 @@ function DeviceCard({
   onMore: () => void
   onRefresh: () => void
 }) {
+  const { t } = useI18n()
   const health = registeredDevice?.health
   const connection = registeredDevice?.connectionType || connectionTypeOf(serial)
   const model = health?.model || serial
@@ -285,11 +288,11 @@ function DeviceCard({
     : '—'
 
   const actions = [
-    { label: 'View', icon: Eye, onClick: onView },
-    { label: running ? 'Running' : 'Control', icon: Play, onClick: onControl },
-    { label: 'File', icon: FileText, onClick: onFile },
-    { label: 'Shell', icon: Shell, onClick: onShell },
-    { label: 'More', icon: MoreHorizontal, onClick: onMore },
+    { id: 'view', label: t('pages.devices.view'), icon: Eye, onClick: onView },
+    { id: 'control', label: running ? t('pages.devices.running') : t('pages.devices.control'), icon: Play, onClick: onControl },
+    { id: 'file', label: t('pages.devices.file'), icon: FileText, onClick: onFile },
+    { id: 'shell', label: t('pages.devices.shell'), icon: Shell, onClick: onShell },
+    { id: 'more', label: t('pages.devices.more'), icon: MoreHorizontal, onClick: onMore },
   ]
 
   return (
@@ -304,7 +307,7 @@ function DeviceCard({
             type="button"
             role="checkbox"
             aria-checked={batchSelected}
-            aria-label={`${batchSelected ? 'Deselect' : 'Select'} ${model}`}
+            aria-label={t(batchSelected ? 'pages.devices.deselect' : 'pages.devices.select', { model })}
             onClick={onToggleSelection}
             disabled={unavailable}
             className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] disabled:cursor-not-allowed disabled:opacity-35 ${batchSelected ? 'border-primary bg-primary text-on-primary' : 'border-[var(--border-base)] text-transparent hover:border-primary/60'}`}
@@ -316,7 +319,7 @@ function DeviceCard({
           type="button"
           onClick={onSelect}
           disabled={unavailable}
-          aria-label={`Focus ${model}`}
+          aria-label={t('pages.devices.focus', { model })}
           className="flex min-w-0 flex-1 items-start gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] disabled:cursor-not-allowed"
         >
         <div
@@ -336,7 +339,7 @@ function DeviceCard({
           <p className="mt-1 truncate text-[9px] text-[var(--text-subtle)]">
             {serial}
             {health?.androidVersion
-              ? ` · Android ${health.androidVersion}`
+              ? ` · ${t('pages.devices.android')} ${health.androidVersion}`
               : ''}
           </p>
         </div>
@@ -363,19 +366,19 @@ function DeviceCard({
 
       <div className={`grid grid-cols-2 gap-x-8 gap-y-2 border-y border-[var(--border-subtle)] py-3 text-[9px] sm:grid-cols-4 ${density === 'list' ? 'mt-3 lg:grid-cols-8' : 'mt-4'}`}>
         <div>
-          <span className="block text-[var(--text-subtle)]">Model</span>
+          <span className="block text-[var(--text-subtle)]">{t('pages.devices.model')}</span>
           <span className="mt-1 block truncate text-[var(--text-muted)]">
             {health?.model || '—'}
           </span>
         </div>
         <div>
-          <span className="block text-[var(--text-subtle)]">Resolution</span>
+          <span className="block text-[var(--text-subtle)]">{t('pages.devices.resolution')}</span>
           <span className="mt-1 block truncate text-[var(--text-muted)]">
             {health?.resolution || '—'}
           </span>
         </div>
         <div>
-          <span className="block text-[var(--text-subtle)]">Battery</span>
+          <span className="block text-[var(--text-subtle)]">{t('pages.devices.battery')}</span>
           <span className="mt-1 flex items-center gap-1 text-[var(--text-muted)]">
             <BatteryMedium size={11} />
             {health?.batteryLevel !== undefined
@@ -384,13 +387,13 @@ function DeviceCard({
           </span>
         </div>
         <div>
-          <span className="block text-[var(--text-subtle)]">Storage free</span>
+          <span className="block text-[var(--text-subtle)]">{t('pages.devices.storageFree')}</span>
           <span className="mt-1 block text-[var(--text-muted)]">
             {formatKb(health?.storageAvailableKb)}
           </span>
         </div>
         <div>
-          <span className="block text-[var(--text-subtle)]">Temperature</span>
+          <span className="block text-[var(--text-subtle)]">{t('pages.devices.temperature')}</span>
           <span className="mt-1 flex items-center gap-1 text-[var(--text-muted)]">
             <Thermometer size={11} />
             {health?.batteryTemperatureC !== undefined
@@ -399,21 +402,21 @@ function DeviceCard({
           </span>
         </div>
         <div>
-          <span className="block text-[var(--text-subtle)]">Screen</span>
+          <span className="block text-[var(--text-subtle)]">{t('pages.devices.screen')}</span>
           <span className="mt-1 flex items-center gap-1 capitalize text-[var(--text-muted)]">
             <MonitorSmartphone size={11} />
             {health?.screenState || '—'}
           </span>
         </div>
         <div>
-          <span className="block text-[var(--text-subtle)]">Connection</span>
+          <span className="block text-[var(--text-subtle)]">{t('pages.devices.connection')}</span>
           <span className="mt-1 flex items-center gap-1 text-[var(--text-muted)]">
             {connection === 'wifi' ? <Wifi size={11} /> : <Usb size={11} />}
             {connection.toUpperCase()}
           </span>
         </div>
         <div>
-          <span className="block text-[var(--text-subtle)]">Last seen</span>
+          <span className="block text-[var(--text-subtle)]">{t('pages.devices.lastSeen')}</span>
           <span
             className="mt-1 block truncate text-[var(--text-muted)]"
             title={lastSeen}
@@ -424,14 +427,14 @@ function DeviceCard({
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-1 sm:justify-between">
-        {actions.map(({ label, icon: Icon, onClick }) => (
+        {actions.map(({ id, label, icon: Icon, onClick }) => (
           <button
-            key={label}
+            key={id}
             type="button"
             onClick={onClick}
             disabled={unavailable}
             aria-label={
-              label === 'More' ? `More controls for ${model}` : undefined
+              id === 'more' ? t('pages.devices.moreControls', { model }) : undefined
             }
             className={`flex h-8 items-center gap-1.5 rounded-md px-2 text-[9px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] disabled:cursor-not-allowed disabled:opacity-35 ${label === 'Control' ? 'bg-primary/15 text-primary hover:bg-primary/25' : 'text-[var(--text-subtle)] hover:bg-white/5 hover:text-[var(--text-base)]'}`}
           >
@@ -549,20 +552,20 @@ export default function DevicesPage({
             onClick={() => setToolsOpen(true)}
             className="flex h-9 items-center gap-2 rounded-lg border border-[var(--border-base)] px-3 text-[10px] text-[var(--text-muted)] hover:border-primary/50 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
           >
-            <SlidersHorizontal size={13} /> Connection Tools
+            <SlidersHorizontal size={13} /> {t('pages.devices.connectionTools')}
           </button>
           <button
             type="button"
             onClick={onAddDevice}
             className="flex h-9 items-center gap-2 rounded-lg border border-[var(--border-base)] px-3 text-[10px] text-[var(--text-muted)] hover:border-primary/50 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
           >
-            <Plus size={13} /> Add Device
+            <Plus size={13} /> {t('pages.devices.addDevice')}
           </button>
           <button
             type="button"
             onClick={onRefresh}
             disabled={isRefreshing}
-            aria-label="Refresh devices"
+            aria-label={t('pages.devices.refresh')}
             className="flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--border-base)] text-[var(--text-muted)] hover:border-primary/50 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] disabled:opacity-40"
           >
             <RefreshCcw
@@ -574,7 +577,7 @@ export default function DevicesPage({
       </header>
 
       <section
-        aria-label="Device browser controls"
+        aria-label={t('pages.devices.browserControls')}
         className="mx-auto w-full max-w-6xl pt-5"
       >
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]/55 p-3">
@@ -583,16 +586,16 @@ export default function DevicesPage({
               size={13}
               className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-subtle)]"
             />
-            <span className="sr-only">Search devices</span>
+            <span className="sr-only">{t('pages.devices.search')}</span>
             <input
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search serial, model, manufacturer…"
+              placeholder={t('pages.devices.searchPlaceholder')}
               className="h-9 w-full rounded-lg border border-[var(--border-base)] bg-black/15 pl-9 pr-3 text-[10px] text-[var(--text-base)] outline-none placeholder:text-[var(--text-subtle)] focus:border-primary/60 focus:ring-2 focus:ring-[var(--focus-ring)]"
             />
           </label>
-          <div className="flex flex-wrap items-center gap-1" aria-label="Filter devices">
+          <div className="flex flex-wrap items-center gap-1" aria-label={t('pages.devices.filterLabel')}>
             {(['all', 'online', 'busy', 'warning', 'offline'] as const).map(
               (value) => (
                 <button
@@ -602,16 +605,16 @@ export default function DevicesPage({
                   onClick={() => setFilter(value)}
                   className={`h-8 rounded-md px-2.5 text-[9px] font-medium capitalize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] ${filter === value ? 'bg-primary/15 text-primary' : 'text-[var(--text-subtle)] hover:bg-white/5 hover:text-[var(--text-base)]'}`}
                 >
-                  {value}
+                  {t(`pages.devices.filter_${value}`)}
                 </button>
               ),
             )}
           </div>
-          <div className="flex rounded-lg border border-[var(--border-base)] p-0.5" aria-label="Device layout">
+          <div className="flex rounded-lg border border-[var(--border-base)] p-0.5" aria-label={t('pages.devices.layout')}>
             <button
               type="button"
               onClick={() => setDensity('grid')}
-              aria-label="Grid layout"
+              aria-label={t('pages.devices.gridLayout')}
               aria-pressed={density === 'grid'}
               className={`flex h-7 w-7 items-center justify-center rounded-md ${density === 'grid' ? 'bg-white/8 text-primary' : 'text-[var(--text-subtle)]'}`}
             >
@@ -620,7 +623,7 @@ export default function DevicesPage({
             <button
               type="button"
               onClick={() => setDensity('list')}
-              aria-label="List layout"
+              aria-label={t('pages.devices.listLayout')}
               aria-pressed={density === 'list'}
               className={`flex h-7 w-7 items-center justify-center rounded-md ${density === 'list' ? 'bg-white/8 text-primary' : 'text-[var(--text-subtle)]'}`}
             >
@@ -631,7 +634,7 @@ export default function DevicesPage({
 
         {(onSelectAllDevices || onClearDeviceSelection || batchActions) && (
           <div className="mt-3 flex min-h-10 flex-wrap items-center gap-2 rounded-lg border border-[var(--border-subtle)] px-3 py-2 text-[9px] text-[var(--text-muted)]">
-            <span>{selectedDeviceIds.size} selected</span>
+            <span>{t('pages.devices.selectedCount', { count: selectedDeviceIds.size })}</span>
             {onSelectAllDevices && (
               <button
                 type="button"
@@ -639,7 +642,7 @@ export default function DevicesPage({
                 disabled={visibleSelectableSerials.length === 0}
                 className="rounded px-2 py-1 text-primary hover:bg-primary/10 disabled:opacity-40"
               >
-                Select visible online ({visibleSelectableSerials.length})
+                {t('pages.devices.selectVisibleOnline', { count: visibleSelectableSerials.length })}
               </button>
             )}
             {onClearDeviceSelection && selectedDeviceIds.size > 0 && (
@@ -648,7 +651,7 @@ export default function DevicesPage({
                 onClick={onClearDeviceSelection}
                 className="rounded px-2 py-1 text-[var(--text-subtle)] hover:bg-white/5 hover:text-[var(--text-base)]"
               >
-                Clear
+                {t('pages.devices.clear')}
               </button>
             )}
             {batchActions && <div className="ml-auto flex items-center gap-2">{batchActions}</div>}
@@ -657,7 +660,7 @@ export default function DevicesPage({
       </section>
 
       <section
-        aria-label="Devices"
+        aria-label={t('pages.devices.title')}
         className={`mx-auto w-full max-w-6xl py-4 ${density === 'grid' ? 'grid gap-3 md:grid-cols-2 xl:grid-cols-3' : 'space-y-3'}`}
       >
         {allDeviceCount === 0 ? (
@@ -666,18 +669,17 @@ export default function DevicesPage({
               <Smartphone size={21} />
             </div>
             <h2 className="mt-4 text-sm font-semibold text-[var(--text-muted)]">
-              No devices detected
+              {t('pages.devices.noneTitle')}
             </h2>
             <p className="mt-2 max-w-sm text-[10px] leading-relaxed text-[var(--text-subtle)]">
-              Connect an Android device with USB debugging, pair Android
-              Companion, or add a wireless device.
+              {t('pages.devices.noneBody')}
             </p>
             <button
               type="button"
               onClick={onAddDevice}
               className="mt-4 flex h-9 items-center gap-2 rounded-lg bg-primary px-4 text-[10px] font-semibold text-on-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
             >
-              <Plus size={13} /> Add Device
+              <Plus size={13} /> {t('pages.devices.addDevice')}
             </button>
           </div>
         ) : (
@@ -707,7 +709,7 @@ export default function DevicesPage({
             ))}
             {filteredAndroidDevices.length === 0 && androidDevices.length > 0 && (
               <div className="col-span-full rounded-xl border border-dashed border-[var(--border-base)] px-6 py-12 text-center text-[10px] text-[var(--text-subtle)]">
-                No Android devices match the current search and filter.
+                {t('pages.devices.noMatch')}
               </div>
             )}
             {companionDevices.map((device) => (
@@ -735,9 +737,9 @@ export default function DevicesPage({
           i
         </span>
         <p>
-          <span className="font-semibold text-[var(--text-muted)]">Tip</span>
+          <span className="font-semibold text-[var(--text-muted)]">{t('pages.devices.tip')}</span>
           <br />
-          Make sure USB Debugging is enabled on your device before refreshing.
+          {t('pages.devices.tipBody')}
         </p>
       </aside>
 
@@ -760,13 +762,13 @@ export default function DevicesPage({
                   id="connection-tools-title"
                   className="text-sm font-semibold"
                 >
-                  Connection Tools
+                  {t('pages.devices.connectionTools')}
                 </h2>
               </div>
               <button
                 type="button"
                 onClick={() => setToolsOpen(false)}
-                aria-label="Close connection tools"
+                aria-label={t('pages.devices.closeConnectionTools')}
                 className="rounded-lg p-2 text-[var(--text-muted)] hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
               >
                 <X size={16} />
