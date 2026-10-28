@@ -1287,6 +1287,9 @@ mod tests {
         // freezes the video until the next one (about every 10 s), so it must stay out.
         assert!(!reply.contains("sb.remove"), "page must not trim the media buffer itself");
         assert!(reply.contains("This share has ended"), "viewers are told when the share is over");
+        // the placeholder size must not pin the frame once there is a picture, or a
+        // rotated (landscape) device is drawn inside a tall portrait frame
+        assert!(reply.contains(".live .screen{min-width:0;min-height:0}"));
     }
 
     const PEER: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 20));

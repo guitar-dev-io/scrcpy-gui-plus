@@ -1019,6 +1019,26 @@ fn dimension_message(width: u32, height: u32) -> Vec<u8> {
     buf
 }
 
+/// Reads exactly `buf.len()` bytes. Returns false when the stream ends, fails,
+/// or a stop is requested.
+///
+/// A static screen sends no packets, so a plain `read_exact` would sit here
+/// forever after the session was torn down: the video socket would stay open
+/// and scrcpy-server would keep running on the device until the screen next
+/// changed. Waiting for the stop flag alongside the read closes it promptly.
+async fn read_exact_or_stop(stream: &mut TcpStream, buf: &mut [u8], stop: &AtomicBool) -> bool {
+    tokio::select! {
+        result = stream.read_exact(buf) => result.is_ok(),
+        _ = wait_for_stop(stop) => false,
+    }
+}
+
+async fn wait_for_stop(stop: &AtomicBool) {
+    while !stop.load(Ordering::Relaxed) {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+}
+
 /// Read framed H.264 packets and forward each to the frontend channel until the
 /// socket closes or a stop is requested. Emits a couple of diagnostic log lines
 /// so the log panel shows whether frames actually flow.
@@ -1038,7 +1058,7 @@ async fn read_frames(
         }
         // Every packet begins with a 12-byte header: [u64 pts+flags][u32 size].
         let mut header = [0u8; 12];
-        if stream.read_exact(&mut header).await.is_err() {
+        if !read_exact_or_stop(&mut stream, &mut header, &stop).await {
             break;
         }
         let pts_and_flags = u64::from_be_bytes([
@@ -1088,7 +1108,7 @@ async fn read_frames(
         let pts = pts_and_flags & PACKET_PTS_MASK;
 
         let mut payload = vec![0u8; size as usize];
-        if stream.read_exact(&mut payload).await.is_err() {
+        if !read_exact_or_stop(&mut stream, &mut payload, &stop).await {
             break;
         }
 
@@ -2008,6 +2028,44 @@ mod tests {
         assert_eq!(msg[9], 0);
         assert_eq!(u32::from_be_bytes(msg[10..14].try_into().unwrap()), 5);
         assert_eq!(&msg[14..], b"hello");
+    }
+
+    #[tokio::test]
+    async fn video_reader_gives_up_promptly_when_stopped_on_a_silent_stream() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let _peer = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            // Stays connected and sends nothing, like a device with a static screen.
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            drop(socket);
+        });
+        let mut stream = TcpStream::connect(addr).await.unwrap();
+        let stop = Arc::new(AtomicBool::new(false));
+        let flag = stop.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            flag.store(true, Ordering::Relaxed);
+        });
+        let mut buf = [0u8; 12];
+        let started = Instant::now();
+        assert!(!read_exact_or_stop(&mut stream, &mut buf, &stop).await);
+        assert!(started.elapsed() < Duration::from_secs(2), "returned after {:?}", started.elapsed());
+    }
+
+    #[tokio::test]
+    async fn video_reader_still_reads_data_that_arrives() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            socket.write_all(&[7u8; 12]).await.unwrap();
+        });
+        let mut stream = TcpStream::connect(addr).await.unwrap();
+        let mut buf = [0u8; 12];
+        assert!(read_exact_or_stop(&mut stream, &mut buf, &AtomicBool::new(false)).await);
+        assert_eq!(buf, [7u8; 12]);
     }
 
     #[test]
