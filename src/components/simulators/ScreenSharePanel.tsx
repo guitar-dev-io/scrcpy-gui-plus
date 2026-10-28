@@ -13,9 +13,11 @@ interface ScreenSharePanelProps {
   serial: string
   name?: string
   customPath?: string
+  /** Overrides the default divider-and-margin wrapper, e.g. inside a popover. */
+  className?: string
 }
 
-export default function ScreenSharePanel({ serial, name, customPath }: ScreenSharePanelProps) {
+export default function ScreenSharePanel({ serial, name, customPath, className }: ScreenSharePanelProps) {
   const [info, setInfo] = useState<ScreenShareInfo | null>(null)
   const [qrSvg, setQrSvg] = useState('')
   const [busy, setBusy] = useState(false)
@@ -27,9 +29,11 @@ export default function ScreenSharePanel({ serial, name, customPath }: ScreenSha
     setInfo(null)
     setQrSvg('')
     setError('')
-    void invoke<ScreenShareInfo | null>('screen_share_status', { serial }).then((status) => {
-      if (!cancelled) setInfo(status)
-    })
+    void invoke<ScreenShareInfo | null>('screen_share_status', { serial })
+      .then((status) => {
+        if (!cancelled) setInfo(status)
+      })
+      .catch(() => {})
     return () => {
       cancelled = true
     }
@@ -54,9 +58,11 @@ export default function ScreenSharePanel({ serial, name, customPath }: ScreenSha
   useEffect(() => {
     if (!info) return
     const timer = window.setInterval(() => {
-      void invoke<ScreenShareInfo | null>('screen_share_status', { serial }).then((status) => {
-        if (status) setInfo(status)
-      })
+      void invoke<ScreenShareInfo | null>('screen_share_status', { serial })
+        .then((status) => {
+          if (status) setInfo(status)
+        })
+        .catch(() => {})
     }, 3000)
     return () => window.clearInterval(timer)
   }, [info?.url, serial])
@@ -97,7 +103,7 @@ export default function ScreenSharePanel({ serial, name, customPath }: ScreenSha
   }, [info])
 
   return (
-    <section className="mt-4 border-t border-zinc-800/60 pt-4">
+    <section className={className ?? 'mt-4 border-t border-zinc-800/60 pt-4'}>
       <p className="text-[10px] font-black uppercase tracking-widest text-zinc-300">Share screen</p>
       {!info ? (
         <>

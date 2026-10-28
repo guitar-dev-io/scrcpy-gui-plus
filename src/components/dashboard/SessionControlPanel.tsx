@@ -3,6 +3,7 @@ import { Settings } from 'lucide-react'
 import type { ScrcpyConfig } from '../../hooks/useScrcpy'
 import type { DeviceActionId } from '../../types/deviceControl'
 import { formatUptime, type DeviceStatus } from '../../types/deviceStatus'
+import ScreenSharePanel from '../simulators/ScreenSharePanel'
 
 const panel =
   'rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]'
@@ -64,6 +65,7 @@ type ControlTab = 'control' | 'inspector'
 
 interface SessionControlPanelProps {
   activeDevice: string
+  customPath?: string
   connection?: string
   status: DeviceStatus | null
   config: ScrcpyConfig
@@ -76,6 +78,7 @@ interface SessionControlPanelProps {
 
 export default function SessionControlPanel({
   activeDevice,
+  customPath,
   connection,
   status,
   config,
@@ -199,6 +202,10 @@ export default function SessionControlPanel({
               </div>
             ))}
           </div>
+        )}
+
+        {activeDevice && (
+          <ScreenSharePanel serial={activeDevice} name={status?.model} customPath={customPath} />
         )}
 
         {/* Start/Stop lives in the command bar above the stage, which stays
