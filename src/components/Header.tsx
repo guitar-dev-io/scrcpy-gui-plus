@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import {
   ChevronDown,
   Download,
+  Ellipsis,
   ExternalLink,
   FolderOpen,
   HelpCircle,
+  Languages,
   Moon,
   Palette,
   RefreshCcw,
@@ -16,7 +18,6 @@ import {
   BatteryMedium,
   Command,
   Wifi,
-  Globe,
   X,
 } from 'lucide-react'
 import { SUPPORTED_LOCALES, useI18n, type Locale } from '../i18n'
@@ -77,6 +78,7 @@ export default function Header({
   const [showHelp, setShowHelp] = useState(false)
   const [showAppearance, setShowAppearance] = useState(false)
   const [showLangMenu, setShowLangMenu] = useState(false)
+  const [showMore, setShowMore] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const { status: deviceStatus } = useDeviceStatus({
     activeDevice,
@@ -86,28 +88,30 @@ export default function Header({
   })
 
   useEffect(() => {
-    if (!showAppearance && !showLangMenu) return
+    if (!showAppearance && !showLangMenu && !showMore) return
     const onClick = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setShowAppearance(false)
         setShowLangMenu(false)
+        setShowMore(false)
       }
     }
     document.addEventListener('mousedown', onClick)
     return () => document.removeEventListener('mousedown', onClick)
-  }, [showAppearance, showLangMenu])
+  }, [showAppearance, showLangMenu, showMore])
 
   useEffect(() => {
-    if (!showAppearance && !showLangMenu && !showHelp) return
+    if (!showAppearance && !showLangMenu && !showHelp && !showMore) return
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       setShowAppearance(false)
       setShowLangMenu(false)
       setShowHelp(false)
+      setShowMore(false)
     }
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [showAppearance, showHelp, showLangMenu])
+  }, [showAppearance, showHelp, showLangMenu, showMore])
 
   const iconButton =
     'flex h-8 w-8 items-center justify-center rounded-[var(--radius-md)] text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-hover)] hover:text-[var(--text-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]'
@@ -170,27 +174,6 @@ export default function Header({
           </button>
           <button
             type="button"
-            onClick={onSetPath}
-            className={iconButton}
-            title={t('header.selectFolder')}
-            aria-label={t('header.selectFolder')}
-          >
-            <FolderOpen size={15} />
-          </button>
-          <button
-            type="button"
-            onClick={() => { setShowAppearance((open) => !open); setShowLangMenu(false) }}
-            className={iconButton}
-            title={t('header.themeLabel')}
-            aria-label={t('header.themeLabel')}
-            aria-expanded={showAppearance}
-            aria-controls="appearance-menu"
-            aria-haspopup="dialog"
-          >
-            <Palette size={15} />
-          </button>
-          <button
-            type="button"
             onClick={onOpenCommandPalette}
             className={iconButton}
             title="Command palette (Cmd/Ctrl+K)"
@@ -207,12 +190,42 @@ export default function Header({
           >
             <Settings size={15} />
           </button>
-          <button type="button" onClick={() => setShowHelp(true)} className={iconButton} title={t('header.setupHelpTitle')} aria-label={t('header.setupHelpTitle')} aria-expanded={showHelp} aria-controls="setup-help-dialog" aria-haspopup="dialog">
-            <HelpCircle size={15} />
+          <button
+            type="button"
+            onClick={() => { setShowMore((open) => !open); setShowAppearance(false); setShowLangMenu(false) }}
+            className={iconButton}
+            title={t('header.more')}
+            aria-label={t('header.more')}
+            aria-expanded={showMore}
+            aria-controls="more-menu"
+            aria-haspopup="menu"
+          >
+            <Ellipsis size={17} />
           </button>
-          <button type="button" onClick={() => { setShowLangMenu((open) => !open); setShowAppearance(false) }} className={iconButton} title={`${t('header.languageLabel')} · v${version}`} aria-label={`${t('header.languageLabel')} · v${version}`} aria-expanded={showLangMenu} aria-controls="language-menu" aria-haspopup="menu">
-            <Globe size={17} />
-          </button>
+
+          {showMore && (
+            <div id="more-menu" role="menu" aria-label={t('header.more')} className="absolute right-0 top-10 z-[120] min-w-56 rounded-[var(--radius-lg)] border border-[var(--border-base)] bg-[var(--bg-elevated)] p-1 shadow-[var(--shadow-lg)]">
+              {([
+                { id: 'theme', icon: Palette, label: t('header.themeLabel'), run: () => setShowAppearance(true) },
+                { id: 'language', icon: Languages, label: t('header.languageLabel'), run: () => setShowLangMenu(true) },
+                { id: 'folder', icon: FolderOpen, label: t('header.selectFolder'), run: onSetPath },
+                { id: 'help', icon: HelpCircle, label: t('header.setupHelpTitle'), run: () => setShowHelp(true) },
+              ] as const).map(({ id, icon: Icon, label, run }) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => { setShowMore(false); run() }}
+                  className="flex w-full items-center gap-2.5 rounded-[var(--radius-md)] px-3 py-2 text-left text-[var(--font-size-body-sm)] text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
+                >
+                  <Icon size={14} aria-hidden="true" /> {label}
+                </button>
+              ))}
+              <p className="mt-1 border-t border-[var(--border-subtle)] px-3 pb-1.5 pt-2 text-[var(--font-size-caption)] text-[var(--text-subtle)]">
+                v{version}
+              </p>
+            </div>
+          )}
 
           {showAppearance && (
             <div id="appearance-menu" role="dialog" aria-label={t('header.themeLabel')} className="absolute right-0 top-10 z-[120] w-64 rounded-[var(--radius-lg)] border border-[var(--border-base)] bg-[var(--bg-elevated)] p-3 shadow-[var(--shadow-lg)]">
