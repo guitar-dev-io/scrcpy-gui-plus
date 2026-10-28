@@ -371,6 +371,7 @@ impl VideoHub {
         Ok(())
     }
 
+    #[cfg(test)]
     fn attach_remote(&mut self, subscriber_id: String) -> Result<Receiver<Vec<u8>>, String> {
         self.attach_remote_with_headroom(subscriber_id, None)
     }

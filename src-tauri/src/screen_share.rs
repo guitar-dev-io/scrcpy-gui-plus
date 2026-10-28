@@ -1005,6 +1005,8 @@ async fn expiry_task(
     }
 }
 
+// A Tauri command receives each option as its own argument.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn screen_share_start(
     state: State<'_, ScreenShareState>,
