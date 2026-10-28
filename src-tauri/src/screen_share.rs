@@ -1,10 +1,14 @@
-//! LAN view-only screen sharing.
+//! LAN screen sharing.
 //!
 //! Starts a small HTTP server that streams a device's screen as MJPEG so anyone
 //! on the same network can watch it from a browser. Frames come from the same
 //! `adb exec-out screencap` path as the in-app preview, so no extra binary or
 //! on-device component is needed. The URL carries a random token and capture
 //! only runs while at least one viewer is connected.
+//!
+//! Control is opt-in. When enabled, a second link (with its own random key)
+//! serves a page that sends taps, swipes and a few hardware keys back to the
+//! device through `adb shell input`. The plain view link never accepts input.
 
 use crate::{adb, screenshot};
 use image::{codecs::jpeg::JpegEncoder, imageops::FilterType, DynamicImage};
@@ -12,7 +16,7 @@ use rand::RngExt;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::State;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -21,19 +25,53 @@ use tokio::sync::watch;
 use tokio::time::{sleep, Duration};
 
 const CAPTURE_TIMEOUT_SECS: u64 = 12;
+const INPUT_TIMEOUT_SECS: u64 = 5;
 const MAX_REQUEST_BYTES: usize = 4096;
 const MAX_FRAME_WIDTH: u32 = 720;
 const JPEG_QUALITY: u8 = 70;
 const MIN_FPS: u32 = 1;
 const MAX_FPS: u32 = 5;
+const VIEW_FPS: u32 = 2;
+const CONTROL_FPS: u32 = 4;
+const MIN_SWIPE_MS: u32 = 50;
+const MAX_SWIPE_MS: u32 = 2000;
 const BOUNDARY: &str = "scrcpyguiframe";
 
 type Frame = Option<Arc<Vec<u8>>>;
 
+/// Hardware keys a controlling viewer may press. Power and anything that
+/// leaves the session (reboot, shell) are deliberately not offered.
+fn key_code(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "back" => "KEYCODE_BACK",
+        "home" => "KEYCODE_HOME",
+        "recents" => "KEYCODE_APP_SWITCH",
+        "volume_up" => "KEYCODE_VOLUME_UP",
+        "volume_down" => "KEYCODE_VOLUME_DOWN",
+        _ => return None,
+    })
+}
+
+/// State one running share needs in every connection handler.
+struct Shared {
+    serial: String,
+    custom_path: Option<String>,
+    token: String,
+    title: String,
+    control_key: Option<String>,
+    viewers: Arc<AtomicUsize>,
+    /// Native screen size of the latest frame, used to scale taps.
+    width: AtomicU32,
+    height: AtomicU32,
+    /// Keeps taps and swipes from overlapping so they land in order.
+    input_lock: tokio::sync::Mutex<()>,
+}
+
 struct ShareSession {
     url: String,
+    control_url: Option<String>,
     port: u16,
-    viewers: Arc<AtomicUsize>,
+    shared: Arc<Shared>,
     shutdown: watch::Sender<bool>,
 }
 
@@ -57,6 +95,7 @@ impl ScreenShareState {
 pub struct ScreenShareInfo {
     pub serial: String,
     pub url: String,
+    pub control_url: Option<String>,
     pub port: u16,
     pub viewers: usize,
 }
@@ -65,8 +104,10 @@ fn new_token() -> String {
     format!("{:032x}", rand::rng().random::<u128>())
 }
 
-fn encode_jpeg(png: &[u8]) -> Result<Vec<u8>, String> {
+/// Returns the JPEG plus the native (pre-resize) width and height.
+fn encode_jpeg(png: &[u8]) -> Result<(Vec<u8>, u32, u32), String> {
     let rgba = screenshot::decode_png_frame(png).map_err(|(_, message)| message)?;
+    let (native_width, native_height) = (rgba.width(), rgba.height());
     let mut image = DynamicImage::ImageRgba8(rgba);
     if image.width() > MAX_FRAME_WIDTH {
         let height = (u64::from(image.height()) * u64::from(MAX_FRAME_WIDTH)
@@ -79,14 +120,12 @@ fn encode_jpeg(png: &[u8]) -> Result<Vec<u8>, String> {
     JpegEncoder::new_with_quality(&mut out, JPEG_QUALITY)
         .encode_image(&rgb)
         .map_err(|error| error.to_string())?;
-    Ok(out)
+    Ok((out, native_width, native_height))
 }
 
 async fn capture_loop(
-    serial: String,
-    custom_path: Option<String>,
+    shared: Arc<Shared>,
     fps: u32,
-    viewers: Arc<AtomicUsize>,
     frames: watch::Sender<Frame>,
     mut shutdown: watch::Receiver<bool>,
 ) {
@@ -95,7 +134,7 @@ async fn capture_loop(
         if *shutdown.borrow() {
             return;
         }
-        if viewers.load(Ordering::Relaxed) == 0 {
+        if shared.viewers.load(Ordering::Relaxed) == 0 {
             tokio::select! {
                 _ = sleep(Duration::from_millis(300)) => {}
                 _ = shutdown.changed() => {}
@@ -103,11 +142,19 @@ async fn capture_loop(
             continue;
         }
         let started = tokio::time::Instant::now();
-        let captured =
-            screenshot::capture_png_frame(&serial, custom_path.clone(), CAPTURE_TIMEOUT_SECS).await;
+        let captured = screenshot::capture_png_frame(
+            &shared.serial,
+            shared.custom_path.clone(),
+            CAPTURE_TIMEOUT_SECS,
+        )
+        .await;
         match captured {
             Ok(png) => {
-                if let Ok(Ok(jpeg)) = tokio::task::spawn_blocking(move || encode_jpeg(&png)).await {
+                if let Ok(Ok((jpeg, width, height))) =
+                    tokio::task::spawn_blocking(move || encode_jpeg(&png)).await
+                {
+                    shared.width.store(width, Ordering::Relaxed);
+                    shared.height.store(height, Ordering::Relaxed);
                     let _ = frames.send(Some(Arc::new(jpeg)));
                 }
             }
@@ -123,11 +170,15 @@ async fn capture_loop(
     }
 }
 
-fn viewer_page(title: &str, token: &str) -> String {
-    let title = title
-        .replace('&', "&amp;")
+fn escape_html(text: &str) -> String {
+    text.replace('&', "&amp;")
         .replace('<', "&lt;")
-        .replace('>', "&gt;");
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+fn viewer_page(title: &str, token: &str) -> String {
+    let title = escape_html(title);
     format!(
         "<!doctype html><html><head><meta charset=\"utf-8\">\
 <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
@@ -137,6 +188,50 @@ body{{display:flex;align-items:center;justify-content:center}}\
 img{{max-width:100vw;max-height:100vh;object-fit:contain}}\
 </style></head><body><img alt=\"{title}\" src=\"/s/{token}/stream\"></body></html>"
     )
+}
+
+const CONTROL_PAGE: &str = r#"<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>__TITLE__</title><style>
+html,body{margin:0;height:100%;background:#05070b;color:#e5e7eb;font:14px system-ui,sans-serif}
+body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px}
+#s{max-width:100vw;max-height:calc(100vh - 60px);object-fit:contain;touch-action:none;
+user-select:none;-webkit-user-select:none;cursor:pointer}
+#bar{display:flex;gap:8px;height:44px}
+button{min-width:64px;border:1px solid #2a3140;border-radius:10px;background:#111827;
+color:inherit;font:inherit;cursor:pointer}
+button:active{background:#1f2937}
+</style></head><body>
+<img id="s" alt="__TITLE__" draggable="false" src="__BASE__/stream">
+<div id="bar">
+<button data-k="back">Back</button><button data-k="home">Home</button>
+<button data-k="recents">Recents</button><button data-k="volume_down">Vol -</button>
+<button data-k="volume_up">Vol +</button>
+</div>
+<script>
+const base="__BASE__",key="__KEY__",img=document.getElementById("s");
+let start=null;
+const point=e=>{const r=img.getBoundingClientRect();
+return{x:Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)),
+y:Math.min(1,Math.max(0,(e.clientY-r.top)/r.height)),t:Date.now()}};
+const send=q=>fetch(base+"/input?k="+key+"&"+q,{method:"POST"}).catch(()=>{});
+img.addEventListener("pointerdown",e=>{e.preventDefault();img.setPointerCapture(e.pointerId);start=point(e)});
+img.addEventListener("pointerup",e=>{
+if(!start)return;const a=start,b=point(e);start=null;
+const dur=Math.max(60,Math.min(2000,b.t-a.t));
+const moved=Math.hypot(b.x-a.x,b.y-a.y)>0.02;
+if(!moved&&dur<400)send("a=tap&x="+a.x.toFixed(4)+"&y="+a.y.toFixed(4));
+else send("a=swipe&x="+a.x.toFixed(4)+"&y="+a.y.toFixed(4)+"&x2="+b.x.toFixed(4)+"&y2="+b.y.toFixed(4)+"&d="+dur);
+});
+img.addEventListener("pointercancel",()=>{start=null});
+document.querySelectorAll("button[data-k]").forEach(b=>b.onclick=()=>send("a=key&code="+b.dataset.k));
+</script></body></html>"#;
+
+fn control_page(title: &str, token: &str, key: &str) -> String {
+    CONTROL_PAGE
+        .replace("__TITLE__", &escape_html(title))
+        .replace("__BASE__", &format!("/s/{token}"))
+        .replace("__KEY__", key)
 }
 
 async fn respond(stream: &mut TcpStream, status: &str, content_type: &str, body: &[u8]) {
@@ -185,11 +280,94 @@ async fn read_request(stream: &mut TcpStream) -> Option<String> {
     complete.then(|| String::from_utf8_lossy(&buf[..len]).to_string())
 }
 
+fn query_param<'a>(query: &'a str, name: &str) -> Option<&'a str> {
+    query.split('&').find_map(|pair| {
+        let (key, value) = pair.split_once('=')?;
+        (key == name).then_some(value)
+    })
+}
+
+/// A coordinate sent as a 0..1 fraction of the shown frame, mapped to pixels.
+fn pixel(query: &str, name: &str, extent: u32) -> Option<String> {
+    let fraction: f64 = query_param(query, name)?.parse().ok()?;
+    if !fraction.is_finite() {
+        return None;
+    }
+    let max = f64::from(extent.saturating_sub(1));
+    Some(((fraction.clamp(0.0, 1.0) * max).round() as u32).to_string())
+}
+
+fn input_args(shared: &Shared, query: &str) -> Result<Vec<String>, &'static str> {
+    let width = shared.width.load(Ordering::Relaxed);
+    let height = shared.height.load(Ordering::Relaxed);
+    let args = |parts: &[&str]| parts.iter().map(|part| part.to_string()).collect();
+    match query_param(query, "a") {
+        Some("key") => {
+            let code = query_param(query, "code").and_then(key_code);
+            Ok(args(&["shell", "input", "keyevent", code.ok_or("unknown key")?]))
+        }
+        Some(action @ ("tap" | "swipe")) => {
+            if width == 0 || height == 0 {
+                return Err("no frame yet");
+            }
+            let x = pixel(query, "x", width).ok_or("bad x")?;
+            let y = pixel(query, "y", height).ok_or("bad y")?;
+            if action == "tap" {
+                return Ok(vec!["shell".into(), "input".into(), "tap".into(), x, y]);
+            }
+            let x2 = pixel(query, "x2", width).ok_or("bad x2")?;
+            let y2 = pixel(query, "y2", height).ok_or("bad y2")?;
+            let duration = query_param(query, "d")
+                .and_then(|value| value.parse::<u32>().ok())
+                .unwrap_or(200)
+                .clamp(MIN_SWIPE_MS, MAX_SWIPE_MS);
+            Ok(vec![
+                "shell".into(),
+                "input".into(),
+                "swipe".into(),
+                x,
+                y,
+                x2,
+                y2,
+                duration.to_string(),
+            ])
+        }
+        _ => Err("unknown action"),
+    }
+}
+
+async fn handle_input(stream: &mut TcpStream, shared: &Shared, query: &str) {
+    let authorized = match (&shared.control_key, query_param(query, "k")) {
+        (Some(expected), Some(given)) => expected == given,
+        _ => false,
+    };
+    if !authorized {
+        return respond(stream, "403 Forbidden", "text/plain", b"control not allowed").await;
+    }
+    let args = match input_args(shared, query) {
+        Ok(args) => args,
+        Err(reason) => return respond(stream, "400 Bad Request", "text/plain", reason.as_bytes()).await,
+    };
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let _ordered = shared.input_lock.lock().await;
+    match adb::run_adb_bytes(
+        Some(&shared.serial),
+        &refs,
+        shared.custom_path.clone(),
+        INPUT_TIMEOUT_SECS,
+    )
+    .await
+    {
+        Ok(_) => respond(stream, "204 No Content", "text/plain", b"").await,
+        Err(error) => {
+            respond(stream, "502 Bad Gateway", "text/plain", error.message().as_bytes()).await
+        }
+    }
+}
+
 async fn handle_connection(
     mut stream: TcpStream,
-    token: Arc<String>,
-    title: Arc<String>,
-    viewers: Arc<AtomicUsize>,
+    shared: Arc<Shared>,
     frames: watch::Receiver<Frame>,
     mut shutdown: watch::Receiver<bool>,
 ) {
@@ -197,19 +375,29 @@ async fn handle_connection(
         return;
     };
     let mut parts = request.lines().next().unwrap_or("").split_whitespace();
-    let (method, path) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""));
-    let path = path.split('?').next().unwrap_or("");
-    let base = format!("/s/{token}");
+    let (method, target) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""));
+    let (path, query) = target.split_once('?').unwrap_or((target, ""));
+    let base = format!("/s/{}", shared.token);
 
+    if method == "POST" && path == format!("{base}/input") {
+        return handle_input(&mut stream, &shared, query).await;
+    }
     if method != "GET" {
         return respond(&mut stream, "405 Method Not Allowed", "text/plain", b"").await;
     }
     if path == base || path == format!("{base}/") {
-        let page = viewer_page(&title, &token);
+        let page = viewer_page(&shared.title, &shared.token);
         return respond(&mut stream, "200 OK", "text/html; charset=utf-8", page.as_bytes()).await;
     }
+    if let Some(key) = &shared.control_key {
+        if path == format!("{base}/c/{key}") {
+            let page = control_page(&shared.title, &shared.token, key);
+            return respond(&mut stream, "200 OK", "text/html; charset=utf-8", page.as_bytes())
+                .await;
+        }
+    }
     if path == format!("{base}/frame.jpg") {
-        let _guard = ViewerGuard::new(viewers);
+        let _guard = ViewerGuard::new(shared.viewers.clone());
         let mut rx = frames;
         let ready = tokio::time::timeout(Duration::from_secs(15), async {
             loop {
@@ -233,7 +421,7 @@ async fn handle_connection(
         return respond(&mut stream, "404 Not Found", "text/plain", b"not found").await;
     }
 
-    let _guard = ViewerGuard::new(viewers);
+    let _guard = ViewerGuard::new(shared.viewers.clone());
     let head = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: multipart/x-mixed-replace; boundary={BOUNDARY}\r\n\
 Cache-Control: no-store\r\nConnection: close\r\n\r\n"
@@ -278,8 +466,9 @@ fn info_for(serial: &str, session: &ShareSession) -> ScreenShareInfo {
     ScreenShareInfo {
         serial: serial.to_string(),
         url: session.url.clone(),
+        control_url: session.control_url.clone(),
         port: session.port,
-        viewers: session.viewers.load(Ordering::Relaxed),
+        viewers: session.shared.viewers.load(Ordering::Relaxed),
     }
 }
 
@@ -290,6 +479,7 @@ pub async fn screen_share_start(
     custom_path: Option<String>,
     fps: Option<u32>,
     title: Option<String>,
+    allow_control: Option<bool>,
 ) -> Result<ScreenShareInfo, String> {
     let serial = serial.trim().to_string();
     adb::validate_serial(&serial).map_err(|error| error.message())?;
@@ -302,29 +492,41 @@ pub async fn screen_share_start(
         return Ok(info_for(&serial, existing));
     }
 
-    let fps = fps.unwrap_or(2).clamp(MIN_FPS, MAX_FPS);
+    let allow_control = allow_control.unwrap_or(false);
+    let default_fps = if allow_control { CONTROL_FPS } else { VIEW_FPS };
+    let fps = fps.unwrap_or(default_fps).clamp(MIN_FPS, MAX_FPS);
     let listener = TcpListener::bind((Ipv4Addr::UNSPECIFIED, 0))
         .await
         .map_err(|error| format!("Could not open a sharing port: {error}"))?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
-    let token = Arc::new(new_token());
-    let title = Arc::new(title.unwrap_or_else(|| serial.clone()));
-    let url = format!("http://{}:{port}/s/{token}", pick_host());
 
-    let viewers = Arc::new(AtomicUsize::new(0));
+    let token = new_token();
+    let control_key = allow_control.then(new_token);
+    let origin = format!("http://{}:{port}/s/{token}", pick_host());
+    let control_url = control_key.as_ref().map(|key| format!("{origin}/c/{key}"));
+
+    let shared = Arc::new(Shared {
+        title: title.unwrap_or_else(|| serial.clone()),
+        serial: serial.clone(),
+        custom_path,
+        token,
+        control_key,
+        viewers: Arc::new(AtomicUsize::new(0)),
+        width: AtomicU32::new(0),
+        height: AtomicU32::new(0),
+        input_lock: tokio::sync::Mutex::new(()),
+    });
     let (frame_tx, frame_rx) = watch::channel::<Frame>(None);
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
     tokio::spawn(capture_loop(
-        serial.clone(),
-        custom_path,
+        shared.clone(),
         fps,
-        viewers.clone(),
         frame_tx,
         shutdown_rx.clone(),
     ));
 
-    let accept_viewers = viewers.clone();
+    let accept_shared = shared.clone();
     let mut accept_shutdown = shutdown_rx.clone();
     tokio::spawn(async move {
         loop {
@@ -334,9 +536,7 @@ pub async fn screen_share_start(
                     let Ok((stream, _)) = accepted else { continue };
                     tokio::spawn(handle_connection(
                         stream,
-                        token.clone(),
-                        title.clone(),
-                        accept_viewers.clone(),
+                        accept_shared.clone(),
                         frame_rx.clone(),
                         shutdown_rx.clone(),
                     ));
@@ -346,9 +546,10 @@ pub async fn screen_share_start(
     });
 
     let session = ShareSession {
-        url,
+        url: origin,
+        control_url,
         port,
-        viewers,
+        shared,
         shutdown: shutdown_tx,
     };
     let info = info_for(&serial, &session);
@@ -381,4 +582,115 @@ pub fn screen_share_status(
         .ok()?
         .get(serial)
         .map(|session| info_for(serial, session))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn shared(control_key: Option<&str>, width: u32, height: u32) -> Shared {
+        Shared {
+            serial: "TESTSERIAL".into(),
+            custom_path: None,
+            token: "tok".into(),
+            title: "Dev".into(),
+            control_key: control_key.map(str::to_string),
+            viewers: Arc::new(AtomicUsize::new(0)),
+            width: AtomicU32::new(width),
+            height: AtomicU32::new(height),
+            input_lock: tokio::sync::Mutex::new(()),
+        }
+    }
+
+    #[test]
+    fn tap_scales_fraction_to_native_pixels() {
+        let args = input_args(&shared(None, 1200, 2640), "a=tap&x=0.5&y=0.25").unwrap();
+        assert_eq!(args, ["shell", "input", "tap", "600", "660"]);
+    }
+
+    #[test]
+    fn swipe_clamps_coordinates_and_duration() {
+        let args =
+            input_args(&shared(None, 1000, 2000), "a=swipe&x=-3&y=0.5&x2=9&y2=0.5&d=99999").unwrap();
+        assert_eq!(args, ["shell", "input", "swipe", "0", "1000", "999", "1000", "2000"]);
+    }
+
+    #[test]
+    fn rejects_unknown_actions_keys_and_bad_numbers() {
+        let s = shared(None, 1000, 2000);
+        assert!(input_args(&s, "a=shell").is_err());
+        assert!(input_args(&s, "a=key&code=power").is_err());
+        assert!(input_args(&s, "a=tap&x=abc&y=0.5").is_err());
+        assert!(input_args(&s, "a=tap&x=NaN&y=0.5").is_err());
+        assert!(input_args(&s, "a=tap&y=0.5").is_err());
+    }
+
+    #[test]
+    fn taps_wait_for_the_first_frame() {
+        assert_eq!(input_args(&shared(None, 0, 0), "a=tap&x=0.5&y=0.5"), Err("no frame yet"));
+    }
+
+    #[test]
+    fn allowed_keys_map_to_keycodes() {
+        let args = input_args(&shared(None, 1, 1), "a=key&code=home").unwrap();
+        assert_eq!(args, ["shell", "input", "keyevent", "KEYCODE_HOME"]);
+    }
+
+    async fn request(port: u16, raw: &str) -> String {
+        let mut stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        stream.write_all(raw.as_bytes()).await.unwrap();
+        let mut out = Vec::new();
+        let _ = tokio::time::timeout(Duration::from_secs(3), stream.read_to_end(&mut out)).await;
+        String::from_utf8_lossy(&out).to_string()
+    }
+
+    /// Serves one session on its own listener and returns the port.
+    async fn serve(shared: Shared) -> u16 {
+        let shared = Arc::new(shared);
+        let (frame_tx, frames) = watch::channel::<Frame>(None);
+        let (shutdown_tx, shutdown) = watch::channel(false);
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let _keep_open = (frame_tx, shutdown_tx);
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                tokio::spawn(handle_connection(
+                    stream,
+                    shared.clone(),
+                    frames.clone(),
+                    shutdown.clone(),
+                ));
+            }
+        });
+        port
+    }
+
+    fn post(q: &str) -> String {
+        format!("POST /s/tok/input?{q} HTTP/1.1\r\nHost: x\r\n\r\n")
+    }
+
+    #[tokio::test]
+    async fn view_only_share_refuses_input_and_has_no_control_page() {
+        let port = serve(shared(None, 1000, 2000)).await;
+        let reply = request(port, &post("k=guess&a=tap&x=0.5&y=0.5")).await;
+        assert!(reply.starts_with("HTTP/1.1 403"), "{reply}");
+        let reply = request(port, "GET /s/tok/c/guess HTTP/1.1\r\nHost: x\r\n\r\n").await;
+        assert!(reply.starts_with("HTTP/1.1 404"), "{reply}");
+    }
+
+    #[tokio::test]
+    async fn control_share_checks_the_key_and_validates_input() {
+        let port = serve(shared(Some("secretkey"), 1000, 2000)).await;
+        let reply = request(port, &post("k=wrong&a=tap&x=0.5&y=0.5")).await;
+        assert!(reply.starts_with("HTTP/1.1 403"), "{reply}");
+        let reply = request(port, &post("a=tap&x=0.5&y=0.5")).await;
+        assert!(reply.starts_with("HTTP/1.1 403"), "missing key: {reply}");
+        // right key, invalid action: rejected before anything reaches adb
+        let reply = request(port, &post("k=secretkey&a=shell")).await;
+        assert!(reply.starts_with("HTTP/1.1 400"), "{reply}");
+        let reply = request(port, "GET /s/tok/c/secretkey HTTP/1.1\r\nHost: x\r\n\r\n").await;
+        assert!(reply.starts_with("HTTP/1.1 200") && reply.contains("data-k=\"home\""), "{reply}");
+        assert!(reply.contains("secretkey"));
+    }
 }
