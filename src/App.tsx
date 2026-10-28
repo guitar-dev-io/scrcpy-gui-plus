@@ -1579,6 +1579,13 @@ function AppContent() {
       ? [openCompanionWorkspaceId]
       : []
   const workspaceDeviceLabels = {
+    // Registry health already carries the model for devices that are not the
+    // active one; the active device's live status (below) takes precedence.
+    ...Object.fromEntries(
+      registeredDevices
+        .filter((device) => device.health?.model)
+        .map((device) => [device.serial, device.health?.model as string]),
+    ),
     ...deviceWorkspaceLabels,
     ...Object.fromEntries(
       Array.from(iosDevicesByUdid.values()).map((device) => [

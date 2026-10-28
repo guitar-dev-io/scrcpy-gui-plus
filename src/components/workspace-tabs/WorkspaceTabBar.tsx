@@ -42,6 +42,28 @@ const toolTabs: ReadonlyArray<{
   { id: 'compare', label: 'Compare', icon: Columns3 },
 ]
 
+/**
+ * Resolves the visible tab label per workspace. Falls back to the id while no
+ * friendly name is known, and appends the last 4 chars of the id when two open
+ * tabs would otherwise read the same.
+ */
+export function resolveTabLabels(
+  ids: readonly string[],
+  labels?: Readonly<Record<string, string>>,
+): Record<string, string> {
+  const base = Object.fromEntries(ids.map((id) => [id, labels?.[id] || id]))
+  const counts = new Map<string, number>()
+  for (const id of ids) counts.set(base[id], (counts.get(base[id]) ?? 0) + 1)
+  return Object.fromEntries(
+    ids.map((id) => [
+      id,
+      (counts.get(base[id]) ?? 0) > 1 && base[id] !== id
+        ? `${base[id]} · ${id.slice(-4)}`
+        : base[id],
+    ]),
+  )
+}
+
 export default function WorkspaceTabBar({
   deviceWorkspaces,
   deviceLabels,
@@ -67,6 +89,7 @@ export default function WorkspaceTabBar({
   // Embedded sessions do not appear in useScrcpy.runningDevices, so their
   // workspace lifecycle is supplied separately by the shell owner.
   const devices = Array.from(new Set(deviceWorkspaces ?? runningDevices))
+  const tabLabels = resolveTabLabels(devices, deviceLabels)
   const visibleTools = toolTabs.filter(({ id }) => openToolTabs.includes(id))
 
   useEffect(() => {
@@ -113,7 +136,7 @@ export default function WorkspaceTabBar({
       >
         {devices.map((serial) => {
           const active = activeToolTab === undefined && serial === activeDevice
-          const label = deviceLabels?.[serial] || serial
+          const label = tabLabels[serial]
           const kind = deviceKinds?.[serial] ?? 'android'
           const closeLabel =
             kind === 'ios'

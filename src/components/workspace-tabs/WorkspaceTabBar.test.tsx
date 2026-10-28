@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import WorkspaceTabBar from './WorkspaceTabBar'
+import WorkspaceTabBar, { resolveTabLabels } from './WorkspaceTabBar'
 import { ShellUiProvider } from '../../contexts/ShellUiContext'
 import type { WorkspaceToolTab } from '../../types/workspace'
 
@@ -200,6 +200,39 @@ describe('WorkspaceTabBar', () => {
 
       expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' })
       expect(scrollIntoView.mock.contexts[scrollIntoView.mock.contexts.length - 1]).toBe(screen.getByRole('tab', { name: /^b/ }))
+    })
+  })
+
+  describe('tab labels', () => {
+    it('shows the model when known and keeps the serial otherwise, with the serial in the tooltip', () => {
+      const props = {
+        ...baseProps,
+        deviceWorkspaces: ['YXEMRCGYAI49S4SS', 'SERIAL0002'],
+        runningDevices: [],
+        deviceLabels: { YXEMRCGYAI49S4SS: 'Pixel 8' },
+      }
+      renderWorkspace(<WorkspaceTabBar {...props} />)
+      const named = screen.getByTitle('Pixel 8 · YXEMRCGYAI49S4SS')
+      expect(named.textContent).toContain('Pixel 8')
+      expect(screen.getByTitle('SERIAL0002 · SERIAL0002')).toBeTruthy()
+    })
+
+    it('disambiguates identical model names with the last 4 serial chars', () => {
+      expect(
+        resolveTabLabels(['AAAA1111', 'BBBB2222', 'CCCC3333'], {
+          AAAA1111: 'Pixel 8',
+          BBBB2222: 'Pixel 8',
+          CCCC3333: 'Galaxy S24',
+        }),
+      ).toEqual({
+        AAAA1111: 'Pixel 8 · 1111',
+        BBBB2222: 'Pixel 8 · 2222',
+        CCCC3333: 'Galaxy S24',
+      })
+    })
+
+    it('does not decorate serial fallbacks', () => {
+      expect(resolveTabLabels(['a', 'b'], undefined)).toEqual({ a: 'a', b: 'b' })
     })
   })
 })
