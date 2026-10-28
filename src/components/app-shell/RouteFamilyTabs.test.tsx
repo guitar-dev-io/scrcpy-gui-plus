@@ -27,6 +27,18 @@ describe('RouteFamilyTabs', () => {
     expect(screen.getByRole('tab', { name: 'Live wall' })).toHaveAttribute('aria-selected', 'true')
   })
 
+  it('offers Connect as a Devices tab and keeps Devices current on that page', async () => {
+    render(
+      <ShellUiProvider initialRoute="pair-device" initialOpenWorkspaceTools={[]}>
+        <Harness />
+      </ShellUiProvider>,
+    )
+
+    expect(screen.getByRole('tab', { name: 'Connect' })).toHaveAttribute('aria-selected', 'true')
+    fireEvent.click(screen.getByRole('tab', { name: 'Cards' }))
+    await waitFor(() => expect(screen.getByTestId('route')).toHaveTextContent('devices'))
+  })
+
   it('renders nothing outside a family', () => {
     render(
       <ShellUiProvider initialRoute="settings" initialOpenWorkspaceTools={[]}>
