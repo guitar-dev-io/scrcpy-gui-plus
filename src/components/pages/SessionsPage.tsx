@@ -55,6 +55,7 @@ function SessionRow({
   startedAt?: string
   now: number
 }) {
+  const { t } = useI18n()
   const { status } = useDeviceStatus({
     activeDevice: serial,
     customPath,
@@ -68,15 +69,15 @@ function SessionRow({
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-primary/30 bg-primary/10 text-primary"><MonitorPlay size={14} /></div>
         <span className="min-w-0">
           <span className="block truncate font-medium text-[var(--text-base)]">{status?.model || serial}</span>
-          <span className="mt-0.5 block truncate text-[8px] text-[var(--text-subtle)]">{serial}{status?.androidVersion ? ` · Android ${status.androidVersion}` : ''}</span>
+          <span className="mt-0.5 block truncate text-[8px] text-[var(--text-subtle)]">{serial}{status?.androidVersion ? ` · ${t('pages.sessions.android')} ${status.androidVersion}` : ''}</span>
         </span>
       </button>
       <span className="text-[var(--text-subtle)]">{startedAt ? new Date(startedAt).toLocaleTimeString() : '—'}</span>
       <span className="tabular-nums text-[var(--text-subtle)]">{startedAt ? formatDuration(now - new Date(startedAt).getTime()) : '—'}</span>
-      <span><span className="rounded bg-emerald-500/15 px-2 py-1 text-[8px] font-semibold text-emerald-400">Active</span></span>
+      <span><span className="rounded bg-emerald-500/15 px-2 py-1 text-[8px] font-semibold text-emerald-400">{t('pages.sessions.statusActive')}</span></span>
       <div className="flex items-center justify-end gap-1">
-        <button type="button" onClick={onView} className="flex h-7 items-center gap-1 rounded-md px-2 text-[9px] text-[var(--text-muted)] hover:bg-white/5 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"><Eye size={11} /> View</button>
-        <button type="button" onClick={onStop} className="flex h-7 items-center gap-1 rounded-md px-2 text-[9px] text-red-400 hover:bg-red-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"><Square size={10} /> Stop</button>
+        <button type="button" onClick={onView} className="flex h-7 items-center gap-1 rounded-md px-2 text-[9px] text-[var(--text-muted)] hover:bg-white/5 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"><Eye size={11} /> {t('pages.sessions.view')}</button>
+        <button type="button" onClick={onStop} className="flex h-7 items-center gap-1 rounded-md px-2 text-[9px] text-red-400 hover:bg-red-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"><Square size={10} /> {t('pages.sessions.stop')}</button>
       </div>
     </div>
   )
@@ -123,20 +124,20 @@ export default function SessionsPage({
           subtitle={t(runningDevices.length === 1 ? 'pages.sessions.activeOne' : 'pages.sessions.active', { count: runningDevices.length })}
         />
         <button type="button" onClick={() => setSettingsOpen(true)} className="flex h-9 items-center gap-2 rounded-lg border border-[var(--border-base)] px-3 text-[10px] text-[var(--text-muted)] hover:border-primary/50 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]">
-          <Settings2 size={13} /> Session Settings
+          <Settings2 size={13} /> {t('pages.sessions.settings')}
         </button>
       </header>
 
-      <section aria-label="Active sessions" className="mt-5 overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] shadow-[0_14px_36px_rgba(0,0,0,.16)]">
+      <section aria-label={t('pages.sessions.activeSessions')} className="mt-5 overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] shadow-[0_14px_36px_rgba(0,0,0,.16)]">
         <div className="custom-scrollbar overflow-x-auto">
           <div className="grid min-w-[690px] grid-cols-[minmax(220px,1.5fr)_130px_110px_100px_120px] border-b border-[var(--border-subtle)] bg-[var(--bg-elevated)] px-4 py-3 text-[8px] font-semibold uppercase tracking-wider text-[var(--text-subtle)]">
-            <span>Device</span><span>Start Time</span><span>Duration</span><span>Status</span><span className="text-right">Actions</span>
+            <span>{t('pages.sessions.colDevice')}</span><span>{t('pages.sessions.colStart')}</span><span>{t('pages.sessions.colDuration')}</span><span>{t('pages.sessions.colStatus')}</span><span className="text-right">{t('pages.sessions.colActions')}</span>
           </div>
           {runningDevices.length === 0 ? (
             <div className="flex min-h-64 min-w-[690px] flex-col items-center justify-center px-6 text-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-[var(--border-base)] bg-black/15 text-[var(--text-subtle)]"><Clock3 size={20} /></div>
-              <h2 className="mt-4 text-sm font-semibold text-[var(--text-muted)]">No active sessions</h2>
-              <p className="mt-2 max-w-sm text-[10px] leading-relaxed text-[var(--text-subtle)]">Start mirroring from Dashboard or control a connected device to create a session.</p>
+              <h2 className="mt-4 text-sm font-semibold text-[var(--text-muted)]">{t('pages.sessions.noneTitle')}</h2>
+              <p className="mt-2 max-w-sm text-[10px] leading-relaxed text-[var(--text-subtle)]">{t('pages.sessions.noneBody')}</p>
             </div>
           ) : (
             runningDevices.map((serial) => (
@@ -159,13 +160,13 @@ export default function SessionsPage({
       <section aria-labelledby="session-history-title" className="mt-4 overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
         <div className="flex items-center justify-between border-b border-[var(--border-subtle)] px-4 py-3">
           <div>
-            <h2 id="session-history-title" className="text-[10px] font-semibold text-[var(--text-muted)]">Recent Sessions</h2>
-            <p className="mt-0.5 text-[8px] text-[var(--text-subtle)]">Saved locally · latest {history.length}</p>
+            <h2 id="session-history-title" className="text-[10px] font-semibold text-[var(--text-muted)]">{t('pages.sessions.recent')}</h2>
+            <p className="mt-0.5 text-[8px] text-[var(--text-subtle)]">{t('pages.sessions.savedLocally', { count: history.length })}</p>
           </div>
-          {history.length > 0 && <button type="button" onClick={onClearHistory} className="flex items-center gap-1 text-[9px] text-[var(--text-subtle)] hover:text-red-400"><Trash2 size={11} /> Clear</button>}
+          {history.length > 0 && <button type="button" onClick={onClearHistory} className="flex items-center gap-1 text-[9px] text-[var(--text-subtle)] hover:text-red-400"><Trash2 size={11} /> {t('pages.sessions.clear')}</button>}
         </div>
         {history.length === 0 ? (
-          <div className="flex min-h-28 items-center justify-center px-4 text-[10px] text-[var(--text-subtle)]">Completed sessions will appear here.</div>
+          <div className="flex min-h-28 items-center justify-center px-4 text-[10px] text-[var(--text-subtle)]">{t('pages.sessions.historyEmpty')}</div>
         ) : (
           <div className="custom-scrollbar max-h-72 overflow-auto">
             {history.map((entry) => (
@@ -173,8 +174,8 @@ export default function SessionsPage({
                 <div className="min-w-0"><p className="truncate font-medium text-[var(--text-base)]">{entry.deviceSerial}</p><p className="mt-0.5 text-[8px] text-[var(--text-subtle)]">{entry.config.sessionMode} · {entry.config.res === '0' ? 'Original' : entry.config.res || 'Original'} · {entry.config.bitrate || 8}M</p></div>
                 <span className="text-[var(--text-subtle)]">{new Date(entry.startedAt).toLocaleString()}</span>
                 <span className="tabular-nums text-[var(--text-subtle)]">{formatDuration(entry.durationMs || 0)}</span>
-                <span className="text-[8px] text-[var(--text-subtle)]">Completed</span>
-                <button type="button" onClick={() => onRunAgain(entry)} className="flex h-7 items-center justify-center gap-1 rounded-md text-[9px] text-primary hover:bg-primary/10"><RotateCcw size={11} /> Run again</button>
+                <span className="text-[8px] text-[var(--text-subtle)]">{t('pages.sessions.completed')}</span>
+                <button type="button" onClick={() => onRunAgain(entry)} className="flex h-7 items-center justify-center gap-1 rounded-md text-[9px] text-primary hover:bg-primary/10"><RotateCcw size={11} /> {t('pages.sessions.runAgain')}</button>
               </div>
             ))}
           </div>
@@ -183,15 +184,15 @@ export default function SessionsPage({
 
       <aside className="mt-4 flex items-start gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]/55 p-4 text-[10px] text-[var(--text-subtle)]">
         <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[var(--border-base)]">i</span>
-        <p>Session history is stored locally on this computer. “Run again” restores the saved launch configuration.</p>
+        <p>{t('pages.sessions.historyNote')}</p>
       </aside>
 
       {settingsOpen && (
         <div role="dialog" aria-modal="true" aria-labelledby="sessions-settings-title" className="fixed inset-0 z-[var(--z-modal)] flex justify-end bg-black/55 backdrop-blur-sm" onMouseDown={() => setSettingsOpen(false)}>
           <aside className="custom-scrollbar h-full w-full max-w-lg overflow-y-auto border-l border-[var(--border-base)] bg-[var(--bg-sidebar)] p-4 shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between border-b border-[var(--border-subtle)] pb-3">
-              <div className="flex items-center gap-2"><Settings2 size={15} className="text-primary" /><h2 id="sessions-settings-title" className="text-sm font-semibold">Session Settings</h2></div>
-              <button type="button" onClick={() => setSettingsOpen(false)} aria-label="Close session settings" className="rounded-lg p-2 text-[var(--text-muted)] hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"><X size={16} /></button>
+              <div className="flex items-center gap-2"><Settings2 size={15} className="text-primary" /><h2 id="sessions-settings-title" className="text-sm font-semibold">{t('pages.sessions.settings')}</h2></div>
+              <button type="button" onClick={() => setSettingsOpen(false)} aria-label={t('pages.sessions.closeSettings')} className="rounded-lg p-2 text-[var(--text-muted)] hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"><X size={16} /></button>
             </div>
             {settings}
           </aside>

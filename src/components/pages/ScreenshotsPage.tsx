@@ -100,6 +100,7 @@ function imageSource(path: string): string {
 }
 
 function ScreenshotThumbnail({ entry }: { entry: ScreenshotHistoryEntry }) {
+  const { t } = useI18n()
   const [failed, setFailed] = useState(false)
 
   return (
@@ -107,12 +108,12 @@ function ScreenshotThumbnail({ entry }: { entry: ScreenshotHistoryEntry }) {
       {failed ? (
         <div className="flex flex-col items-center gap-2 text-[var(--text-subtle)]">
           <ImageOff size={24} />
-          <span className="text-[9px]">Preview unavailable</span>
+          <span className="text-[9px]">{t('pages.screenshots.previewUnavailable')}</span>
         </div>
       ) : (
         <img
           src={imageSource(entry.path)}
-          alt={`Screenshot ${entry.filename}`}
+          alt={t('pages.screenshots.imageAlt', { filename: entry.filename })}
           className="h-full w-full object-contain"
           loading="lazy"
           onError={() => setFailed(true)}
@@ -294,14 +295,14 @@ export default function ScreenshotsPage({
         <div className="flex flex-wrap items-center gap-2">
           {captureSource && (
             <label className="flex h-9 items-center gap-2 rounded-lg border border-[var(--border-base)] bg-[var(--bg-input)] px-2.5 text-[9px] text-[var(--text-muted)]">
-              <span className="sr-only">Capture source</span>
+              <span className="sr-only">{t('pages.screenshots.captureSource')}</span>
               <select
                 value={captureSource.selectedId}
                 onChange={(event) => captureSource.onChange(event.target.value)}
                 className="max-w-52 bg-transparent text-[10px] text-[var(--text-base)] outline-none"
               >
                 {captureSource.options.length === 0 ? (
-                  <option value="">No live source</option>
+                  <option value="">{t('pages.screenshots.noLiveSource')}</option>
                 ) : (
                   captureSource.options.map((option) => (
                     <option
@@ -320,10 +321,10 @@ export default function ScreenshotsPage({
             <button
               type="button"
               onClick={onChangeDirectory}
-              title={screenshotDir || 'Change screenshot directory'}
+              title={screenshotDir || t('pages.screenshots.changeDirectory')}
               className="flex h-9 items-center gap-2 rounded-lg border border-[var(--border-base)] px-3 text-[10px] text-[var(--text-muted)] transition-colors hover:border-primary/50 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
             >
-              <FolderCog size={13} /> Save location
+              <FolderCog size={13} /> {t('pages.screenshots.saveLocation')}
             </button>
           )}
           {onCaptureScroll && canCaptureScroll && (
@@ -357,7 +358,7 @@ export default function ScreenshotsPage({
               ) : (
                 <Camera size={13} />
               )}
-              {isCapturing ? 'Capturing…' : 'Take screenshot'}
+              {isCapturing ? t('pages.screenshots.capturing') : t('pages.screenshots.take')}
             </button>
           )}
           {onCaptureAll && captureAllCount > 1 && (
@@ -368,7 +369,7 @@ export default function ScreenshotsPage({
               className="flex h-9 items-center gap-2 rounded-lg border border-primary/45 bg-primary/10 px-3 text-[10px] font-semibold text-primary hover:bg-primary/15 disabled:opacity-40"
             >
               {isCapturing ? <Loader2 size={13} className="animate-spin" /> : <Columns3 size={13} />}
-              Capture All ({captureAllCount})
+              {t('pages.screenshots.captureAll', { count: captureAllCount })}
             </button>
           )}
         </div>
@@ -377,11 +378,11 @@ export default function ScreenshotsPage({
       {autoCapture && <AutoScreenCapturePanel {...autoCapture} />}
 
       <section
-        aria-label="Screenshot filters"
+        aria-label={t('pages.screenshots.filters')}
         className="my-4 flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]/55 p-2.5 shadow-[var(--shadow-sm)]"
       >
         <label className="relative min-w-[190px] flex-1 sm:max-w-sm">
-          <span className="sr-only">Search screenshots</span>
+          <span className="sr-only">{t('pages.screenshots.search')}</span>
           <Search
             size={13}
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-subtle)]"
@@ -390,14 +391,14 @@ export default function ScreenshotsPage({
             type="search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search screenshots…"
+            placeholder={t('pages.screenshots.searchPlaceholder')}
             className="h-9 w-full rounded-lg border border-[var(--border-base)] bg-[var(--bg-input)] pl-9 pr-9 text-[10px] text-[var(--text-base)] outline-none placeholder:text-[var(--text-subtle)] focus:border-primary/60 focus:ring-2 focus:ring-[var(--focus-ring)]/30"
           />
           {search && (
             <button
               type="button"
               onClick={() => setSearch('')}
-              aria-label="Clear search"
+              aria-label={t('pages.screenshots.clearSearch')}
               className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-[var(--text-subtle)] hover:text-[var(--text-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
             >
               <X size={12} />
@@ -406,13 +407,13 @@ export default function ScreenshotsPage({
         </label>
 
         <label>
-          <span className="sr-only">Filter by device</span>
+          <span className="sr-only">{t('pages.screenshots.filterDevice')}</span>
           <select
             value={deviceFilter}
             onChange={(event) => setDeviceFilter(event.target.value)}
             className="h-9 min-w-32 rounded-lg border border-[var(--border-base)] bg-[var(--bg-input)] px-3 text-[10px] text-[var(--text-muted)] outline-none focus:border-primary/60 focus:ring-2 focus:ring-[var(--focus-ring)]/30"
           >
-            <option value="all">All Devices</option>
+            <option value="all">{t('pages.screenshots.allDevices')}</option>
             {devices.map(([serial, name]) => (
               <option key={serial} value={serial}>
                 {name}
@@ -422,7 +423,7 @@ export default function ScreenshotsPage({
         </label>
 
         <label>
-          <span className="sr-only">Filter by capture date</span>
+          <span className="sr-only">{t('pages.screenshots.filterDate')}</span>
           <select
             value={dateFilter}
             onChange={(event) =>
@@ -430,23 +431,23 @@ export default function ScreenshotsPage({
             }
             className="h-9 min-w-28 rounded-lg border border-[var(--border-base)] bg-[var(--bg-input)] px-3 text-[10px] text-[var(--text-muted)] outline-none focus:border-primary/60 focus:ring-2 focus:ring-[var(--focus-ring)]/30"
           >
-            <option value="all">All Time</option>
-            <option value="today">Today</option>
-            <option value="week">Last 7 Days</option>
-            <option value="month">Last 30 Days</option>
+            <option value="all">{t('pages.screenshots.allTime')}</option>
+            <option value="today">{t('pages.screenshots.today')}</option>
+            <option value="week">{t('pages.screenshots.last7')}</option>
+            <option value="month">{t('pages.screenshots.last30')}</option>
           </select>
         </label>
 
         <label className="sm:ml-auto">
-          <span className="sr-only">Sort screenshots</span>
+          <span className="sr-only">{t('pages.screenshots.sort')}</span>
           <select
             value={sortOrder}
             onChange={(event) => setSortOrder(event.target.value as SortOrder)}
             className="h-9 min-w-32 rounded-lg border border-[var(--border-base)] bg-[var(--bg-input)] px-3 text-[10px] text-[var(--text-muted)] outline-none focus:border-primary/60 focus:ring-2 focus:ring-[var(--focus-ring)]/30"
           >
-            <option value="newest">Sort: Newest</option>
-            <option value="oldest">Sort: Oldest</option>
-            <option value="name">Sort: Name</option>
+            <option value="newest">{t('pages.screenshots.sortNewest')}</option>
+            <option value="oldest">{t('pages.screenshots.sortOldest')}</option>
+            <option value="name">{t('pages.screenshots.sortName')}</option>
           </select>
         </label>
 
@@ -469,7 +470,7 @@ export default function ScreenshotsPage({
             onClick={onClearHistory}
             className="flex h-9 items-center gap-1.5 rounded-lg px-2 text-[9px] text-[var(--text-subtle)] transition-colors hover:bg-red-500/10 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
           >
-            <Trash2 size={12} /> Clear history
+            <Trash2 size={12} /> {t('pages.screenshots.clearHistory')}
           </button>
         )}
       </section>
@@ -492,7 +493,7 @@ export default function ScreenshotsPage({
               disabled={bulkBusy}
               className="flex h-8 items-center gap-1.5 rounded-lg border border-primary/40 px-2.5 text-[9px] text-primary hover:bg-primary/10 disabled:opacity-40"
             >
-              <Columns3 size={11} /> Compare selected
+              <Columns3 size={11} /> {t('pages.screenshots.compareSelected')}
             </button>
           )}
           <button
@@ -529,7 +530,7 @@ export default function ScreenshotsPage({
 
       {visibleHistory.length > 0 ? (
         <section
-          aria-label="Screenshot gallery"
+          aria-label={t('pages.screenshots.gallery')}
           className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,240px),280px))] justify-start gap-4"
         >
           {visibleHistory.map((entry) => {
@@ -549,7 +550,7 @@ export default function ScreenshotsPage({
                     type="checkbox"
                     checked={selected}
                     onChange={() => toggleSelected(entry.id)}
-                    aria-label={`${selected ? 'Deselect' : 'Select'} ${entry.filename}`}
+                    aria-label={t(selected ? 'pages.screenshots.deselectItem' : 'pages.screenshots.selectItem', { filename: entry.filename })}
                     className="h-4 w-4 accent-primary"
                   />
                 </label>
@@ -577,7 +578,7 @@ export default function ScreenshotsPage({
                 >
                   <ScreenshotThumbnail entry={entry} />
                   <span className="absolute inset-x-0 bottom-0 flex translate-y-full items-center justify-center gap-1 bg-black/75 py-2 text-[9px] text-white backdrop-blur-sm transition-transform group-hover:translate-y-0 group-focus-within:translate-y-0">
-                    <ExternalLink size={11} /> Open screenshot
+                    <ExternalLink size={11} /> {t('pages.screenshots.open')}
                   </span>
                 </button>
 
@@ -611,8 +612,8 @@ export default function ScreenshotsPage({
                     <button
                       type="button"
                       onClick={() => onOpenFolder(entry.path)}
-                      aria-label={`Show ${entry.filename} in folder`}
-                      title="Show in folder"
+                      aria-label={t('pages.screenshots.showItemInFolder', { filename: entry.filename })}
+                      title={t('pages.screenshots.showInFolder')}
                       className="rounded-md p-1.5 text-[var(--text-subtle)] hover:bg-white/5 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
                     >
                       <FolderOpen size={12} />
@@ -620,8 +621,8 @@ export default function ScreenshotsPage({
                     <button
                       type="button"
                       onClick={() => onCopyImage(entry.path)}
-                      aria-label={`Copy ${entry.filename}`}
-                      title="Copy image"
+                      aria-label={t('pages.screenshots.copyItem', { filename: entry.filename })}
+                      title={t('pages.screenshots.copyImage')}
                       className="rounded-md p-1.5 text-[var(--text-subtle)] hover:bg-white/5 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
                     >
                       <Copy size={12} />
@@ -629,8 +630,8 @@ export default function ScreenshotsPage({
                     <button
                       type="button"
                       onClick={() => onDeleteEntry(entry.id, false)}
-                      aria-label={`Remove ${entry.filename} from history`}
-                      title="Remove from history"
+                      aria-label={t('pages.screenshots.removeItem', { filename: entry.filename })}
+                      title={t('pages.screenshots.removeFromHistory')}
                       className="rounded-md p-1.5 text-[var(--text-subtle)] hover:bg-white/5 hover:text-[var(--text-base)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
                     >
                       <X size={12} />
@@ -648,7 +649,7 @@ export default function ScreenshotsPage({
                           onDeleteEntry(entry.id, true)
                         }
                       }}
-                      aria-label={`Delete ${entry.filename} from disk`}
+                      aria-label={t('pages.screenshots.deleteItem', { filename: entry.filename })}
                       title={t('screenshot.deleteFile')}
                       className="rounded-md p-1.5 text-[var(--text-subtle)] hover:bg-red-500/10 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
                     >
@@ -666,12 +667,12 @@ export default function ScreenshotsPage({
             {hasFilters ? <Search size={21} /> : <ImageOff size={21} />}
           </div>
           <h2 className="mt-4 text-sm font-semibold text-[var(--text-muted)]">
-            {hasFilters ? 'No screenshots found' : 'No screenshots yet'}
+            {hasFilters ? t('pages.screenshots.noneFound') : t('pages.screenshots.noneYet')}
           </h2>
           <p className="mt-2 max-w-sm text-[10px] leading-relaxed text-[var(--text-subtle)]">
             {hasFilters
-              ? 'Try changing the search text or filters.'
-              : 'Captured screenshots will appear here automatically.'}
+              ? t('pages.screenshots.tryFilters')
+              : t('pages.screenshots.autoAppear')}
           </p>
           {hasFilters ? (
             <button
@@ -679,7 +680,7 @@ export default function ScreenshotsPage({
               onClick={resetFilters}
               className="mt-4 h-9 rounded-lg border border-[var(--border-base)] px-4 text-[10px] text-[var(--text-muted)] hover:border-primary/50 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
             >
-              Reset filters
+              {t('pages.screenshots.resetFilters')}
             </button>
           ) : onCapture ? (
             <button
@@ -693,7 +694,7 @@ export default function ScreenshotsPage({
               ) : (
                 <Camera size={13} />
               )}
-              {isCapturing ? 'Capturing…' : 'Take screenshot'}
+              {isCapturing ? t('pages.screenshots.capturing') : t('pages.screenshots.take')}
             </button>
           ) : null}
         </section>

@@ -116,7 +116,7 @@ export default function SimulatorsPage({
               type="button"
               onClick={() => void refreshPhysical()}
               disabled={refreshingPhysical}
-              title="Refresh physical devices"
+              title={t('pages.deviceLab.refreshPhysical')}
               className="rounded-xl border border-[var(--border-base)] bg-[var(--bg-surface)] p-2.5 text-[var(--text-subtle)] hover:border-primary/40 hover:text-primary disabled:opacity-40"
             >
               <RefreshCw
@@ -128,7 +128,7 @@ export default function SimulatorsPage({
         </div>
       </header>
 
-      <section aria-label="Device lab" className="mt-5 min-h-0 flex-1">
+      <section aria-label={t('pages.deviceLab.sectionLabel')} className="mt-5 min-h-0 flex-1">
         {source === 'simdeck' ? (
           <SimulatorsPanel
             embedded
@@ -144,7 +144,7 @@ export default function SimulatorsPage({
             <PhysicalDeviceSelect
               value={androidSerial}
               onChange={setAndroidSerial}
-              placeholder="No physical Android device connected"
+              placeholder={t('pages.deviceLab.noAndroid')}
               options={androidDevices.map((serial) => ({
                 value: serial,
                 label: androidLabels[serial] || serial,
@@ -169,11 +169,11 @@ export default function SimulatorsPage({
             <PhysicalDeviceSelect
               value={iosUdid}
               onChange={setIosUdid}
-              placeholder="No physical iPhone or iPad connected"
+              placeholder={t('pages.deviceLab.noIos')}
               options={iosDevices.map((device) => ({
                 value: device.udid,
                 label: device.name || device.productType,
-                detail: `${device.connectionType || 'USB'} · iOS ${device.productVersion || 'Unknown'}`,
+                detail: `${device.connectionType || 'USB'} · iOS ${device.productVersion || t('pages.deviceLab.unknown')}`,
               }))}
             />
             {activeIos ? (
@@ -190,7 +190,7 @@ export default function SimulatorsPage({
                     onClick={() => onOpenIos(activeIos)}
                     className="sr-only"
                   >
-                    Open iOS workspace
+                    {t('pages.deviceLab.openIos')}
                   </button>
                 )}
               </div>
@@ -248,10 +248,11 @@ function PhysicalDeviceSelect({
   options: Array<{ value: string; label: string; detail: string }>
   placeholder: string
 }) {
+  const { t } = useI18n()
   return (
     <label className="flex items-center gap-3 rounded-xl border border-[var(--border-base)] bg-[var(--bg-surface)] px-4 py-2.5">
       <span className="text-[9px] font-black uppercase tracking-widest text-[var(--text-subtle)]">
-        Physical device
+        {t('pages.deviceLab.physicalDevice')}
       </span>
       <select
         value={value}
@@ -274,15 +275,15 @@ function PhysicalDeviceSelect({
 }
 
 function EmptyPhysical({ platform }: { platform: string }) {
+  const { t } = useI18n()
   return (
     <div className="flex min-h-[480px] flex-1 flex-col items-center justify-center rounded-2xl border border-dashed border-[var(--border-base)] bg-[var(--bg-surface)] text-center">
       <Smartphone size={28} className="text-[var(--text-subtle)]" />
       <p className="mt-4 text-[11px] font-semibold text-[var(--text-base)]">
-        No physical {platform} device detected
+        {t('pages.deviceLab.noneDetected', { platform })}
       </p>
       <p className="mt-1 max-w-md text-[9px] text-[var(--text-subtle)]">
-        Connect a trusted device over USB or the configured wireless transport,
-        then refresh.
+        {t('pages.deviceLab.connectHint')}
       </p>
     </div>
   )

@@ -52,20 +52,20 @@ const TABS: Array<{
 }> = [
   {
     id: 'qr',
-    label: 'QR pairing',
-    hint: 'Android 11+, no cable',
+    label: 'pages.connectDevice.tabQr',
+    hint: 'pages.connectDevice.tabQrHint',
     icon: QrCode,
   },
   {
     id: 'wireless',
-    label: 'Wireless ADB',
-    hint: 'Already paired or tcpip',
+    label: 'pages.connectDevice.tabWireless',
+    hint: 'pages.connectDevice.tabWirelessHint',
     icon: Wifi,
   },
   {
     id: 'usb',
-    label: 'USB & Companion',
-    hint: 'Cable or companion app',
+    label: 'pages.connectDevice.tabUsb',
+    hint: 'pages.connectDevice.tabUsbHint',
     icon: Usb,
   },
 ]
@@ -75,31 +75,31 @@ const statusPresentation: Record<
   { label: string; dot: string; text: string; card: string }
 > = {
   generating: {
-    label: 'Preparing…',
+    label: 'pages.connectDevice.statusPreparing',
     dot: 'bg-sky-400 animate-pulse',
     text: 'text-sky-300',
     card: 'border-sky-500/25 bg-sky-500/5',
   },
   waiting: {
-    label: 'Ready for Connection',
+    label: 'pages.connectDevice.statusReady',
     dot: 'bg-emerald-400 animate-pulse',
     text: 'text-emerald-300',
     card: 'border-emerald-500/25 bg-emerald-500/5',
   },
   pairing: {
-    label: 'Pairing…',
+    label: 'pages.connectDevice.statusPairing',
     dot: 'bg-primary animate-pulse',
     text: 'text-primary',
     card: 'border-primary/25 bg-primary/5',
   },
   success: {
-    label: 'Connected',
+    label: 'pages.connectDevice.statusConnected',
     dot: 'bg-emerald-400',
     text: 'text-emerald-300',
     card: 'border-emerald-500/25 bg-emerald-500/5',
   },
   error: {
-    label: 'Pairing failed',
+    label: 'pages.connectDevice.statusFailed',
     dot: 'bg-red-400',
     text: 'text-red-300',
     card: 'border-red-500/25 bg-red-500/5',
@@ -108,36 +108,36 @@ const statusPresentation: Record<
 
 const QR_STEPS: Array<[string, string]> = [
   [
-    'Open Wireless debugging',
-    'On the phone: Settings → Developer options → Wireless debugging.',
+    'pages.connectDevice.qr1t',
+    'pages.connectDevice.qr1d',
   ],
   [
-    'Tap "Pair device with QR code"',
-    'This opens the phone camera on its pairing screen.',
+    'pages.connectDevice.qr2t',
+    'pages.connectDevice.qr2d',
   ],
-  ['Scan the QR code', 'Point the camera at the code on the left.'],
+  ['pages.connectDevice.qr3t', 'pages.connectDevice.qr3d'],
   [
-    'Wait for the green status',
-    'Pairing and connecting happen automatically once scanned.',
+    'pages.connectDevice.qr4t',
+    'pages.connectDevice.qr4d',
   ],
 ]
 
 const USB_STEPS: Array<[string, string]> = [
   [
-    'Enable USB debugging',
-    'Settings → Developer options → USB debugging. Enable "Install via USB" too if present.',
+    'pages.connectDevice.usb1t',
+    'pages.connectDevice.usb1d',
   ],
   [
-    'Plug in the cable',
-    'Use a data cable. Charge-only cables never expose the device to adb.',
+    'pages.connectDevice.usb2t',
+    'pages.connectDevice.usb2d',
   ],
   [
-    'Allow the prompt',
-    'Tap Allow on "Allow USB debugging?" and tick "Always allow from this computer".',
+    'pages.connectDevice.usb3t',
+    'pages.connectDevice.usb3d',
   ],
   [
-    'Keep it wireless afterwards',
-    'Want the cable gone? Pair over QR instead, or run "adb tcpip 5555" once, then connect by IP on the Wireless ADB tab.',
+    'pages.connectDevice.usb4t',
+    'pages.connectDevice.usb4d',
   ],
 ]
 
@@ -190,9 +190,9 @@ export default function ConnectDevicePage({
 
   const report = (res: PairingOutcome, successMsg: string) => {
     if (res.success) {
-      notify('Device connected', successMsg, 'success')
+      notify(t('pages.connectDevice.deviceConnected'), successMsg, 'success')
     } else {
-      notify('Pairing failed', res.errorKey || res.raw || 'Unknown error', 'error')
+      notify(t('pages.connectDevice.statusFailed'), res.errorKey || res.raw || t('pages.connectDevice.unknownError'), 'error')
     }
   }
 
@@ -200,14 +200,14 @@ export default function ConnectDevicePage({
     if (!pairAddress.trim() || !pairCode.trim()) return
     const res = await wizard.pairAndConnect(pairAddress.trim(), pairCode.trim())
     if (res.success) setPairCode('')
-    report(res, `Connected to ${res.connectedAddress || ''}`)
+    report(res, t('pages.connectDevice.connectedTo', { address: res.connectedAddress || '' }))
   }
 
   const handleConnect = async (addr: string) => {
     const target = addr.trim()
     if (!target) return
     const res = await wizard.connect(target)
-    report(res, `Connected to ${target}`)
+    report(res, t('pages.connectDevice.connectedTo', { address: target }))
   }
 
   const manualTarget = `${host.trim()}:${port.trim()}`
@@ -229,10 +229,10 @@ export default function ConnectDevicePage({
           </span>
           <div>
             <p className="text-[13px] font-semibold text-[var(--text-base)]">
-              {title}
+              {t(title)}
             </p>
             <p className="mt-0.5 text-[11px] leading-relaxed text-[var(--text-subtle)]">
-              {desc}
+              {t(desc)}
             </p>
           </div>
         </li>
@@ -256,7 +256,7 @@ export default function ConnectDevicePage({
 
       <div
         role="tablist"
-        aria-label="Connection method"
+        aria-label={t('pages.connectDevice.method')}
         className="mt-5 flex flex-wrap gap-2"
       >
         {TABS.map(({ id, label, hint, icon: Icon }) => {
@@ -281,10 +281,10 @@ export default function ConnectDevicePage({
               />
               <span className="min-w-0 flex-1">
                 <span className="block text-[12px] font-semibold text-[var(--text-base)]">
-                  {label}
+                  {t(label)}
                 </span>
                 <span className="block text-[10px] text-[var(--text-subtle)]">
-                  {hint}
+                  {t(hint)}
                 </span>
               </span>
               {foundCount > 0 && (
@@ -313,19 +313,19 @@ export default function ConnectDevicePage({
                     }}
                     onPaired={(address) => {
                       notify(
-                        'Device connected',
-                        `Connected to ${address}`,
+                        t('pages.connectDevice.deviceConnected'),
+                        t('pages.connectDevice.connectedTo', { address }),
                         'success',
                       )
                     }}
                     onError={(msg) => {
-                      notify('Pairing failed', msg, 'error')
+                      notify(t('pages.connectDevice.statusFailed'), msg, 'error')
                     }}
                   />
                 </div>
                 <div className="flex flex-col gap-3">
                   <h2 className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-widest text-[var(--text-subtle)]">
-                    <QrCode size={16} className="text-primary" /> How to pair
+                    <QrCode size={16} className="text-primary" /> {t('pages.connectDevice.howToPair')}
                   </h2>
                   {renderSteps(QR_STEPS)}
                 </div>
@@ -338,7 +338,7 @@ export default function ConnectDevicePage({
                     onClick={() => setRegenerateSignal((n) => n + 1)}
                     className={`flex-1 ${secondaryBtnCls}`}
                   >
-                    <RefreshCw size={13} /> Refresh QR
+                    <RefreshCw size={13} /> {t('pages.connectDevice.refreshQr')}
                   </button>
                   <button
                     type="button"
@@ -346,7 +346,7 @@ export default function ConnectDevicePage({
                     aria-expanded={manualOpen}
                     className={`flex-1 ${secondaryBtnCls}`}
                   >
-                    <KeyRound size={13} /> Pair with a code instead
+                    <KeyRound size={13} /> {t('pages.connectDevice.pairWithCode')}
                     <ChevronDown
                       size={13}
                       className={`transition-transform ${manualOpen ? 'rotate-180' : ''}`}
@@ -357,19 +357,18 @@ export default function ConnectDevicePage({
                 {manualOpen && (
                   <div className="mt-1 space-y-2 rounded-lg border border-[var(--border-subtle)] bg-black/15 p-3">
                     <p className="text-[10px] leading-relaxed text-[var(--text-subtle)]">
-                      On the phone tap <b>Pair device with pairing code</b>, then
-                      copy the address and six digits it shows.
+                      {t('pages.connectDevice.pairCodeHintPre')} <b>{t('pages.connectDevice.pairCodeHintBold')}</b>{t('pages.connectDevice.pairCodeHintPost')}
                     </p>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_140px]">
                       <input
                         className={inputCls}
-                        placeholder="192.168.1.10:37199 (pairing port)"
+                        placeholder={t('pages.connectDevice.pairAddressPlaceholder')}
                         value={pairAddress}
                         onChange={(event) => setPairAddress(event.target.value)}
                       />
                       <input
                         className={inputCls}
-                        placeholder="6-digit code"
+                        placeholder={t('pages.connectDevice.codePlaceholder')}
                         value={pairCode}
                         onChange={(event) => setPairCode(event.target.value)}
                       />
@@ -387,7 +386,7 @@ export default function ConnectDevicePage({
                       ) : (
                         <KeyRound size={12} />
                       )}
-                      Pair &amp; Connect
+                      {t('pages.connectDevice.pairAndConnect')}
                     </button>
                   </div>
                 )}
@@ -399,8 +398,7 @@ export default function ConnectDevicePage({
             <div className={sectionCls}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-widest text-[var(--text-subtle)]">
-                  <Radar size={16} className="text-primary" /> Devices on this
-                  network
+                  <Radar size={16} className="text-primary" /> {t('pages.connectDevice.devicesOnNetwork')}
                 </h2>
                 <div className="flex gap-2">
                   <button
@@ -413,20 +411,20 @@ export default function ConnectDevicePage({
                       size={12}
                       className={wizard.scanning ? 'animate-spin' : ''}
                     />
-                    {wizard.scanning ? 'Scanning…' : 'Rescan'}
+                    {wizard.scanning ? t('pages.connectDevice.scanning') : t('pages.connectDevice.rescan')}
                   </button>
                   <button
                     type="button"
                     onClick={() => void wizard.scanSubnet()}
                     disabled={wizard.subnetScanning}
-                    title="Sweeps this /24 for port 5555. Use it when mDNS is blocked."
+                    title={t('pages.connectDevice.deepScanHint')}
                     className={secondaryBtnCls}
                   >
                     <Radar
                       size={12}
                       className={wizard.subnetScanning ? 'animate-pulse' : ''}
                     />
-                    {wizard.subnetScanning ? 'Sweeping…' : 'Deep scan'}
+                    {wizard.subnetScanning ? t('pages.connectDevice.sweeping') : t('pages.connectDevice.deepScan')}
                   </button>
                 </div>
               </div>
@@ -435,8 +433,8 @@ export default function ConnectDevicePage({
                 {wizard.lanDevices.length === 0 ? (
                   <p className="py-8 text-center text-[11px] text-[var(--text-subtle)]">
                     {wizard.scanning
-                      ? 'Looking for devices…'
-                      : 'Nothing found yet. A device only shows up here after it has been paired once — use the QR tab first.'}
+                      ? t('pages.connectDevice.lookingForDevices')
+                      : t('pages.connectDevice.nothingFound')}
                   </p>
                 ) : (
                   wizard.lanDevices.map((device) => {
@@ -473,7 +471,7 @@ export default function ConnectDevicePage({
                         <span
                           className={`text-[9px] font-semibold uppercase ${connected ? 'text-emerald-400' : 'text-primary'}`}
                         >
-                          {connected ? 'Connected' : 'Connect'}
+                          {connected ? t('pages.connectDevice.statusConnected') : t('pages.connectDevice.connect')}
                         </span>
                       </button>
                     )
@@ -483,7 +481,7 @@ export default function ConnectDevicePage({
 
               <div className="mt-5 space-y-2.5 border-t border-[var(--border-subtle)] pt-5">
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--text-subtle)]">
-                  Connect by address
+                  {t('pages.connectDevice.connectByAddress')}
                 </p>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_120px_auto]">
                   <input
@@ -510,12 +508,12 @@ export default function ConnectDevicePage({
                     ) : (
                       <Wifi size={12} />
                     )}
-                    Connect
+                    {t('pages.connectDevice.connect')}
                   </button>
                 </div>
                 {host.trim() && !looksLikeIpPort(manualTarget) && (
                   <p className="text-[10px] text-amber-400">
-                    Expected format: 192.168.1.10:5555
+                    {t('pages.connectDevice.expectedFormat')}
                   </p>
                 )}
               </div>
@@ -526,19 +524,17 @@ export default function ConnectDevicePage({
             <>
               <div className={sectionCls}>
                 <h2 className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-widest text-[var(--text-subtle)]">
-                  <Usb size={16} className="text-primary" /> Cable connection
+                  <Usb size={16} className="text-primary" /> {t('pages.connectDevice.cableConnection')}
                 </h2>
                 <div className="mt-4">{renderSteps(USB_STEPS)}</div>
               </div>
               {companionPanel && (
                 <div className={sectionCls}>
                   <h2 className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-widest text-[var(--text-subtle)]">
-                    <Smartphone size={16} className="text-primary" /> Android
-                    Companion
+                    <Smartphone size={16} className="text-primary" /> {t('pages.connectDevice.androidCompanion')}
                   </h2>
                   <p className="mt-1.5 text-[11px] leading-relaxed text-[var(--text-subtle)]">
-                    The companion app talks to this desktop over USB accessory or
-                    private LAN without adb. Install it on the phone first.
+                    {t('pages.connectDevice.companionBody')}
                   </p>
                   <div className="mt-4">{companionPanel}</div>
                 </div>
@@ -551,17 +547,17 @@ export default function ConnectDevicePage({
           {tab === 'qr' && (
             <div className={`rounded-2xl border p-5 ${presentation.card}`}>
               <p className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-subtle)]">
-                Pairing Status
+                {t('pages.connectDevice.pairingStatus')}
               </p>
               <div className="mt-2.5 flex items-center gap-2">
                 <span className={`h-3 w-3 rounded-full ${presentation.dot}`} />
                 <span className={`text-[15px] font-bold ${presentation.text}`}>
-                  {presentation.label}
+                  {t(presentation.label)}
                 </span>
               </div>
               <p className="mt-2 text-[11px] leading-relaxed text-[var(--text-subtle)]">
                 {qrStatusMessage ||
-                  'Scan the QR code from the phone’s Wireless debugging pairing screen.'}
+                  t('pages.connectDevice.scanHint')}
               </p>
             </div>
           )}
@@ -580,7 +576,7 @@ export default function ConnectDevicePage({
                 }
               />
               <span className="flex-1 text-[11px] font-semibold uppercase tracking-widest text-[var(--text-subtle)]">
-                Auto-reconnect
+                {t('pages.connectDevice.autoReconnect')}
               </span>
               <span
                 className={`relative h-5 w-9 rounded-full transition-colors ${isAutoConnect ? 'bg-primary' : 'bg-[var(--border-base)]'}`}
@@ -591,14 +587,14 @@ export default function ConnectDevicePage({
               </span>
             </button>
             <p className="mt-2 text-[10px] leading-relaxed text-[var(--text-subtle)]">
-              Reconnects known Wi-Fi devices automatically when the app starts.
+              {t('pages.connectDevice.autoReconnectHint')}
             </p>
           </div>
 
           <div className="flex flex-1 flex-col rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]/55 p-5">
             <div className="flex items-center justify-between">
               <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-[var(--text-subtle)]">
-                <History size={13} /> Recent devices
+                <History size={13} /> {t('pages.connectDevice.recentDevices')}
               </p>
               {historyDevices.length > 0 && (
                 <button
@@ -606,14 +602,14 @@ export default function ConnectDevicePage({
                   onClick={clearHistory}
                   className="text-[10px] font-semibold text-[var(--text-subtle)] hover:text-red-400"
                 >
-                  Clear
+                  {t('pages.connectDevice.clear')}
                 </button>
               )}
             </div>
             <div className="mt-3 flex-1 space-y-2">
               {historyDevices.length === 0 ? (
                 <p className="py-6 text-center text-[10px] text-[var(--text-subtle)]">
-                  No recent devices yet.
+                  {t('pages.connectDevice.noRecent')}
                 </p>
               ) : (
                 historyDevices.map((ip) => {
@@ -638,7 +634,7 @@ export default function ConnectDevicePage({
                       <span
                         className={`text-[9px] font-semibold uppercase ${connected ? 'text-emerald-400' : 'text-primary'}`}
                       >
-                        {connected ? 'Live' : 'Connect'}
+                        {connected ? t('pages.connectDevice.live') : t('pages.connectDevice.connect')}
                       </span>
                     </button>
                   )

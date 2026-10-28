@@ -171,8 +171,8 @@ export default function DeviceWallPage({
     ...ws.groups.map((group) => group.id),
   ]
   const groupLabel = (id: WorkspaceFilter) => {
-    if (id === 'all') return 'All groups'
-    if (id === UNGROUPED_GROUP_ID) return 'Ungrouped'
+    if (id === 'all') return t('pages.deviceWall.allGroups')
+    if (id === UNGROUPED_GROUP_ID) return t('pages.deviceWall.ungrouped')
     return ws.groups.find((group) => group.id === id)?.name || id
   }
 
@@ -188,18 +188,18 @@ export default function DeviceWallPage({
         ws.targets,
         async (serial) => {
           const result = await runAppAction(serial, pkg, action, customPath)
-          if (!result.success) throw new Error(result.error || `${label} failed`)
+          if (!result.success) throw new Error(result.error || t('pages.deviceWall.actionFailed', { label }))
           return result
         },
         { concurrency: 3 },
       )
       notify(
-        run.summary.ok ? `${label} complete` : `${label} completed with errors`,
-        `${run.summary.succeeded} succeeded, ${run.summary.failed} failed for ${pkg}.`,
+        run.summary.ok ? t('pages.deviceWall.actionComplete', { label }) : t('pages.deviceWall.actionErrors', { label }),
+        t('pages.deviceWall.summaryFor', { succeeded: run.summary.succeeded, failed: run.summary.failed, pkg }),
         run.summary.ok ? 'success' : 'warning',
       )
     } catch (error) {
-      notify(`${label} failed`, String(error), 'error')
+      notify(t('pages.deviceWall.actionFailed', { label }), String(error), 'error')
     } finally {
       setBusyAction(false)
     }
@@ -215,12 +215,12 @@ export default function DeviceWallPage({
       setBusyAction(true)
       const run = await ws.installApkAll(selected)
       notify(
-        run.summary.ok ? 'Install complete' : 'Install completed with errors',
-        `${run.summary.succeeded} succeeded, ${run.summary.failed} failed.`,
+        run.summary.ok ? t('pages.deviceWall.actionComplete', { label: t('pages.deviceWall.install') }) : t('pages.deviceWall.actionErrors', { label: t('pages.deviceWall.install') }),
+        t('pages.deviceWall.summary', { succeeded: run.summary.succeeded, failed: run.summary.failed }),
         run.summary.ok ? 'success' : 'warning',
       )
     } catch (error) {
-      notify('Install failed', String(error), 'error')
+      notify(t('pages.deviceWall.actionFailed', { label: t('pages.deviceWall.install') }), String(error), 'error')
     } finally {
       setBusyAction(false)
     }
@@ -231,7 +231,7 @@ export default function DeviceWallPage({
     if (targets.length === 0) return
     if (
       !window.confirm(
-        `Reboot ${targets.length} device${targets.length === 1 ? '' : 's'}? This disconnects any active sessions.`,
+        t(targets.length === 1 ? 'pages.deviceWall.rebootConfirmOne' : 'pages.deviceWall.rebootConfirmMany', { count: targets.length }),
       )
     ) {
       return
@@ -244,12 +244,12 @@ export default function DeviceWallPage({
         { concurrency: 3 },
       )
       notify(
-        run.summary.ok ? 'Reboot sent' : 'Reboot completed with errors',
-        `${run.summary.succeeded} succeeded, ${run.summary.failed} failed.`,
+        run.summary.ok ? t('pages.deviceWall.rebootSent') : t('pages.deviceWall.actionErrors', { label: t('pages.deviceWall.reboot') }),
+        t('pages.deviceWall.summary', { succeeded: run.summary.succeeded, failed: run.summary.failed }),
         run.summary.ok ? 'success' : 'warning',
       )
     } catch (error) {
-      notify('Reboot failed', String(error), 'error')
+      notify(t('pages.deviceWall.actionFailed', { label: t('pages.deviceWall.reboot') }), String(error), 'error')
     } finally {
       setBusyAction(false)
     }
@@ -282,7 +282,7 @@ export default function DeviceWallPage({
             className="flex h-9 items-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-3 text-[10px] font-semibold text-primary hover:bg-primary/15"
           >
             <QrCode size={13} />
-            Pair Mobile Agent
+            {t('pages.deviceWall.pairAgent')}
           </button>
           <button
             type="button"
@@ -291,7 +291,7 @@ export default function DeviceWallPage({
             className="flex h-9 items-center gap-2 rounded-lg border border-[var(--border-base)] px-3 text-[10px] text-[var(--text-muted)] hover:border-primary/50 hover:text-primary disabled:opacity-40"
           >
             <RefreshCcw size={13} className={ws.statusLoading ? 'animate-spin' : ''} />
-            Refresh
+            {t('pages.deviceWall.refresh')}
           </button>
         </div>
       </header>
@@ -309,12 +309,12 @@ export default function DeviceWallPage({
               size={13}
               className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-subtle)]"
             />
-            <span className="sr-only">Search devices</span>
+            <span className="sr-only">{t('pages.deviceWall.search')}</span>
             <input
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search serial, model, manufacturer…"
+              placeholder={t('pages.deviceWall.searchPlaceholder')}
               className="h-9 w-full rounded-lg border border-[var(--border-base)] bg-black/15 pl-9 pr-3 text-[10px] text-[var(--text-base)] outline-none placeholder:text-[var(--text-subtle)] focus:border-primary/60"
             />
           </label>
@@ -331,7 +331,7 @@ export default function DeviceWallPage({
                     : 'text-[var(--text-subtle)] hover:bg-white/5 hover:text-[var(--text-base)]'
                 }`}
               >
-                {value}
+                {t(`pages.deviceWall.filter_${value}`)}
               </button>
             ))}
           </div>
@@ -364,7 +364,7 @@ export default function DeviceWallPage({
             <button
               type="button"
               onClick={() => setDensity('compact')}
-              aria-label="Compact grid"
+              aria-label={t('pages.deviceWall.compactGrid')}
               aria-pressed={density === 'compact'}
               className={`flex h-7 w-7 items-center justify-center rounded-md ${density === 'compact' ? 'bg-white/8 text-primary' : 'text-[var(--text-subtle)]'}`}
             >
@@ -373,7 +373,7 @@ export default function DeviceWallPage({
             <button
               type="button"
               onClick={() => setDensity('normal')}
-              aria-label="Normal grid"
+              aria-label={t('pages.deviceWall.normalGrid')}
               aria-pressed={density === 'normal'}
               className={`flex h-7 w-7 items-center justify-center rounded-md ${density === 'normal' ? 'bg-white/8 text-primary' : 'text-[var(--text-subtle)]'}`}
             >
@@ -382,7 +382,7 @@ export default function DeviceWallPage({
             <button
               type="button"
               onClick={() => setDensity('large')}
-              aria-label="Large grid"
+              aria-label={t('pages.deviceWall.largeGrid')}
               aria-pressed={density === 'large'}
               className={`flex h-7 w-7 items-center justify-center rounded-md ${density === 'large' ? 'bg-white/8 text-primary' : 'text-[var(--text-subtle)]'}`}
             >
@@ -392,7 +392,7 @@ export default function DeviceWallPage({
         </div>
 
         <div className="mt-3 flex min-h-10 flex-wrap items-center gap-2 rounded-lg border border-[var(--border-subtle)] px-3 py-2 text-[9px] text-[var(--text-muted)]">
-          <span>{ws.selected.size} selected</span>
+          <span>{t('pages.deviceWall.selectedCount', { count: ws.selected.size })}</span>
           <button
             type="button"
             onClick={() =>
@@ -405,14 +405,14 @@ export default function DeviceWallPage({
           >
             <CheckSquare size={11} />
             {ws.selected.size === filtered.length && filtered.length > 0
-              ? 'Clear'
-              : `Select visible (${filtered.length})`}
+              ? t('pages.deviceWall.clear')
+              : t('pages.deviceWall.selectVisible', { count: filtered.length })}
           </button>
         </div>
       </section>
 
       <section
-        aria-label="Device wall"
+        aria-label={t('pages.deviceWall.title')}
         className={`mx-auto grid w-full max-w-7xl gap-3 py-4 ${densityCols[density]}`}
       >
         {filtered.map((serial, index) => (
@@ -432,7 +432,7 @@ export default function DeviceWallPage({
             onOpenLiveControl={() => onOpenLiveControl(serial)}
             onScreenshot={() => void ws.screenshot(serial)}
             onReboot={() => {
-              if (!window.confirm(`Reboot ${serial}? This disconnects any active session.`)) {
+              if (!window.confirm(t('pages.deviceWall.rebootOneConfirm', { serial }))) {
                 return
               }
               void runDeviceAction(serial, 'reboot', customPath)
@@ -445,7 +445,7 @@ export default function DeviceWallPage({
         {filtered.length === 0 && (
           <div className="col-span-full flex min-h-72 flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border-base)] bg-[var(--bg-surface)]/45 px-6 text-center">
             <p className="text-sm font-semibold text-[var(--text-muted)]">
-              No devices match the current search and filters.
+              {t('pages.deviceWall.noMatch')}
             </p>
           </div>
         )}
@@ -454,7 +454,7 @@ export default function DeviceWallPage({
       {ws.selected.size > 0 && (
         <div className="sticky bottom-0 z-20 mx-auto flex w-full max-w-7xl flex-wrap items-center gap-2 rounded-xl border border-primary/25 bg-[var(--bg-elevated)]/95 px-3 py-2.5 shadow-[0_-10px_28px_rgba(0,0,0,.2)] backdrop-blur">
           <span className="mr-1 text-[10px] font-semibold text-[var(--text-base)]">
-            {ws.selected.size} device{ws.selected.size === 1 ? '' : 's'} selected
+            {t(ws.selected.size === 1 ? 'pages.deviceWall.devicesSelectedOne' : 'pages.deviceWall.devicesSelectedMany', { count: ws.selected.size })}
           </span>
           <input
             value={packageName}
@@ -468,39 +468,39 @@ export default function DeviceWallPage({
             disabled={busyAction || ws.busy}
             className="flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-base)] px-2.5 text-[9px] font-semibold text-[var(--text-muted)] hover:border-primary/45 hover:text-primary disabled:opacity-40"
           >
-            <PackagePlus size={12} /> Install App
+            <PackagePlus size={12} /> {t('pages.deviceWall.installApp')}
           </button>
           <button
             type="button"
-            onClick={() => void runPackageBatch('Uninstall', 'uninstall')}
+            onClick={() => void runPackageBatch(t('pages.deviceWall.uninstall'), 'uninstall')}
             disabled={busyAction || ws.busy || !packageName.trim()}
             className="flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-base)] px-2.5 text-[9px] font-semibold text-[var(--text-muted)] hover:border-primary/45 hover:text-primary disabled:opacity-40"
           >
-            <Trash2 size={12} /> Uninstall
+            <Trash2 size={12} /> {t('pages.deviceWall.uninstall')}
           </button>
           <button
             type="button"
-            onClick={() => void runPackageBatch('Start app', 'launch')}
+            onClick={() => void runPackageBatch(t('pages.deviceWall.startAppLabel'), 'launch')}
             disabled={busyAction || ws.busy || !packageName.trim()}
             className="flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-base)] px-2.5 text-[9px] font-semibold text-[var(--text-muted)] hover:border-primary/45 hover:text-primary disabled:opacity-40"
           >
-            <Play size={12} /> Start App
+            <Play size={12} /> {t('pages.deviceWall.startApp')}
           </button>
           <button
             type="button"
-            onClick={() => void runPackageBatch('Stop app', 'force_stop')}
+            onClick={() => void runPackageBatch(t('pages.deviceWall.stopAppLabel'), 'force_stop')}
             disabled={busyAction || ws.busy || !packageName.trim()}
             className="flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-base)] px-2.5 text-[9px] font-semibold text-[var(--text-muted)] hover:border-primary/45 hover:text-primary disabled:opacity-40"
           >
-            <Square size={12} /> Stop App
+            <Square size={12} /> {t('pages.deviceWall.stopApp')}
           </button>
           <button
             type="button"
-            onClick={() => void runPackageBatch('Clear data', 'clear_data')}
+            onClick={() => void runPackageBatch(t('pages.deviceWall.clearDataLabel'), 'clear_data')}
             disabled={busyAction || ws.busy || !packageName.trim()}
             className="flex h-8 items-center gap-1.5 rounded-md border border-[var(--border-base)] px-2.5 text-[9px] font-semibold text-[var(--text-muted)] hover:border-primary/45 hover:text-primary disabled:opacity-40"
           >
-            Clear Data
+            {t('pages.deviceWall.clearData')}
           </button>
           <button
             type="button"
@@ -508,14 +508,14 @@ export default function DeviceWallPage({
             disabled={busyAction || ws.busy}
             className="flex h-8 items-center gap-1.5 rounded-md border border-red-500/30 px-2.5 text-[9px] font-semibold text-red-400 hover:bg-red-500/10 disabled:opacity-40"
           >
-            <RotateCcw size={12} /> Reboot
+            <RotateCcw size={12} /> {t('pages.deviceWall.reboot')}
           </button>
           <button
             type="button"
             onClick={ws.clearSelection}
             className="ml-auto flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[9px] font-semibold text-[var(--text-subtle)] hover:bg-white/5 hover:text-[var(--text-base)]"
           >
-            <X size={12} /> Deselect
+            <X size={12} /> {t('pages.deviceWall.deselect')}
           </button>
         </div>
       )}

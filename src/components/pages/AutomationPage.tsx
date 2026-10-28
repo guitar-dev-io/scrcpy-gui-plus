@@ -199,15 +199,15 @@ export default function AutomationPage({
         />
       </header>
 
-      <section aria-label="Batch Maestro runner" className="mt-5 rounded-xl border border-[var(--border-base)] bg-[var(--bg-surface)] p-4">
+      <section aria-label={t('pages.automation.batchRunner')} className="mt-5 rounded-xl border border-[var(--border-base)] bg-[var(--bg-surface)] p-4">
         <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.7fr)]">
           <div>
             <div className="flex items-center gap-2 text-xs font-semibold text-[var(--text-base)]">
               <FileCode2 size={14} className="text-primary" aria-hidden="true" />
-              Batch Maestro
+              {t('pages.automation.batchMaestro')}
             </div>
             <button type="button" onClick={() => void chooseFlow()} disabled={isRunning} className="mt-3 flex h-9 w-full items-center rounded-lg border border-[var(--border-base)] bg-[var(--bg-base)] px-3 text-left text-[10px] text-[var(--text-base)] transition-colors hover:border-primary/45 disabled:opacity-45">
-              <span className="truncate">{flowPath || 'Choose a .yaml or .yml Maestro flow'}</span>
+              <span className="truncate">{flowPath || t('pages.automation.chooseFlow')}</span>
             </button>
             <div className="mt-2 grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)]">
               <label className="inline-flex h-9 items-center gap-2 rounded-lg border border-[var(--border-base)] bg-[var(--bg-base)] px-3 text-[9px] text-[var(--text-base)]">
@@ -219,22 +219,22 @@ export default function AutomationPage({
                   className="accent-primary"
                 />
                 <Camera size={12} aria-hidden="true" />
-                Capture after flow
+                {t('pages.automation.captureAfter')}
               </label>
               <button type="button" onClick={() => void chooseBaseline()} disabled={isRunning || !captureAfterRun} className="flex h-9 min-w-0 items-center gap-2 rounded-lg border border-[var(--border-base)] bg-[var(--bg-base)] px-3 text-left text-[9px] text-[var(--text-base)] transition-colors hover:border-primary/45 disabled:opacity-45">
                 <Image size={12} className="shrink-0 text-primary" aria-hidden="true" />
-                <span className="truncate">{baselinePath || 'Optional baseline image'}</span>
+                <span className="truncate">{baselinePath || t('pages.automation.baselineOptional')}</span>
               </button>
             </div>
             <div className="mt-3 flex gap-2">
               <button type="button" onClick={() => void runBatch()} disabled={isRunning || !flowPath || !resolution?.isValid} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-[10px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45">
                 <Play size={12} fill="currentColor" aria-hidden="true" />
-                Run on {resolution?.serials.length ?? 0}
+                {t('pages.automation.runOn', { count: resolution?.serials.length ?? 0 })}
               </button>
               {isRunning && (
                 <button type="button" onClick={() => void cancelBatch()} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-red-400/35 bg-red-500/10 px-3 text-[10px] font-semibold text-red-400">
                   <Square size={11} fill="currentColor" aria-hidden="true" />
-                  Cancel batch
+                  {t('pages.automation.cancelBatch')}
                 </button>
               )}
             </div>
@@ -254,7 +254,7 @@ export default function AutomationPage({
         {lastRun && (
           <div className="mt-4 border-t border-[var(--border-subtle)] pt-3">
             <p className="text-[10px] font-semibold text-[var(--text-base)]">
-              Last run · {lastRun.summary.passed} passed · {lastRun.summary.failed} failed · {lastRun.summary.cancelled} cancelled · {(lastRun.durationMs / 1000).toFixed(1)}s
+              {t('pages.automation.lastRun', { passed: lastRun.summary.passed, failed: lastRun.summary.failed, cancelled: lastRun.summary.cancelled, seconds: (lastRun.durationMs / 1000).toFixed(1) })}
             </p>
             <div className="mt-2 grid gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
               {lastRun.results.map((result) => (
@@ -264,11 +264,11 @@ export default function AutomationPage({
                     <span className={`font-semibold uppercase ${resultTone(result.status)}`}>{result.status}</span>
                   </div>
                   <div className="mt-1 flex items-center gap-2 text-[8px]">
-                    <span className="text-[var(--text-subtle)]">Functional</span>
+                    <span className="text-[var(--text-subtle)]">{t('pages.automation.functional')}</span>
                     <span className={`font-semibold uppercase ${resultTone(result.functionalStatus ?? result.status)}`}>{result.functionalStatus ?? result.status}</span>
                     {result.visual && (
                       <>
-                        <span className="text-[var(--text-subtle)]">Visual</span>
+                        <span className="text-[var(--text-subtle)]">{t('pages.automation.visual')}</span>
                         <span className={`font-semibold uppercase ${visualTone(result.visual.status)}`}>{result.visual.status}</span>
                         {result.visual.score !== undefined && <span className="text-[var(--text-muted)]">{result.visual.score.toFixed(2)}%</span>}
                       </>
@@ -286,7 +286,7 @@ export default function AutomationPage({
         )}
       </section>
 
-      <section aria-label="Macro recorder" className="mt-5 min-h-0 flex-1 overflow-hidden">
+      <section aria-label={t('pages.automation.macroRecorder')} className="mt-5 min-h-0 flex-1 overflow-hidden">
         <MacroRecorder embedded isOpen={false} onClose={() => {}} activeDevice={activeDevice} customPath={customPath} outputDir={outputDir} notify={notify} />
       </section>
     </div>
