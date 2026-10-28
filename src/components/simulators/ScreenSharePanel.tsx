@@ -19,6 +19,32 @@ interface ScreenSharePanelProps {
   className?: string
 }
 
+/**
+ * Copies text, falling back to a hidden textarea when the async Clipboard API
+ * is refused (the webview rejects it when the document is not focused or the
+ * call comes from a portalled popover).
+ */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    const field = document.createElement('textarea')
+    field.value = text
+    field.setAttribute('readonly', '')
+    field.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none'
+    document.body.appendChild(field)
+    field.select()
+    try {
+      return document.execCommand('copy')
+    } catch {
+      return false
+    } finally {
+      field.remove()
+    }
+  }
+}
+
 export default function ScreenSharePanel({ serial, name, customPath, className }: ScreenSharePanelProps) {
   const [info, setInfo] = useState<ScreenShareInfo | null>(null)
   const [qrSvg, setQrSvg] = useState('')
@@ -97,12 +123,12 @@ export default function ScreenSharePanel({ serial, name, customPath, className }
   const copy = useCallback(async (which: 'view' | 'control') => {
     const text = which === 'control' ? info?.controlUrl : info?.url
     if (!text) return
-    try {
-      await navigator.clipboard.writeText(text)
+    if (await copyText(text)) {
+      setError('')
       setCopied(which)
       window.setTimeout(() => setCopied(null), 1500)
-    } catch {
-      setError('Could not copy the link')
+    } else {
+      setError('Could not copy automatically. Click the link to select it, then press Cmd/Ctrl+C.')
     }
   }, [info])
 
@@ -110,7 +136,7 @@ export default function ScreenSharePanel({ serial, name, customPath, className }
     <div>
       <p className="mb-1 text-[9px] font-bold uppercase tracking-wider text-zinc-400">{label}</p>
       <div className="flex items-start gap-1.5">
-        <p className="min-w-0 flex-1 break-all rounded-lg border border-zinc-800 bg-black/30 p-2 font-mono text-[9px] text-zinc-300">{url}</p>
+        <p className="min-w-0 flex-1 select-all break-all rounded-lg border border-zinc-800 bg-black/30 p-2 font-mono text-[9px] text-zinc-300">{url}</p>
         <button
           type="button"
           onClick={() => void copy(which)}

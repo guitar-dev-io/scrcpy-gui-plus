@@ -65,6 +65,8 @@ struct Shared {
     height: AtomicU32,
     /// Keeps taps and swipes from overlapping so they land in order.
     input_lock: tokio::sync::Mutex<()>,
+    /// One full-resolution capture at a time, so a held button cannot pile up adb calls.
+    capture_lock: tokio::sync::Mutex<()>,
 }
 
 struct ShareSession {
@@ -223,9 +225,20 @@ fn control_page(title: &str, token: &str, key: &str) -> String {
 }
 
 async fn respond(stream: &mut TcpStream, status: &str, content_type: &str, body: &[u8]) {
+    respond_with(stream, status, content_type, "", body).await
+}
+
+/// `extra_headers` is zero or more complete `Name: value\r\n` lines.
+async fn respond_with(
+    stream: &mut TcpStream,
+    status: &str,
+    content_type: &str,
+    extra_headers: &str,
+    body: &[u8],
+) {
     let head = format!(
         "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\n\
-Cache-Control: no-store\r\nConnection: close\r\n\r\n",
+{extra_headers}Cache-Control: no-store\r\nConnection: close\r\n\r\n",
         body.len()
     );
     let _ = stream.write_all(head.as_bytes()).await;
@@ -324,6 +337,40 @@ fn input_args(shared: &Shared, query: &str) -> Result<Vec<String>, &'static str>
     }
 }
 
+/// `<title>-<local time>.png` with everything outside `[A-Za-z0-9_-]` replaced,
+/// so the name is safe both in a header and on disk.
+fn capture_filename(title: &str, stamp: &str) -> String {
+    let safe: String = title
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .collect();
+    let safe = safe.trim_matches('_');
+    format!("{}-{stamp}.png", if safe.is_empty() { "screenshot" } else { safe })
+}
+
+async fn handle_capture(stream: &mut TcpStream, shared: &Shared) {
+    let _one_at_a_time = shared.capture_lock.lock().await;
+    match screenshot::capture_png_frame(
+        &shared.serial,
+        shared.custom_path.clone(),
+        CAPTURE_TIMEOUT_SECS,
+    )
+    .await
+    {
+        Ok(png) => {
+            let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+            let disposition = format!(
+                "Content-Disposition: attachment; filename=\"{}\"\r\n",
+                capture_filename(&shared.title, &stamp)
+            );
+            respond_with(stream, "200 OK", "image/png", &disposition, &png).await
+        }
+        Err((_, message)) => {
+            respond(stream, "502 Bad Gateway", "text/plain", message.as_bytes()).await
+        }
+    }
+}
+
 async fn handle_input(stream: &mut TcpStream, shared: &Shared, query: &str) {
     let authorized = match (&shared.control_key, query_param(query, "k")) {
         (Some(expected), Some(given)) => expected == given,
@@ -383,6 +430,9 @@ async fn handle_connection(
             return respond(&mut stream, "200 OK", "text/html; charset=utf-8", page.as_bytes())
                 .await;
         }
+    }
+    if path == format!("{base}/capture.png") {
+        return handle_capture(&mut stream, &shared).await;
     }
     if path == format!("{base}/frame.jpg") {
         let _guard = ViewerGuard::new(shared.viewers.clone());
@@ -503,6 +553,7 @@ pub async fn screen_share_start(
         width: AtomicU32::new(0),
         height: AtomicU32::new(0),
         input_lock: tokio::sync::Mutex::new(()),
+        capture_lock: tokio::sync::Mutex::new(()),
     });
     let (frame_tx, frame_rx) = watch::channel::<Frame>(None);
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -587,6 +638,7 @@ mod tests {
             width: AtomicU32::new(width),
             height: AtomicU32::new(height),
             input_lock: tokio::sync::Mutex::new(()),
+            capture_lock: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -616,6 +668,13 @@ mod tests {
     #[test]
     fn taps_wait_for_the_first_frame() {
         assert_eq!(input_args(&shared(None, 0, 0), "a=tap&x=0.5&y=0.5"), Err("no frame yet"));
+    }
+
+    #[test]
+    fn capture_filenames_are_header_and_disk_safe() {
+        assert_eq!(capture_filename("ELS-NX9", "20260101-101010"), "ELS-NX9-20260101-101010.png");
+        assert_eq!(capture_filename("My \"Phone\"\r\nX: y", "t"), "My__Phone___X__y-t.png");
+        assert_eq!(capture_filename("  ", "t"), "screenshot-t.png");
     }
 
     #[test]
@@ -669,6 +728,9 @@ mod tests {
         let page = request(port, "GET /s/tok HTTP/1.1\r\nHost: x\r\n\r\n").await;
         assert!(page.starts_with("HTTP/1.1 200") && page.contains("View only"), "{page}");
         assert!(!page.contains("data-k") && !page.contains("/input") && !page.contains("__"));
+        // capture is a view feature, so the view-only page offers it too
+        assert!(page.contains("/capture.png") && page.contains("id=\"cap\""));
+        assert!(!page.contains("wheel"));
     }
 
     #[tokio::test]
