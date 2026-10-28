@@ -63,6 +63,7 @@ export default function WorkspaceTabBar({
   } = useShellUi()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const tabListRef = useRef<HTMLDivElement>(null)
   // Embedded sessions do not appear in useScrcpy.runningDevices, so their
   // workspace lifecycle is supplied separately by the shell owner.
   const devices = Array.from(new Set(deviceWorkspaces ?? runningDevices))
@@ -77,6 +78,13 @@ export default function WorkspaceTabBar({
     return () => document.removeEventListener('mousedown', closeOnOutsideClick)
   }, [menuOpen])
 
+  // The scrollbar is hidden, so keep the selected tab in view ourselves.
+  useEffect(() => {
+    tabListRef.current
+      ?.querySelector('[aria-selected="true"]')
+      ?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+  }, [activeDevice, activeToolTab, devices.length, visibleTools.length])
+
   const selectTool = (tab: WorkspaceToolTab) => {
     onSelectToolTab(tab)
     setMenuOpen(false)
@@ -90,9 +98,18 @@ export default function WorkspaceTabBar({
       }}
     >
       <div
+        ref={tabListRef}
         role="tablist"
         aria-label="Open workspaces"
-        className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+        // A visible scrollbar made the bar look broken even when tabs barely
+        // overflowed; a mouse wheel scrolls the strip sideways instead.
+        className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        onWheel={(event) => {
+          const strip = event.currentTarget
+          if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return
+          if (strip.scrollWidth <= strip.clientWidth) return
+          strip.scrollLeft += event.deltaY
+        }}
       >
         {devices.map((serial) => {
           const active = activeToolTab === undefined && serial === activeDevice
