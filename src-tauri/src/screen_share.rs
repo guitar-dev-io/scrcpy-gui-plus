@@ -900,6 +900,9 @@ pub async fn screen_share_start(
                 _ = accept_shutdown.changed() => return,
                 accepted = listener.accept() => {
                     let Ok((stream, _)) = accepted else { continue };
+                    // Frames are small and latency matters more than packing: without
+                    // this, Nagle's algorithm can hold a frame back for tens of ms.
+                    let _ = stream.set_nodelay(true);
                     tokio::spawn(handle_connection(
                         stream,
                         accept_shared.clone(),
@@ -1089,6 +1092,9 @@ mod tests {
         let reply = request(port, "GET /s/tok/c/secretkey HTTP/1.1\r\nHost: x\r\n\r\n").await;
         assert!(reply.starts_with("HTTP/1.1 200") && reply.contains("data-k=\"home\""), "{reply}");
         assert!(reply.contains("secretkey") && !reply.contains("__") && !reply.contains("<!--"));
+        // Trimming the buffer by time cuts the key frame the picture depends on and
+        // freezes the video until the next one (about every 10 s), so it must stay out.
+        assert!(!reply.contains("sb.remove"), "page must not trim the media buffer itself");
     }
 
     fn post_to(path: &str, q: &str) -> String {

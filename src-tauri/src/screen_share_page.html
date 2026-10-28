@@ -196,13 +196,25 @@ async function playVideoOnce(){
     if(vid.paused)vid.play().catch(()=>{});
     if(end-vid.currentTime>.12)vid.currentTime=end-.02;
   };
-  sb.addEventListener("updateend",()=>{pump();chase()});
-  const tidy=setInterval(()=>{
-    if(sb.updating||ms.readyState!=="open")return;
-    const b=vid.buffered;
-    if(b.length&&vid.currentTime-b.start(0)>6)try{sb.remove(0,vid.currentTime-2)}catch(e){}
-    if(b.length&&vid.readyState<3&&b.end(b.length-1)>vid.currentTime)vid.currentTime=b.end(b.length-1)-.001;
-  },250);
+  // After an idle screen the player waits at the end of its buffer and needs several
+  // new frames before it resumes, so a change of only one or two frames would never
+  // show. Show the newest frame at the start and at the end of each burst, but not on
+  // every frame: back-to-back seeks make the decoder restart from the key frame.
+  let lastAppend=0,settle=0;
+  const nudge=()=>{
+    const b=vid.buffered;if(!b.length||vid.seeking)return;
+    const end=b.end(b.length-1);
+    if(vid.readyState<3&&end>vid.currentTime+.001)vid.currentTime=end-.001;
+  };
+  sb.addEventListener("updateend",()=>{
+    pump();chase();
+    const now=performance.now(),gap=now-lastAppend;lastAppend=now;
+    if(gap>120)nudge();
+    clearTimeout(settle);settle=setTimeout(nudge,60);
+  });
+  // Old data is left for the browser to evict: it drops whole groups of pictures, while
+  // trimming by time here would cut the key frame the current picture depends on and
+  // freeze the video until the next one arrives (scrcpy sends one every ~10 s).
   const reader=res.body.getReader();
   let pending=new Uint8Array(0);
   try{
@@ -219,7 +231,7 @@ async function playVideoOnce(){
       }
       pump();
     }
-  }finally{clearInterval(tidy);reader.cancel().catch(()=>{})}
+  }finally{clearTimeout(settle);reader.cancel().catch(()=>{})}
 }
 vid.addEventListener("loadeddata",()=>{retry=0;setLive(true)});
 async function runVideo(){
