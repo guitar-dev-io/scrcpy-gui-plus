@@ -55,4 +55,11 @@ describe('stepHints', () => {
   it('returns nothing for an unknown index', () => {
     expect(stepHints([step('launchApp')], 5)).toEqual([])
   })
+
+  it('warns that Hide Keyboard can leave the app when no keyboard is open', () => {
+    const actions = [step('inputText'), step('hideKeyboard')]
+    expect(stepHints(actions, 1).join('\n')).toMatch(/can press Back, which closes the app/)
+    expect(stepHints([step('inputText'), { ...step('hideKeyboard'), enabled: false }], 1)).toEqual([])
+  })
 })
+

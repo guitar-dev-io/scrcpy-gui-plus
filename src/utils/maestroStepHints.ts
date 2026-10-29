@@ -24,5 +24,8 @@ export function stepHints(actions: readonly MaestroFlowAction[], index: number):
   if (action.command === 'tapOn' && action.selector?.type === 'index') {
     hints.push('Index taps the Nth element on screen, which shifts when the screen changes. Prefer Text or ID.')
   }
+  if (action.command === 'hideKeyboard') {
+    hints.push('On Android this can press Back, which closes the app when no keyboard is open. If the next element is not covered, remove it; otherwise tap a blank area above the keyboard.')
+  }
   return hints
 }
