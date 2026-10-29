@@ -63,6 +63,14 @@ To learn how to enable **USB Debugging**, set up **Wireless Pairing**, or instal
 2. `npm run tauri dev` (Development)
 3. `npm run tauri build` (Production)
 
+### Browser dev preview (read-only adb bridge)
+
+Opening the vite dev server (`npm run dev`, http://localhost:1420) in a plain browser can list and inspect real adb devices. A dev-only vite plugin (`vite/adbBridge.ts`, `apply: 'serve'`) serves `POST /__adb-bridge/invoke`, and `src/dev/tauriCoreShim.ts` (aliased over `@tauri-apps/api/core` in dev only) sends `invoke()` there when not running inside Tauri.
+
+- Supported: `get_devices`, `get_device_status`, `list_packages`, `get_package_info`, `check_scrcpy`, and `adb_shell` limited to read-only commands (`getprop`, `dumpsys`, `wm size`, ...). Everything else rejects with "not available in the browser preview".
+- Dev-only and local-only: absent from builds, requires a loopback `Host`/`Origin`/peer and an `x-adb-bridge: 1` header, runs adb via `execFile` (no shell) with timeouts.
+- The Tauri window is unaffected: the shim calls the real `invoke` whenever `window.__TAURI_INTERNALS__` exists.
+
 ### Windows portable build
 
 Run the following command from Windows PowerShell:
