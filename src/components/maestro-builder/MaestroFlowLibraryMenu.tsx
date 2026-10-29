@@ -60,7 +60,7 @@ export default function MaestroFlowLibraryMenu({
         onClick={() => setOpen((value) => !value)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="flex h-7 items-center gap-1 rounded-md border border-[var(--border-base)] px-2.5 text-[9px] font-semibold text-[var(--text-muted)] hover:border-primary/40 hover:text-primary"
+        className="flex h-7 items-center gap-1 rounded-md border border-[var(--border-base)] px-2.5 text-[11px] font-semibold text-[var(--text-muted)] hover:border-primary/40 hover:text-primary"
       >
         <FolderOpen size={11} /> Flows ({library.length})
         <ChevronDown
@@ -82,7 +82,7 @@ export default function MaestroFlowLibraryMenu({
                 onNew()
                 setOpen(false)
               }}
-              className="flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1 text-[8px] font-semibold text-[var(--text-muted)] hover:bg-primary/10 hover:text-primary"
+              className="flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1 text-[10px] font-semibold text-[var(--text-muted)] hover:bg-primary/10 hover:text-primary"
             >
               <Plus size={10} /> New Flow
             </button>
@@ -100,7 +100,7 @@ export default function MaestroFlowLibraryMenu({
             </button>
           </div>
           <div className="border-b border-[var(--border-subtle)] p-1.5">
-            <p className="px-1 pb-1 text-[8px] font-black uppercase tracking-widest text-[var(--text-subtle)]">
+            <p className="px-1 pb-1 text-[10px] font-black uppercase tracking-widest text-[var(--text-subtle)]">
               Start from template
             </p>
             <div className="grid grid-cols-2 gap-1">
@@ -113,7 +113,7 @@ export default function MaestroFlowLibraryMenu({
                     onTemplate(template.id)
                     setOpen(false)
                   }}
-                  className="rounded px-2 py-1 text-left text-[8px] text-[var(--text-muted)] hover:bg-primary/10 hover:text-primary"
+                  className="rounded px-2 py-1 text-left text-[10px] text-[var(--text-muted)] hover:bg-primary/10 hover:text-primary"
                 >
                   {template.name}
                 </button>
@@ -122,7 +122,7 @@ export default function MaestroFlowLibraryMenu({
           </div>
           <div className="max-h-64 overflow-y-auto p-1">
             {sorted.length === 0 ? (
-              <p className="px-2 py-3 text-center text-[8px] text-[var(--text-subtle)]">
+              <p className="px-2 py-3 text-center text-[10px] text-[var(--text-subtle)]">
                 No saved flows yet.
               </p>
             ) : (
@@ -139,10 +139,10 @@ export default function MaestroFlowLibraryMenu({
                     }}
                     className="min-w-0 flex-1 text-left"
                   >
-                    <p className="truncate text-[9px] font-semibold text-[var(--text-base)]">
+                    <p className="truncate text-[11px] font-semibold text-[var(--text-base)]">
                       {item.name}
                     </p>
-                    <p className="truncate text-[8px] text-[var(--text-subtle)]">
+                    <p className="truncate text-[10px] text-[var(--text-subtle)]">
                       {item.actions.length} actions · {timeAgo(item.updatedAt)}
                     </p>
                   </button>

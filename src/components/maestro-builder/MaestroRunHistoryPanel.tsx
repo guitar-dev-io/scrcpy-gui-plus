@@ -18,7 +18,7 @@ function ArtifactImage({ path }: { path: string }) {
     return (
       <div className="flex h-20 w-28 items-center justify-center rounded border border-[var(--border-base)] text-[var(--text-subtle)]">
         <ImageOff size={14} />
-        <span className="ml-1 text-[8px]">Missing file</span>
+        <span className="ml-1 text-[10px]">Missing file</span>
       </div>
     )
   return (
@@ -61,13 +61,13 @@ export default function MaestroRunHistoryPanel({
     <div className="flex h-full min-h-0 flex-col">
       {showHeader && <div className="flex shrink-0 items-center gap-1.5 border-b border-[var(--border-subtle)] px-3 py-1.5">
         <History size={11} className="text-[var(--text-subtle)]" />
-        <span className="text-[8px] font-black uppercase tracking-widest text-[var(--text-subtle)]">
+        <span className="text-[10px] font-black uppercase tracking-widest text-[var(--text-subtle)]">
           Run History
         </span>
       </div>}
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {!runs.length ? (
-          <p className="p-2 text-[9px] text-[var(--text-subtle)]">
+          <p className="p-2 text-[11px] text-[var(--text-subtle)]">
             No runs yet. Press Run to execute this flow.
           </p>
         ) : (
@@ -92,10 +92,10 @@ export default function MaestroRunHistoryPanel({
                       <History size={11} className="text-amber-400" />
                     )}
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-[9px] font-semibold text-[var(--text-muted)]">
+                      <p className="truncate text-[11px] font-semibold text-[var(--text-muted)]">
                         {run.targetName || 'Maestro flow'} · {run.status}
                       </p>
-                      <p className="truncate text-[8px] text-[var(--text-subtle)]">
+                      <p className="truncate text-[10px] text-[var(--text-subtle)]">
                         {run.deviceSerial || 'Unknown device'} ·{' '}
                         {run.durationMs !== undefined
                           ? formatRunDuration(run.durationMs)
@@ -105,7 +105,7 @@ export default function MaestroRunHistoryPanel({
                     </div>
                   </button>
                   {expanded && (
-                    <div className="space-y-1.5 border-t border-[var(--border-subtle)] px-2 py-1.5 text-[8px] text-[var(--text-subtle)]">
+                    <div className="space-y-1.5 border-t border-[var(--border-subtle)] px-2 py-1.5 text-[10px] text-[var(--text-subtle)]">
                       <p>
                         <b>App</b> · {run.maestro?.appId || '—'} &nbsp;{' '}
                         <b>Started</b> ·{' '}
@@ -171,7 +171,7 @@ export default function MaestroRunHistoryPanel({
                           <summary className="cursor-pointer font-semibold">
                             View Logs
                           </summary>
-                          <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap rounded bg-black/30 p-1.5 font-mono text-[8px]">
+                          <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap rounded bg-black/30 p-1.5 font-mono text-[10px]">
                             {[
                               run.maestro?.stdout,
                               run.maestro?.stderr,

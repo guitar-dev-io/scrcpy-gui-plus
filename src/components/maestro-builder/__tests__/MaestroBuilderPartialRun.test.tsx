@@ -108,4 +108,13 @@ describe('MaestroBuilder partial runs', () => {
     const calls = mocks.saveMaestroFlow.mock.calls
     expect(calls[calls.length - 1][1]).not.toMatch(/-partial$/)
   })
+
+  it('shows the flow\'s app id beside its name and opens the package field when clicked', () => {
+    render(<MaestroBuilder activeDevice="pixel-1" packageName="com.laundryyou.washxpress.staging" notify={mocks.notify} />)
+
+    expect(screen.queryByLabelText('Application package')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'App ID com.laundryyou.washxpress.staging. Edit' }))
+    expect(screen.getByLabelText('Application package')).toHaveValue('com.laundryyou.washxpress.staging')
+  })
 })
+

@@ -1,7 +1,7 @@
 import type { MaestroFieldDefinition, MaestroFieldValue } from '../../types/maestroBuilder'
 
 const fieldClass =
-  'h-7 min-w-0 rounded-md border border-[var(--border-base)] bg-[var(--bg-input)] px-2 text-[9px] text-[var(--text-base)] outline-none focus:border-primary/50'
+  'h-7 min-w-0 rounded-md border border-[var(--border-base)] bg-[var(--bg-input)] px-2 text-[11px] text-[var(--text-base)] outline-none focus:border-primary/50'
 
 interface MaestroActionFieldsProps {
   fields: MaestroFieldDefinition[]
@@ -18,7 +18,7 @@ export default function MaestroActionFields({ fields, config, onChange }: Maestr
         const value = config[field.name]
         if (field.type === 'boolean') {
           return (
-            <label key={field.name} className="flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-[var(--border-base)] bg-[var(--bg-input)] px-2 text-[9px] text-[var(--text-muted)]">
+            <label key={field.name} className="flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-[var(--border-base)] bg-[var(--bg-input)] px-2 text-[11px] text-[var(--text-muted)]">
               <input
                 type="checkbox"
                 checked={Boolean(value)}
