@@ -73,6 +73,41 @@ export function findMaestroFlowAction(
   return findMaestroFlowActionLocation(actions, actionId)?.action ?? null
 }
 
+export type MaestroPartialRunScope = 'from' | 'only'
+
+/**
+ * Index of the top-level action that is, or contains, `actionId`. Nested steps
+ * (inside repeat/runFlow containers) resolve to their container, because a run
+ * can only start at a top-level boundary; -1 when the id is not in the flow.
+ */
+export function topLevelActionIndex(
+  actions: MaestroFlowAction[],
+  actionId: string,
+): number {
+  return actions.findIndex(
+    (action) =>
+      action.id === actionId ||
+      (action.children !== undefined && findMaestroFlowAction(action.children, actionId) !== null),
+  )
+}
+
+/**
+ * The same flow trimmed to the part worth re-running while editing: `from`
+ * keeps the selected top-level step and everything after it, `only` keeps just
+ * that step. Header, variables and tags stay, so selectors and ${VARS} still
+ * resolve. Returns null when the step is not in the flow.
+ */
+export function sliceMaestroFlow(
+  flow: MaestroFlow,
+  actionId: string,
+  scope: MaestroPartialRunScope,
+): MaestroFlow | null {
+  const index = topLevelActionIndex(flow.actions, actionId)
+  if (index < 0) return null
+  const actions = scope === 'only' ? [flow.actions[index]] : flow.actions.slice(index)
+  return { ...flow, actions }
+}
+
 function findMaestroFlowActionLocation(
   actions: MaestroFlowAction[],
   actionId: string,
