@@ -11,6 +11,7 @@ import type {
 import type { MaestroActionRunStatus } from '../../hooks/useMaestroRunProgress'
 import MaestroActionCard from './MaestroActionCard'
 import MaestroCommandLibrary from './MaestroCommandLibrary'
+import { stepHints } from '../../utils/maestroStepHints'
 import { MAESTRO_COMMON_COMMANDS } from '../../utils/maestroCommandRegistry'
 
 /** One-click steps. Kept short so the step list keeps its room; everything else is under All actions. */
@@ -244,6 +245,7 @@ export default function MaestroFlowBuilderPanel({
             runStatusByActionId={runStatusByActionId}
             selectedActionId={effectiveSelectedActionId}
             appId={flow.appId}
+            hints={stepHints(flow.actions, index)}
             onSelect={selectAction}
             onActionKeyDown={handleActionKeyDown}
             onViewLogs={onViewLogs}
