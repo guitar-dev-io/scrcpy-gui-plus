@@ -118,8 +118,8 @@ export function ApkBackupDialog({
           <div className="flex min-w-0 items-center gap-2.5">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><Archive size={15} /></span>
             <div className="min-w-0">
-              <h2 className="text-[12px] font-semibold text-[var(--text-base)]">{t('apkToolkit.backupTitle')}</h2>
-              <p className="truncate text-[9px] text-[var(--text-subtle)]">{packageName} · {serial}</p>
+              <h2 className="text-[14px] font-semibold text-[var(--text-base)]">{t('apkToolkit.backupTitle')}</h2>
+              <p className="truncate text-[11px] text-[var(--text-subtle)]">{packageName} · {serial}</p>
             </div>
           </div>
           <button type="button" aria-label={t('apkToolkit.backupCloseAria')} onClick={onClose} className="p-2 text-[var(--text-subtle)]"><X size={15} /></button>
@@ -127,50 +127,50 @@ export function ApkBackupDialog({
 
         <div className="custom-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
           <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-3">
-            <p className="flex items-center gap-2 text-[10px] font-semibold text-amber-300"><AlertTriangle size={14} />{t('apkToolkit.backupNoAppData')}</p>
-            <p className="mt-1 text-[9px] leading-relaxed text-[var(--text-subtle)]">{t('apkToolkit.backupContents')}</p>
+            <p className="flex items-center gap-2 text-[12px] font-semibold text-amber-300"><AlertTriangle size={14} />{t('apkToolkit.backupNoAppData')}</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-[var(--text-subtle)]">{t('apkToolkit.backupContents')}</p>
           </div>
 
-          <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3 text-[9px] text-[var(--text-subtle)]">
+          <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)] p-3 text-[11px] text-[var(--text-subtle)]">
             {t('apkToolkit.backupIntegrityPre')} <span className="font-mono text-[var(--text-base)]">.apkset</span> {t('apkToolkit.backupIntegrityPost')}
           </div>
 
           {stage && (
-            <div role="status" className="flex items-center gap-2 rounded-lg border border-primary/25 bg-primary/5 p-3 text-[10px] text-primary">
+            <div role="status" className="flex items-center gap-2 rounded-lg border border-primary/25 bg-primary/5 p-3 text-[12px] text-primary">
               <Loader2 size={14} className="animate-spin" />
               {stage === 'exporting' ? t('apkToolkit.backupExporting') : t('apkToolkit.backupValidating')}
             </div>
           )}
 
-          {error && <p role="alert" className="rounded-lg border border-red-500/25 bg-red-500/5 p-3 text-[10px] text-red-400">{error}</p>}
+          {error && <p role="alert" className="rounded-lg border border-red-500/25 bg-red-500/5 p-3 text-[12px] text-red-400">{error}</p>}
 
           {result && (
             <div className={`rounded-lg border p-3 ${tone}`}>
-              <p className="flex items-center gap-2 text-[10px] font-semibold text-[var(--text-base)]">
+              <p className="flex items-center gap-2 text-[12px] font-semibold text-[var(--text-base)]">
                 {partial ? <AlertTriangle size={14} className="text-amber-400" /> : complete ? <CheckCircle2 size={14} className="text-emerald-400" /> : <AlertTriangle size={14} className="text-red-400" />}
                 {partial ? t('apkToolkit.backupPartial') : complete ? t('apkToolkit.backupCreated') : t('apkToolkit.backupFailed')}
               </p>
-              <p className="mt-1 text-[9px] text-[var(--text-subtle)]">{t('apkToolkit.backupCounts', { exported: result.exportedCount, failed: result.failedCount, analysis: result.analysisAvailable ? t('apkToolkit.backupAnalysisIncluded') : t('apkToolkit.backupAnalysisUnavailable') })}</p>
-              {result.outputPath && <p className="mt-2 break-all font-mono text-[8px] text-[var(--text-muted)]">{result.outputPath}</p>}
-              {result.error && <p className="mt-2 text-[9px] text-red-400">{result.error}</p>}
-              {result.warnings.length > 0 && <ul aria-label={t('apkToolkit.backupWarningsAria')} className="mt-2 list-disc space-y-1 pl-4 text-[8px] text-amber-300">{result.warnings.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}</ul>}
+              <p className="mt-1 text-[11px] text-[var(--text-subtle)]">{t('apkToolkit.backupCounts', { exported: result.exportedCount, failed: result.failedCount, analysis: result.analysisAvailable ? t('apkToolkit.backupAnalysisIncluded') : t('apkToolkit.backupAnalysisUnavailable') })}</p>
+              {result.outputPath && <p className="mt-2 break-all font-mono text-[10px] text-[var(--text-muted)]">{result.outputPath}</p>}
+              {result.error && <p className="mt-2 text-[11px] text-red-400">{result.error}</p>}
+              {result.warnings.length > 0 && <ul aria-label={t('apkToolkit.backupWarningsAria')} className="mt-2 list-disc space-y-1 pl-4 text-[10px] text-amber-300">{result.warnings.map((warning, index) => <li key={`${warning}-${index}`}>{warning}</li>)}</ul>}
             </div>
           )}
 
           {validation && (
             <div className={`rounded-lg border p-3 ${validation.valid ? 'border-emerald-500/25 bg-emerald-500/5' : 'border-red-500/25 bg-red-500/5'}`}>
-              <p className={`flex items-center gap-2 text-[10px] font-semibold ${validation.valid ? 'text-emerald-300' : 'text-red-400'}`}><ShieldCheck size={14} />{validation.valid ? t('apkToolkit.backupIntegrityOk') : t('apkToolkit.backupIntegrityFailed')}</p>
-              <p className="mt-1 text-[8px] text-[var(--text-subtle)]">{t('apkToolkit.backupValidationCounts', { count: validation.apkCount, state: validation.includesAppData ? t('apkToolkit.backupDataPresent') : t('apkToolkit.backupDataExcluded') })}</p>
-              {validation.error && <p className="mt-1 text-[8px] text-red-400">{validation.error}</p>}
+              <p className={`flex items-center gap-2 text-[12px] font-semibold ${validation.valid ? 'text-emerald-300' : 'text-red-400'}`}><ShieldCheck size={14} />{validation.valid ? t('apkToolkit.backupIntegrityOk') : t('apkToolkit.backupIntegrityFailed')}</p>
+              <p className="mt-1 text-[10px] text-[var(--text-subtle)]">{t('apkToolkit.backupValidationCounts', { count: validation.apkCount, state: validation.includesAppData ? t('apkToolkit.backupDataPresent') : t('apkToolkit.backupDataExcluded') })}</p>
+              {validation.error && <p className="mt-1 text-[10px] text-red-400">{validation.error}</p>}
             </div>
           )}
         </div>
 
         <footer className="flex flex-wrap justify-end gap-2 border-t border-[var(--border-subtle)] p-3">
-          <button type="button" onClick={onClose} className="h-9 rounded-md border border-[var(--border-base)] px-4 text-[9px] text-[var(--text-muted)]">{t('common.close')}</button>
-          {result?.outputPath && <button type="button" disabled={Boolean(stage)} onClick={() => void validate()} className="flex h-9 items-center gap-2 rounded-md border border-[var(--border-base)] px-3 text-[9px] text-[var(--text-base)] disabled:opacity-40"><ShieldCheck size={13} />{t('apkToolkit.backupValidate')}</button>}
-          {result?.outputPath && onOpenPath && <button type="button" disabled={Boolean(stage)} onClick={() => void onOpenPath(result.outputPath!)} className="flex h-9 items-center gap-2 rounded-md border border-[var(--border-base)] px-3 text-[9px] text-[var(--text-base)] disabled:opacity-40"><ExternalLink size={13} />{t('apkToolkit.backupOpen')}</button>}
-          <button type="button" disabled={Boolean(stage)} onClick={() => void create()} className="flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-[9px] font-semibold text-on-primary disabled:opacity-40"><FolderOpen size={13} />{result ? t('apkToolkit.backupCreateAnother') : t('apkToolkit.backupChooseCreate')}</button>
+          <button type="button" onClick={onClose} className="h-9 rounded-md border border-[var(--border-base)] px-4 text-[11px] text-[var(--text-muted)]">{t('common.close')}</button>
+          {result?.outputPath && <button type="button" disabled={Boolean(stage)} onClick={() => void validate()} className="flex h-9 items-center gap-2 rounded-md border border-[var(--border-base)] px-3 text-[11px] text-[var(--text-base)] disabled:opacity-40"><ShieldCheck size={13} />{t('apkToolkit.backupValidate')}</button>}
+          {result?.outputPath && onOpenPath && <button type="button" disabled={Boolean(stage)} onClick={() => void onOpenPath(result.outputPath!)} className="flex h-9 items-center gap-2 rounded-md border border-[var(--border-base)] px-3 text-[11px] text-[var(--text-base)] disabled:opacity-40"><ExternalLink size={13} />{t('apkToolkit.backupOpen')}</button>}
+          <button type="button" disabled={Boolean(stage)} onClick={() => void create()} className="flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-[11px] font-semibold text-on-primary disabled:opacity-40"><FolderOpen size={13} />{result ? t('apkToolkit.backupCreateAnother') : t('apkToolkit.backupChooseCreate')}</button>
         </footer>
       </section>
     </div>

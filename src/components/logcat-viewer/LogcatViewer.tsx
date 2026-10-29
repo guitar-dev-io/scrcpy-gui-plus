@@ -112,7 +112,7 @@ export default function LogcatViewer({
             <ScrollText size={18} className="text-primary" />
             <div>
               {embedded ? (
-                <h3 id="logcat-viewer-title" className="text-[11px] font-semibold text-[var(--text-base)]">
+                <h3 id="logcat-viewer-title" className="text-[13px] font-semibold text-[var(--text-base)]">
                   {activeDevice || t('logcat.noDevice')}
                 </h3>
               ) : (
@@ -120,7 +120,7 @@ export default function LogcatViewer({
                   <h3 id="logcat-viewer-title" className="text-sm font-black uppercase tracking-widest text-white">
                     {t('logcat.title')}
                   </h3>
-                  <p className="text-[9px] text-zinc-500 tracking-wide">
+                  <p className="text-[11px] text-zinc-500 tracking-wide">
                     {activeDevice || t('logcat.noDevice')}
                   </p>
                 </>
@@ -129,7 +129,7 @@ export default function LogcatViewer({
             {logcat.running && (
               <span className="flex items-center gap-1 ml-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest">
+                <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">
                   {t('logcat.streaming')}
                 </span>
               </span>
@@ -137,7 +137,7 @@ export default function LogcatViewer({
             {logcat.crashCount > 0 && (
               <span className="flex items-center gap-1 ml-1 px-1.5 py-0.5 rounded border border-red-500/30 bg-red-500/10">
                 <AlertOctagon size={10} className="text-red-400" />
-                <span className="text-[8px] font-black text-red-400 uppercase tracking-widest">
+                <span className="text-[10px] font-black text-red-400 uppercase tracking-widest">
                   {t('logcat.crashCount', { count: logcat.crashCount })}
                 </span>
               </span>
@@ -160,7 +160,7 @@ export default function LogcatViewer({
             <button
               onClick={() => (logcat.running ? logcat.stop() : logcat.start())}
               disabled={disabled || logcat.busy}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 disabled:opacity-30 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 disabled:opacity-30 ${
                 logcat.running
                   ? 'border border-red-500/50 bg-red-500/10 text-red-400 hover:bg-red-500/20'
                   : 'bg-primary text-on-primary hover:brightness-110'
@@ -179,7 +179,7 @@ export default function LogcatViewer({
               onClick={logcat.togglePause}
               disabled={disabled}
               aria-pressed={logcat.paused}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[9px] font-black uppercase tracking-widest transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 disabled:opacity-30 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-black uppercase tracking-widest transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 disabled:opacity-30 ${
                 logcat.paused
                   ? 'border-amber-500/50 bg-amber-500/10 text-amber-400'
                   : 'border-zinc-800 bg-zinc-950/40 text-zinc-300 hover:border-primary/50'
@@ -190,7 +190,7 @@ export default function LogcatViewer({
             </button>
             <button
               onClick={logcat.clear}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-800 bg-zinc-950/40 text-[9px] font-black uppercase tracking-widest text-zinc-300 hover:border-primary/50 transition-all"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-800 bg-zinc-950/40 text-[11px] font-black uppercase tracking-widest text-zinc-300 hover:border-primary/50 transition-all"
             >
               <Trash2 size={12} /> {t('logcat.clearView')}
             </button>
@@ -198,20 +198,20 @@ export default function LogcatViewer({
               onClick={() => void logcat.clearDevice()}
               disabled={disabled}
               title={t('logcat.clearBufferTooltip')}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-800 bg-zinc-950/40 text-[9px] font-black uppercase tracking-widest text-zinc-300 hover:border-primary/50 transition-all disabled:opacity-30"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-800 bg-zinc-950/40 text-[11px] font-black uppercase tracking-widest text-zinc-300 hover:border-primary/50 transition-all disabled:opacity-30"
             >
               <Eraser size={12} /> {t('logcat.clearBuffer')}
             </button>
             <button
               onClick={handleExport}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-800 bg-zinc-950/40 text-[9px] font-black uppercase tracking-widest text-zinc-300 hover:border-primary/50 transition-all"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-800 bg-zinc-950/40 text-[11px] font-black uppercase tracking-widest text-zinc-300 hover:border-primary/50 transition-all"
             >
               <Download size={12} /> {t('logcat.export')}
             </button>
             <button
               onClick={() => logcat.setCrashOnly(!logcat.crashOnly)}
               aria-pressed={logcat.crashOnly}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[9px] font-black uppercase tracking-widest transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-black uppercase tracking-widest transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${
                 logcat.crashOnly
                   ? 'border-red-500/50 bg-red-500/10 text-red-400'
                   : 'border-zinc-800 bg-zinc-950/40 text-zinc-300 hover:border-primary/50'
@@ -231,7 +231,7 @@ export default function LogcatViewer({
                   title={t('logcat.minLevel')}
                   aria-label={`${t('logcat.minLevel')}: ${lvl}`}
                   aria-pressed={logcat.minLevel === lvl}
-                  className={`w-6 py-1 text-[9px] font-black rounded-md transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${
+                  className={`w-6 py-1 text-[11px] font-black rounded-md transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${
                     logcat.minLevel === lvl
                       ? 'bg-primary text-on-primary'
                       : `${LEVEL_STYLES[lvl]} hover:bg-white/5`
@@ -246,7 +246,7 @@ export default function LogcatViewer({
               value={logcat.tagFilter}
               onChange={(e) => logcat.setTagFilter(e.target.value)}
               placeholder={t('logcat.tagPlaceholder')}
-              className="flex-1 min-w-[140px] bg-black/40 border border-zinc-800 rounded-lg px-3 py-1.5 text-[11px] text-zinc-200 focus:border-primary/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 transition-all"
+              className="flex-1 min-w-[140px] bg-black/40 border border-zinc-800 rounded-lg px-3 py-1.5 text-[13px] text-zinc-200 focus:border-primary/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 transition-all"
             />
             <div className="relative flex-1 min-w-[140px]">
               <Search
@@ -258,7 +258,7 @@ export default function LogcatViewer({
                 value={logcat.search}
                 onChange={(e) => logcat.setSearch(e.target.value)}
                 placeholder={t('logcat.searchPlaceholder')}
-                className="w-full bg-black/40 border border-zinc-800 rounded-lg pl-8 pr-3 py-1.5 text-[11px] text-zinc-200 focus:border-primary/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 transition-all"
+                className="w-full bg-black/40 border border-zinc-800 rounded-lg pl-8 pr-3 py-1.5 text-[13px] text-zinc-200 focus:border-primary/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 transition-all"
               />
             </div>
           </div>
@@ -267,13 +267,13 @@ export default function LogcatViewer({
         {/* Log list */}
         <div
           ref={scrollRef}
-          className="flex-1 overflow-y-auto custom-scrollbar bg-black/40 font-mono text-[10.5px] leading-relaxed p-2"
+          className="flex-1 overflow-y-auto custom-scrollbar bg-black/40 font-mono text-[12px] leading-relaxed p-2"
         >
           {logcat.filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-zinc-700">
               <ScrollText size={22} />
-              <span className="text-[10px] uppercase tracking-widest mt-2">
-                {logcat.running ? t('logcat.waiting') : t('logcat.empty')}
+              <span className="text-[12px] uppercase tracking-widest mt-2">
+                {!activeDevice ? t('logcatViewer.selectDevice') : logcat.running ? t('logcat.waiting') : t('logcat.empty')}
               </span>
             </div>
           ) : (
@@ -302,19 +302,19 @@ export default function LogcatViewer({
         </div>
 
         {/* Footer status */}
-        <div className="px-6 py-2 border-t border-zinc-800/60 flex items-center justify-between">
-          <span className="text-[8px] font-black uppercase text-zinc-600 tracking-widest">
+        {activeDevice && <div className="px-6 py-2 border-t border-zinc-800/60 flex items-center justify-between">
+          <span className="text-[10px] font-black uppercase text-zinc-600 tracking-widest">
             {t('logcat.shownCount', {
               shown: logcat.filtered.length,
               total: logcat.entries.length,
             })}
           </span>
           {logcat.paused && (
-            <span className="text-[8px] font-black uppercase text-amber-500 tracking-widest">
+            <span className="text-[10px] font-black uppercase text-amber-500 tracking-widest">
               {t('logcat.pausedNotice')}
             </span>
           )}
-        </div>
+        </div>}
       </div>
     </div>
   )
