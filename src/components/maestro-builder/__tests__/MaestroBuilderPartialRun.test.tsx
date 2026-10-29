@@ -135,5 +135,31 @@ describe('MaestroBuilder partial runs', () => {
     render(<MaestroBuilder activeDevice="" notify={mocks.notify} />)
     expect(screen.getByRole('button', { name: 'Use foreground app' })).toBeDisabled()
   })
+
+  it('folds the hierarchy, YAML and history row away and remembers it', () => {
+    const { unmount } = render(<MaestroBuilder activeDevice="pixel-1" notify={mocks.notify} />)
+    const toggle = () => screen.getByRole('button', { name: /hierarchy, YAML and run history/ })
+
+    expect(document.getElementById('maestro-lower-panels')).toBeInTheDocument()
+    expect(toggle()).toHaveAttribute('aria-expanded', 'true')
+
+    fireEvent.click(toggle())
+    expect(document.getElementById('maestro-lower-panels')).not.toBeInTheDocument()
+    expect(toggle()).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle()).toHaveTextContent('Show hierarchy, YAML and run history')
+
+    unmount()
+    render(<MaestroBuilder activeDevice="pixel-1" notify={mocks.notify} />)
+    expect(document.getElementById('maestro-lower-panels')).not.toBeInTheDocument()
+
+    fireEvent.click(toggle())
+    expect(document.getElementById('maestro-lower-panels')).toBeInTheDocument()
+  })
+
+  it('shows the last run result in the folded bar', async () => {
+    render(<MaestroBuilder activeDevice="pixel-1" packageName="com.laundryyou.washxpress.staging" notify={mocks.notify} />)
+    fireEvent.click(screen.getByRole('button', { name: /Hide hierarchy, YAML and run history/ }))
+    expect(screen.queryByText(/Last run/)).not.toBeInTheDocument()
+  })
 })
 
