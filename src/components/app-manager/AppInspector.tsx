@@ -70,8 +70,8 @@ export function AppInspector({
     return (
       <div className="flex h-full flex-col items-center justify-center px-8 text-center text-[var(--text-subtle)]">
         <FileJson size={24} />
-        <p className="mt-3 text-[11px] font-semibold text-[var(--text-muted)]">{t('appManagerUi.noAppSelected')}</p>
-        <p className="mt-1 text-[9px]">{t('appManagerUi.selectAppHint')}</p>
+        <p className="mt-3 text-[13px] font-semibold text-[var(--text-muted)]">{t('appManagerUi.noAppSelected')}</p>
+        <p className="mt-1 text-[11px]">{t('appManagerUi.selectAppHint')}</p>
       </div>
     )
   }
@@ -80,7 +80,7 @@ export function AppInspector({
   return (
     <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto">
       <header className="sticky top-0 z-10 flex items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 py-3">
-        <h2 className="text-[12px] font-semibold text-[var(--text-base)]">{t('appManagerUi.inspectorTitle')}</h2>
+        <h2 className="text-[14px] font-semibold text-[var(--text-base)]">{t('appManagerUi.inspectorTitle')}</h2>
         {onClose && (
           <button type="button" onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-subtle)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-base)]" aria-label={t('appManagerUi.closeInspector')}>
             <X size={14} />
@@ -92,8 +92,8 @@ export function AppInspector({
         <div className="flex items-start gap-3">
           <AppIcon serial={deviceSerial} packageName={pkg.packageName} customPath={customPath} eager />
           <div className="min-w-0">
-            <h3 className="truncate text-[13px] font-bold text-[var(--text-base)]">{name}</h3>
-            <p className="truncate text-[9px] text-[var(--text-subtle)]" title={pkg.packageName}>{pkg.packageName}</p>
+            <h3 className="truncate text-[15px] font-bold text-[var(--text-base)]">{name}</h3>
+            <p className="truncate text-[11px] text-[var(--text-subtle)]" title={pkg.packageName}>{pkg.packageName}</p>
             <div className="mt-2 flex flex-wrap gap-1.5">
               <Badge tone={pkg.system ? 'warning' : 'primary'}>{pkg.system ? t('appManagerUi.systemApp') : t('appManagerUi.userApp')}</Badge>
               <Badge tone={pkg.running ? 'success' : 'neutral'}>{pkg.running ? t('appManagerUi.statusRunning') : pkg.enabled ? t('appManagerUi.statusIdle') : t('appManagerUi.statusDisabled')}</Badge>
@@ -103,7 +103,7 @@ export function AppInspector({
 
         <section className="mt-5 border-t border-[var(--border-subtle)] pt-4" aria-label={t('appManagerUi.packageDetailsAria')}>
           {loading ? <InspectorSkeleton /> : (
-            <dl className="space-y-2.5 text-[10px]">
+            <dl className="space-y-2.5 text-[12px]">
               <Detail label={t('appManagerUi.detailVersion')} value={info?.versionName} />
               <Detail label={t('appManagerUi.detailVersionCode')} value={info?.versionCode} />
               <Detail label={t('appManagerUi.detailInstalled')} value={info?.firstInstallTime} />
@@ -145,8 +145,8 @@ export function AppInspector({
         </InspectorSection>
 
         <section className="border-t border-[var(--border-subtle)] pt-4">
-          <h4 className="mb-2 text-[9px] font-semibold text-red-400">{t('appManagerUi.destructiveAction')}</h4>
-          <button type="button" onClick={() => onAction('uninstall')} disabled={pkg.system || busy('uninstall')} title={pkg.system ? t('appManagerUi.systemUninstallHint') : t('appManagerUi.uninstallHint')} className="flex h-9 w-full items-center justify-center gap-2 rounded-md border border-red-500/35 bg-red-500/10 text-[9px] font-semibold text-red-400 transition hover:bg-red-500/15 disabled:cursor-not-allowed disabled:border-[var(--border-base)] disabled:bg-transparent disabled:text-[var(--text-subtle)] disabled:opacity-60">
+          <h4 className="mb-2 text-[11px] font-semibold text-red-400">{t('appManagerUi.destructiveAction')}</h4>
+          <button type="button" onClick={() => onAction('uninstall')} disabled={pkg.system || busy('uninstall')} title={pkg.system ? t('appManagerUi.systemUninstallHint') : t('appManagerUi.uninstallHint')} className="flex h-9 w-full items-center justify-center gap-2 rounded-md border border-red-500/35 bg-red-500/10 text-[11px] font-semibold text-red-400 transition hover:bg-red-500/15 disabled:cursor-not-allowed disabled:border-[var(--border-base)] disabled:bg-transparent disabled:text-[var(--text-subtle)] disabled:opacity-60">
             {busy('uninstall') ? <Loader2 size={12} className="animate-spin" /> : <PackageMinus size={12} />}
             {pkg.system ? t('appManagerUi.systemUninstallUnavailable') : t('appManagerUi.uninstallApp')}
           </button>
@@ -158,25 +158,25 @@ export function AppInspector({
 
 function Detail({ label, value, mono = false }: { label: string; value?: string; mono?: boolean }) {
   const { t } = useI18n()
-  return <div className="flex items-start justify-between gap-3"><dt className="shrink-0 text-[var(--text-subtle)]">{label}</dt><dd className={`min-w-0 truncate text-right text-[var(--text-muted)] ${mono ? 'font-mono text-[9px]' : ''}`} title={value || t('appManagerUi.unavailable')}>{value || '—'}</dd></div>
+  return <div className="flex items-start justify-between gap-3"><dt className="shrink-0 text-[var(--text-subtle)]">{label}</dt><dd className={`min-w-0 truncate text-right text-[var(--text-muted)] ${mono ? 'font-mono text-[11px]' : ''}`} title={value || t('appManagerUi.unavailable')}>{value || '—'}</dd></div>
 }
 
 function Badge({ tone, children }: { tone: 'primary' | 'success' | 'warning' | 'neutral'; children: React.ReactNode }) {
   const style = { primary: 'bg-primary/10 text-primary', success: 'bg-emerald-500/10 text-emerald-400', warning: 'bg-amber-500/10 text-amber-400', neutral: 'bg-zinc-500/10 text-zinc-400' }[tone]
-  return <span className={`rounded-md px-2 py-0.5 text-[8px] font-semibold ${style}`}>{children}</span>
+  return <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold ${style}`}>{children}</span>
 }
 
 function InspectorSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return <section className="mt-4 border-t border-[var(--border-subtle)] pt-4"><h4 className="mb-3 text-[9px] font-semibold text-[var(--text-muted)]">{title}</h4>{children}</section>
+  return <section className="mt-4 border-t border-[var(--border-subtle)] pt-4"><h4 className="mb-3 text-[11px] font-semibold text-[var(--text-muted)]">{title}</h4>{children}</section>
 }
 
 function ActionButton({ icon: Icon, label, onClick, primary, danger, busy, title }: { icon: typeof Play; label: string; onClick: () => void; primary?: boolean; danger?: boolean; busy: boolean; title?: string }) {
   const style = primary ? 'border-primary bg-primary text-on-primary hover:bg-[var(--primary-hover)]' : danger ? 'border-red-500/25 bg-red-500/10 text-red-400 hover:bg-red-500/15' : 'border-[var(--border-base)] bg-[var(--bg-elevated)] text-[var(--text-muted)] hover:text-[var(--text-base)]'
-  return <button type="button" onClick={onClick} disabled={busy} title={title} className={`flex h-9 items-center justify-center gap-1.5 rounded-md border text-[9px] font-semibold transition disabled:opacity-40 ${style}`}>{busy ? <Loader2 size={12} className="animate-spin" /> : <Icon size={12} />}{label}</button>
+  return <button type="button" onClick={onClick} disabled={busy} title={title} className={`flex h-9 items-center justify-center gap-1.5 rounded-md border text-[11px] font-semibold transition disabled:opacity-40 ${style}`}>{busy ? <Loader2 size={12} className="animate-spin" /> : <Icon size={12} />}{label}</button>
 }
 
 function ToolButton({ icon: Icon, label, onClick, disabled, busy, title }: { icon: typeof Settings; label: string; onClick?: () => void; disabled?: boolean; busy?: boolean; title?: string }) {
-  return <button type="button" onClick={onClick} disabled={disabled || busy} title={title} className="flex h-9 items-center justify-center gap-1.5 rounded-md border border-[var(--border-base)] bg-[var(--bg-elevated)] text-[9px] text-[var(--text-muted)] hover:border-primary/30 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40">{busy ? <Loader2 size={12} className="animate-spin" /> : <Icon size={12} />}{label}</button>
+  return <button type="button" onClick={onClick} disabled={disabled || busy} title={title} className="flex h-9 items-center justify-center gap-1.5 rounded-md border border-[var(--border-base)] bg-[var(--bg-elevated)] text-[11px] text-[var(--text-muted)] hover:border-primary/30 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40">{busy ? <Loader2 size={12} className="animate-spin" /> : <Icon size={12} />}{label}</button>
 }
 
 function InspectorSkeleton() {
