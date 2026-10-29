@@ -67,7 +67,14 @@ export default function MaestroCommandLibrary({
             ref={searchInputRef}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search actions..."
+            onKeyDown={(event) => {
+              // Typing "hide" then Enter adds the first match without reaching for the mouse.
+              if (event.key === 'Enter' && query.trim() && results[0]) {
+                event.preventDefault()
+                onAddCommand(results[0].id)
+              }
+            }}
+            placeholder="Search actions, e.g. hide keyboard"
             aria-label="Search actions"
             className="h-7 w-full rounded-md border border-[var(--border-base)] bg-[var(--bg-input)] pl-6 pr-2 text-[11px] text-[var(--text-base)] outline-none focus:border-primary/50"
           />

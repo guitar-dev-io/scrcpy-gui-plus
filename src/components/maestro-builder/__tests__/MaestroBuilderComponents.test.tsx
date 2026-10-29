@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type {
   MaestroBuilderSelector,
@@ -232,10 +232,10 @@ describe('MaestroFlowBuilderPanel', () => {
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Record' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Add Step' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add Tap Element' }))
 
     expect(onToggleRecording).toHaveBeenCalledOnce()
-    expect(onAddAction).toHaveBeenCalledWith(expect.any(String))
+    expect(onAddAction).toHaveBeenCalledWith('tapOn')
   })
 
   it('renders action issues and passes selected-card events to the current callbacks', () => {
@@ -326,6 +326,71 @@ describe('Launch App, new steps and recording hints', () => {
 
     rerender(<MaestroFlowBuilderPanel {...props} recording />)
     expect(screen.getByRole('status')).toHaveTextContent('Recording: click an element in Device Preview to add a Tap step')
+  })
+})
+
+describe('Add step picker', () => {
+  function renderPanel(onAddAction = vi.fn()) {
+    render(
+      <MaestroFlowBuilderPanel
+        flow={panelFlow([])}
+        issues={noIssues}
+        onToggleEnabled={vi.fn()}
+        onMove={vi.fn()}
+        onDuplicate={vi.fn()}
+        onDelete={vi.fn()}
+        onSelectorChange={vi.fn()}
+        onFieldChange={vi.fn()}
+        onAddAction={onAddAction}
+      />,
+    )
+    return onAddAction
+  }
+
+  it('adds the commonly used steps with one click', () => {
+    const onAddAction = renderPanel()
+
+    for (const [label, id] of [['Launch App', 'launchApp'], ['Input Text', 'inputText'], ['Assert Visible', 'assertVisible']]) {
+      fireEvent.click(screen.getByRole('button', { name: `Add ${label}` }))
+      expect(onAddAction).toHaveBeenLastCalledWith(id)
+    }
+  })
+
+  it('reaches every other action through a searchable list and closes after adding one', () => {
+    const onAddAction = renderPanel()
+    expect(screen.queryByRole('dialog', { name: 'Choose a step' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /All actions/ }))
+    const dialog = screen.getByRole('dialog', { name: 'Choose a step' })
+    expect(within(dialog).getByRole('textbox', { name: 'Search actions' })).toHaveFocus()
+
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Search actions' }), { target: { value: 'hide keyboard' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: /Hide Keyboard/i }))
+
+    expect(onAddAction).toHaveBeenCalledWith('hideKeyboard')
+    expect(screen.queryByRole('dialog', { name: 'Choose a step' })).not.toBeInTheDocument()
+  })
+
+  it('adds the first match when Enter is pressed in the search box', () => {
+    const onAddAction = renderPanel()
+    fireEvent.click(screen.getByRole('button', { name: /All actions/ }))
+
+    const search = screen.getByRole('textbox', { name: 'Search actions' })
+    fireEvent.change(search, { target: { value: 'hide keyboard' } })
+    fireEvent.keyDown(search, { key: 'Enter' })
+
+    expect(onAddAction).toHaveBeenCalledWith('hideKeyboard')
+  })
+
+  it('closes the list with Escape or a click elsewhere', () => {
+    renderPanel()
+    fireEvent.click(screen.getByRole('button', { name: /All actions/ }))
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Search actions' }), { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'Choose a step' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /All actions/ }))
+    fireEvent.mouseDown(document.body)
+    expect(screen.queryByRole('dialog', { name: 'Choose a step' })).not.toBeInTheDocument()
   })
 })
 
