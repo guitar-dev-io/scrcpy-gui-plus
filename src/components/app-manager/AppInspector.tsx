@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import type { AppActionId, PackageEntry, PackageInfoResult } from '../../types/appManager'
 import { formatPackageBytes, packageDisplayName } from '../../utils/appManagerView'
+import { useI18n } from '../../i18n'
 import { AppIcon } from './AppIcon'
 
 interface AppInspectorProps {
@@ -63,12 +64,14 @@ export function AppInspector({
   onOpenApkBackup,
   onClose,
 }: AppInspectorProps) {
+  const { t } = useI18n()
+  const yesNo = (value?: boolean) => value === undefined ? '—' : value ? t('appManagerUi.yes') : t('appManagerUi.no')
   if (!pkg) {
     return (
       <div className="flex h-full flex-col items-center justify-center px-8 text-center text-[var(--text-subtle)]">
         <FileJson size={24} />
-        <p className="mt-3 text-[11px] font-semibold text-[var(--text-muted)]">No app selected</p>
-        <p className="mt-1 text-[9px]">Select an app to inspect its package details.</p>
+        <p className="mt-3 text-[11px] font-semibold text-[var(--text-muted)]">{t('appManagerUi.noAppSelected')}</p>
+        <p className="mt-1 text-[9px]">{t('appManagerUi.selectAppHint')}</p>
       </div>
     )
   }
@@ -77,9 +80,9 @@ export function AppInspector({
   return (
     <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto">
       <header className="sticky top-0 z-10 flex items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 py-3">
-        <h2 className="text-[12px] font-semibold text-[var(--text-base)]">App Inspector</h2>
+        <h2 className="text-[12px] font-semibold text-[var(--text-base)]">{t('appManagerUi.inspectorTitle')}</h2>
         {onClose && (
-          <button type="button" onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-subtle)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-base)]" aria-label="Close app inspector">
+          <button type="button" onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-subtle)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-base)]" aria-label={t('appManagerUi.closeInspector')}>
             <X size={14} />
           </button>
         )}
@@ -92,60 +95,60 @@ export function AppInspector({
             <h3 className="truncate text-[13px] font-bold text-[var(--text-base)]">{name}</h3>
             <p className="truncate text-[9px] text-[var(--text-subtle)]" title={pkg.packageName}>{pkg.packageName}</p>
             <div className="mt-2 flex flex-wrap gap-1.5">
-              <Badge tone={pkg.system ? 'warning' : 'primary'}>{pkg.system ? 'System App' : 'User App'}</Badge>
-              <Badge tone={pkg.running ? 'success' : 'neutral'}>{pkg.running ? 'Running' : pkg.enabled ? 'Idle' : 'Disabled'}</Badge>
+              <Badge tone={pkg.system ? 'warning' : 'primary'}>{pkg.system ? t('appManagerUi.systemApp') : t('appManagerUi.userApp')}</Badge>
+              <Badge tone={pkg.running ? 'success' : 'neutral'}>{pkg.running ? t('appManagerUi.statusRunning') : pkg.enabled ? t('appManagerUi.statusIdle') : t('appManagerUi.statusDisabled')}</Badge>
             </div>
           </div>
         </div>
 
-        <section className="mt-5 border-t border-[var(--border-subtle)] pt-4" aria-label="Package details">
+        <section className="mt-5 border-t border-[var(--border-subtle)] pt-4" aria-label={t('appManagerUi.packageDetailsAria')}>
           {loading ? <InspectorSkeleton /> : (
             <dl className="space-y-2.5 text-[10px]">
-              <Detail label="Version" value={info?.versionName} />
-              <Detail label="Version Code" value={info?.versionCode} />
-              <Detail label="Installed" value={info?.firstInstallTime} />
-              <Detail label="Updated" value={info?.lastUpdateTime} />
-              <Detail label="APK Size" value={formatPackageBytes(info?.apkSizeBytes)} />
-              <Detail label="Data Size" value={formatPackageBytes(info?.dataSizeBytes)} />
+              <Detail label={t('appManagerUi.detailVersion')} value={info?.versionName} />
+              <Detail label={t('appManagerUi.detailVersionCode')} value={info?.versionCode} />
+              <Detail label={t('appManagerUi.detailInstalled')} value={info?.firstInstallTime} />
+              <Detail label={t('appManagerUi.detailUpdated')} value={info?.lastUpdateTime} />
+              <Detail label={t('appManagerUi.detailApkSize')} value={formatPackageBytes(info?.apkSizeBytes)} />
+              <Detail label={t('appManagerUi.detailDataSize')} value={formatPackageBytes(info?.dataSizeBytes)} />
               <Detail label="UID" value={info?.uid} />
-              <Detail label="Target SDK" value={info?.targetSdk} />
-              <Detail label="Min SDK" value={info?.minSdk} />
-              <Detail label="Debuggable" value={booleanLabel(info?.debuggable)} />
-              <Detail label="Enabled" value={booleanLabel(info?.enabled ?? pkg.enabled)} />
-              <Detail label="Install Source" value={info?.installSource} mono />
+              <Detail label={t('appManagerUi.detailTargetSdk')} value={info?.targetSdk} />
+              <Detail label={t('appManagerUi.detailMinSdk')} value={info?.minSdk} />
+              <Detail label={t('appManagerUi.detailDebuggable')} value={yesNo(info?.debuggable)} />
+              <Detail label={t('appManagerUi.detailEnabled')} value={yesNo(info?.enabled ?? pkg.enabled)} />
+              <Detail label={t('appManagerUi.detailInstallSource')} value={info?.installSource} mono />
             </dl>
           )}
         </section>
 
-        <InspectorSection title="Quick Actions">
+        <InspectorSection title={t('appManagerUi.quickActions')}>
           <div className="grid grid-cols-2 gap-2">
-            <ActionButton icon={Play} label="Launch App" primary busy={busy('launch')} onClick={() => onAction('launch')} />
-            <ActionButton icon={Ban} label="Force Stop" danger busy={busy('force_stop')} onClick={() => onAction('force_stop')} />
-            <ActionButton icon={Eraser} label="Trim Cache" busy={busy('clear_cache')} onClick={onClearCache} title="Android exposes cache trimming device-wide without root." />
-            <ActionButton icon={Trash2} label="Clear Data" danger busy={busy('clear_data')} onClick={() => onAction('clear_data')} />
+            <ActionButton icon={Play} label={t('appManagerUi.launchApp')} primary busy={busy('launch')} onClick={() => onAction('launch')} />
+            <ActionButton icon={Ban} label={t('appManagerUi.forceStop')} danger busy={busy('force_stop')} onClick={() => onAction('force_stop')} />
+            <ActionButton icon={Eraser} label={t('appManagerUi.trimCache')} busy={busy('clear_cache')} onClick={onClearCache} title={t('appManagerUi.trimCacheHint')} />
+            <ActionButton icon={Trash2} label={t('appManagerUi.clearData')} danger busy={busy('clear_data')} onClick={() => onAction('clear_data')} />
           </div>
         </InspectorSection>
 
-        <InspectorSection title="Developer Tools">
+        <InspectorSection title={t('appManagerUi.developerTools')}>
           <div className="grid grid-cols-2 gap-2">
-            {onOpenLogcat && <ToolButton icon={ScrollText} label="Open Logcat" onClick={onOpenLogcat} />}
-            <ToolButton icon={Terminal} label="Shell Context" onClick={onOpenShell} disabled={!onOpenShell || loading} title={onOpenShell ? 'Open a run-as shell draft for this debuggable package.' : 'Package shell context requires a debuggable app.'} />
-            <ToolButton icon={Braces} label="Package Info" onClick={onShowPackageInfo} />
-            <ToolButton icon={Settings} label="App Settings" onClick={() => onAction('open_settings')} />
-            <ToolButton icon={Download} label="Pull APK" onClick={onPullApk} disabled={!onPullApk || loading} busy={pullingApk} title={onPullApk ? 'Save the base APK to a local folder.' : 'The base APK path is unavailable.'} />
-            <ToolButton icon={Files} label="Split APKs" onClick={onOpenSplitApks} disabled={loading} title="Discover and selectively extract base and split APKs." />
-            <ToolButton icon={ScanSearch} label="Inspect APK" onClick={onOpenApkInspector} title="Choose a local APK for manifest and signature analysis." />
-            <ToolButton icon={GitCompareArrows} label="Compare APKs" onClick={onOpenApkCompare} title="Compare an extracted installed APK with a local build, or compare two local APKs." />
-            <ToolButton icon={Archive} label="Backup APK Set" onClick={onOpenApkBackup} disabled={loading} title="Export base and split APKs with integrity-checked metadata. App data is excluded." />
-            <ToolButton icon={Database} label="Open App Data" disabled title="Direct /data access is unavailable without root or run-as file browsing." />
+            {onOpenLogcat && <ToolButton icon={ScrollText} label={t('appManagerUi.openLogcat')} onClick={onOpenLogcat} />}
+            <ToolButton icon={Terminal} label={t('appManagerUi.shellContext')} onClick={onOpenShell} disabled={!onOpenShell || loading} title={onOpenShell ? t('appManagerUi.shellDraftHint') : t('appManagerUi.shellNeedsDebuggable')} />
+            <ToolButton icon={Braces} label={t('appManagerUi.packageInfo')} onClick={onShowPackageInfo} />
+            <ToolButton icon={Settings} label={t('appManagerUi.appSettings')} onClick={() => onAction('open_settings')} />
+            <ToolButton icon={Download} label={t('appManagerUi.pullApk')} onClick={onPullApk} disabled={!onPullApk || loading} busy={pullingApk} title={onPullApk ? t('appManagerUi.pullHint') : t('appManagerUi.pullUnavailable')} />
+            <ToolButton icon={Files} label={t('appManagerUi.splitApks')} onClick={onOpenSplitApks} disabled={loading} title={t('appManagerUi.splitApksHint')} />
+            <ToolButton icon={ScanSearch} label={t('appManagerUi.inspectApk')} onClick={onOpenApkInspector} title={t('appManagerUi.inspectApkHint')} />
+            <ToolButton icon={GitCompareArrows} label={t('appManagerUi.compareApks')} onClick={onOpenApkCompare} title={t('appManagerUi.compareApksHint')} />
+            <ToolButton icon={Archive} label={t('appManagerUi.backupApkSet')} onClick={onOpenApkBackup} disabled={loading} title={t('appManagerUi.backupApkSetHint')} />
+            <ToolButton icon={Database} label={t('appManagerUi.openAppData')} disabled title={t('appManagerUi.openAppDataHint')} />
           </div>
         </InspectorSection>
 
         <section className="border-t border-[var(--border-subtle)] pt-4">
-          <h4 className="mb-2 text-[9px] font-semibold text-red-400">Destructive action</h4>
-          <button type="button" onClick={() => onAction('uninstall')} disabled={pkg.system || busy('uninstall')} title={pkg.system ? 'System packages cannot be uninstalled here.' : 'Uninstall this app'} className="flex h-9 w-full items-center justify-center gap-2 rounded-md border border-red-500/35 bg-red-500/10 text-[9px] font-semibold text-red-400 transition hover:bg-red-500/15 disabled:cursor-not-allowed disabled:border-[var(--border-base)] disabled:bg-transparent disabled:text-[var(--text-subtle)] disabled:opacity-60">
+          <h4 className="mb-2 text-[9px] font-semibold text-red-400">{t('appManagerUi.destructiveAction')}</h4>
+          <button type="button" onClick={() => onAction('uninstall')} disabled={pkg.system || busy('uninstall')} title={pkg.system ? t('appManagerUi.systemUninstallHint') : t('appManagerUi.uninstallHint')} className="flex h-9 w-full items-center justify-center gap-2 rounded-md border border-red-500/35 bg-red-500/10 text-[9px] font-semibold text-red-400 transition hover:bg-red-500/15 disabled:cursor-not-allowed disabled:border-[var(--border-base)] disabled:bg-transparent disabled:text-[var(--text-subtle)] disabled:opacity-60">
             {busy('uninstall') ? <Loader2 size={12} className="animate-spin" /> : <PackageMinus size={12} />}
-            {pkg.system ? 'System App — Uninstall unavailable' : 'Uninstall App'}
+            {pkg.system ? t('appManagerUi.systemUninstallUnavailable') : t('appManagerUi.uninstallApp')}
           </button>
         </section>
       </div>
@@ -153,12 +156,9 @@ export function AppInspector({
   )
 }
 
-function booleanLabel(value?: boolean) {
-  return value === undefined ? '—' : value ? 'Yes' : 'No'
-}
-
 function Detail({ label, value, mono = false }: { label: string; value?: string; mono?: boolean }) {
-  return <div className="flex items-start justify-between gap-3"><dt className="shrink-0 text-[var(--text-subtle)]">{label}</dt><dd className={`min-w-0 truncate text-right text-[var(--text-muted)] ${mono ? 'font-mono text-[9px]' : ''}`} title={value || 'Unavailable'}>{value || '—'}</dd></div>
+  const { t } = useI18n()
+  return <div className="flex items-start justify-between gap-3"><dt className="shrink-0 text-[var(--text-subtle)]">{label}</dt><dd className={`min-w-0 truncate text-right text-[var(--text-muted)] ${mono ? 'font-mono text-[9px]' : ''}`} title={value || t('appManagerUi.unavailable')}>{value || '—'}</dd></div>
 }
 
 function Badge({ tone, children }: { tone: 'primary' | 'success' | 'warning' | 'neutral'; children: React.ReactNode }) {
@@ -180,5 +180,6 @@ function ToolButton({ icon: Icon, label, onClick, disabled, busy, title }: { ico
 }
 
 function InspectorSkeleton() {
-  return <div className="space-y-2.5" aria-label="Loading app details"><div className="h-3 w-full animate-pulse rounded bg-white/5" /><div className="h-3 w-5/6 animate-pulse rounded bg-white/5" /><div className="h-3 w-full animate-pulse rounded bg-white/5" /><div className="h-3 w-2/3 animate-pulse rounded bg-white/5" /></div>
+  const { t } = useI18n()
+  return <div className="space-y-2.5" aria-label={t('appManagerUi.loadingDetailsAria')}><div className="h-3 w-full animate-pulse rounded bg-white/5" /><div className="h-3 w-5/6 animate-pulse rounded bg-white/5" /><div className="h-3 w-full animate-pulse rounded bg-white/5" /><div className="h-3 w-2/3 animate-pulse rounded bg-white/5" /></div>
 }
