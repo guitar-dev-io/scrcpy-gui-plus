@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { Check, Copy, MousePointerClick } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Check, Copy, MousePointerClick, Plus } from 'lucide-react'
 import type { UiNode } from '../../types/uiInspector'
 import { recommendMaestroSelectors } from '../../utils/maestroSelectorRecommendation'
 import type { MaestroBuilderSelector, MaestroCommandId } from '../../types/maestroBuilder'
@@ -42,11 +42,24 @@ function CopyValue({ label, value }: { label: string; value: string }) {
 
 export default function MaestroElementInspectorPanel({ root, selected, onQuickAction }: MaestroElementInspectorPanelProps) {
   const [tab, setTab] = useState<'inspector' | 'actions'>('inspector')
+  const [added, setAdded] = useState<string | null>(null)
   const recommendations = useMemo(
     () => (root && selected ? recommendMaestroSelectors(root, selected) : []),
     [root, selected],
   )
   const primarySelector = recommendations[0]?.selector
+
+  // Confirm that the click landed: the flow panel can be out of view.
+  useEffect(() => {
+    if (!added) return
+    const timer = window.setTimeout(() => setAdded(null), 2000)
+    return () => window.clearTimeout(timer)
+  }, [added])
+  const addStep = (action: (typeof QUICK_ACTIONS)[number]) => {
+    if (!primarySelector) return
+    onQuickAction(action.id, primarySelector)
+    setAdded(action.label)
+  }
   const selectorText = primarySelector ? `${primarySelector.type}: ${primarySelector.value}` : ''
   const rows = selected
     ? [
@@ -71,7 +84,7 @@ export default function MaestroElementInspectorPanel({ root, selected, onQuickAc
             key={value}
             type="button"
             onClick={() => setTab(value)}
-            className={`relative px-3 text-[9px] font-semibold capitalize ${tab === value ? 'text-[var(--text-base)] after:absolute after:inset-x-1 after:bottom-0 after:h-0.5 after:bg-primary' : 'text-[var(--text-subtle)] hover:text-[var(--text-muted)]'}`}
+            className={`relative px-3 text-[11px] font-semibold capitalize ${tab === value ? 'text-[var(--text-base)] after:absolute after:inset-x-1 after:bottom-0 after:h-0.5 after:bg-primary' : 'text-[var(--text-subtle)] hover:text-[var(--text-muted)]'}`}
           >
             {value}
           </button>
@@ -81,17 +94,37 @@ export default function MaestroElementInspectorPanel({ root, selected, onQuickAc
       {!selected ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center text-[var(--text-subtle)]">
           <MousePointerClick size={20} />
-          <p className="text-[9px] leading-relaxed">Select an element on Device Preview or in the Hierarchy.</p>
+          <p className="text-[11px] leading-relaxed">Select an element on Device Preview or in the Hierarchy.</p>
         </div>
       ) : tab === 'inspector' ? (
         <div className="min-h-0 flex-1 overflow-auto p-2">
           <div className="mb-2 rounded border border-primary/25 bg-primary/10 px-2 py-1.5">
-            <p className="text-[8px] font-black uppercase tracking-widest text-[var(--text-subtle)]">Selected Element</p>
-            <p className="mt-1 truncate font-mono text-[9px] text-primary">{selected.resourceId.split('/').pop() || selected.text || selected.className}</p>
+            <p className="text-[10px] font-black uppercase tracking-widest text-[var(--text-subtle)]">Selected Element</p>
+            <p className="mt-1 truncate font-mono text-[11px] text-primary">{selected.resourceId.split('/').pop() || selected.text || selected.className}</p>
+          </div>
+          <div className="mb-2" role="group" aria-label="Add step for selected element">
+            <p className="mb-1 text-[10px] font-black uppercase tracking-widest text-[var(--text-subtle)]">Add step</p>
+            <div className="flex flex-wrap gap-1">
+              {QUICK_ACTIONS.map((action) => (
+                <button
+                  key={action.id}
+                  type="button"
+                  disabled={!primarySelector}
+                  onClick={() => addStep(action)}
+                  className="flex h-7 items-center gap-1 rounded border border-[var(--border-base)] bg-black/10 px-2 text-[10px] font-semibold text-[var(--text-muted)] hover:border-primary/45 hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-35"
+                >
+                  <Plus size={10} />
+                  {action.label}
+                </button>
+              ))}
+            </div>
+            <p role="status" aria-live="polite" className="mt-1 min-h-4 text-[10px] text-emerald-400">
+              {added ? `Added ${added} step` : ''}
+            </p>
           </div>
           <dl className="divide-y divide-[var(--border-subtle)]">
             {rows.map(([label, value]) => (
-              <div key={label} className="grid grid-cols-[80px_minmax(0,1fr)_22px] items-start gap-2 py-1.5 text-[8px]">
+              <div key={label} className="grid grid-cols-[92px_minmax(0,1fr)_22px] items-start gap-2 py-1.5 text-[10px]">
                 <dt className="font-medium text-[var(--text-subtle)]">{label}</dt>
                 <dd className={`break-all ${value === 'Yes' ? 'text-emerald-400' : 'text-[var(--text-muted)]'}`}>{value || '—'}</dd>
                 {['Resource ID', 'Text', 'XPath', 'Selector'].includes(label) ? <CopyValue label={label} value={value} /> : <span />}
@@ -101,15 +134,15 @@ export default function MaestroElementInspectorPanel({ root, selected, onQuickAc
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-auto p-3">
-          <p className="mb-2 text-[8px] leading-relaxed text-[var(--text-subtle)]">Add a supported Maestro command using the strongest live selector.</p>
+          <p className="mb-2 text-[10px] leading-relaxed text-[var(--text-subtle)]">Add a supported Maestro command using the strongest live selector.</p>
           <div className="grid grid-cols-2 gap-1.5">
             {QUICK_ACTIONS.map((action) => (
               <button
                 key={action.id}
                 type="button"
                 disabled={!primarySelector}
-                onClick={() => primarySelector && onQuickAction(action.id, primarySelector)}
-                className="h-8 rounded border border-[var(--border-base)] bg-black/10 px-2 text-left text-[8px] font-semibold text-[var(--text-muted)] hover:border-primary/45 hover:bg-primary/10 hover:text-primary disabled:opacity-30"
+                onClick={() => addStep(action)}
+                className="h-8 rounded border border-[var(--border-base)] bg-black/10 px-2 text-left text-[10px] font-semibold text-[var(--text-muted)] hover:border-primary/45 hover:bg-primary/10 hover:text-primary disabled:opacity-30"
               >
                 {action.label}
               </button>
@@ -117,8 +150,8 @@ export default function MaestroElementInspectorPanel({ root, selected, onQuickAc
           </div>
           {primarySelector && (
             <div className="mt-3 rounded border border-[var(--border-subtle)] bg-black/10 p-2">
-              <p className="text-[8px] font-black uppercase tracking-widest text-[var(--text-subtle)]">Target</p>
-              <p className="mt-1 break-all font-mono text-[8px] text-[var(--text-muted)]">{selectorText}</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-[var(--text-subtle)]">Target</p>
+              <p className="mt-1 break-all font-mono text-[10px] text-[var(--text-muted)]">{selectorText}</p>
             </div>
           )}
         </div>

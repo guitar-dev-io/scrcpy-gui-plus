@@ -1,12 +1,27 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { fileURLToPath } from "node:url";
+import { adbBridgePlugin } from "./vite/adbBridge";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
-export default defineConfig(async () => ({
-  plugins: [react()],
+export default defineConfig(async ({ command }) => ({
+  plugins: [react(), adbBridgePlugin()],
+  // DEV-ONLY: route `invoke` through the adb bridge when the page is opened in
+  // a plain browser. Never applied to builds or to vitest (which mocks tauri).
+  resolve: {
+    alias:
+      command === "serve" && !process.env.VITEST
+        ? [
+            {
+              find: /^@tauri-apps\/api\/core$/,
+              replacement: fileURLToPath(new URL("./src/dev/tauriCoreShim.ts", import.meta.url)),
+            },
+          ]
+        : [],
+  },
   build: {
     rolldownOptions: {
       output: {
