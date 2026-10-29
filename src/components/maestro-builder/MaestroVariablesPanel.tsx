@@ -27,10 +27,10 @@ export default function MaestroVariablesPanel({ variables, onChange }: MaestroVa
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="flex h-8 w-full items-center px-3 text-left text-[8px] font-black uppercase tracking-widest text-[var(--text-muted)] hover:bg-white/5"
+        className="flex h-8 w-full items-center px-3 text-left text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] hover:bg-white/5"
       >
         Variables ({variables.length})
-        <span className="ml-auto text-[10px] text-[var(--text-subtle)]">{open ? '−' : '+'}</span>
+        <span className="ml-auto text-[12px] text-[var(--text-subtle)]">{open ? '−' : '+'}</span>
       </button>
       {open && (
         <div className="max-h-32 space-y-1 overflow-auto px-2 pb-2">
@@ -42,7 +42,7 @@ export default function MaestroVariablesPanel({ variables, onChange }: MaestroVa
                   aria-label="Variable name"
                   value={variable.name}
                   onChange={(event) => patchVariable(variable.id, { name: event.target.value.replace(/[^A-Za-z0-9_]/g, '') })}
-                  className="h-6 min-w-0 bg-transparent px-1 font-mono text-[8px] text-[var(--text-muted)] outline-none focus:text-primary"
+                  className="h-6 min-w-0 bg-transparent px-1 font-mono text-[10px] text-[var(--text-muted)] outline-none focus:text-primary"
                 />
                 <input
                   aria-label={`Value for ${variable.name}`}
@@ -50,7 +50,7 @@ export default function MaestroVariablesPanel({ variables, onChange }: MaestroVa
                   value={variable.value}
                   placeholder={`\${${variable.name}}`}
                   onChange={(event) => patchVariable(variable.id, { value: event.target.value })}
-                  className="h-6 min-w-0 rounded bg-[var(--bg-input)] px-1.5 text-[8px] text-[var(--text-muted)] outline-none focus:ring-1 focus:ring-primary/50"
+                  className="h-6 min-w-0 rounded bg-[var(--bg-input)] px-1.5 text-[10px] text-[var(--text-muted)] outline-none focus:ring-1 focus:ring-primary/50"
                 />
                 <button
                   type="button"
@@ -75,7 +75,7 @@ export default function MaestroVariablesPanel({ variables, onChange }: MaestroVa
               </div>
             )
           })}
-          <button type="button" onClick={addVariable} className="flex h-6 w-full items-center justify-center gap-1 rounded border border-dashed border-[var(--border-base)] text-[8px] font-semibold text-primary hover:bg-primary/10">
+          <button type="button" onClick={addVariable} className="flex h-6 w-full items-center justify-center gap-1 rounded border border-dashed border-[var(--border-base)] text-[10px] font-semibold text-primary hover:bg-primary/10">
             <Plus size={9} /> Add Variable
           </button>
         </div>

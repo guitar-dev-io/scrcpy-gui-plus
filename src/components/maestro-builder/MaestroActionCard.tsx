@@ -60,6 +60,8 @@ interface MaestroActionCardProps {
   /** Actions shown on a failed card while per-step run status is available. */
   onViewLogs?: () => void
   onEditAction?: (actionId: string) => void
+  /** The flow's application package, shown on Launch App so it says which app it opens. */
+  appId?: string
 }
 
 const RUN_STATUS_BADGE: Record<
@@ -103,7 +105,7 @@ function AddChildActionControl({
         value={command}
         onChange={(event) => setCommand(event.target.value)}
         aria-label="New nested action"
-        className="h-6 min-w-0 flex-1 rounded-md border border-[var(--border-base)] bg-[var(--bg-input)] px-1.5 text-[8px] text-[var(--text-base)] outline-none focus:border-primary/50"
+        className="h-6 min-w-0 flex-1 rounded-md border border-[var(--border-base)] bg-[var(--bg-input)] px-1.5 text-[10px] text-[var(--text-base)] outline-none focus:border-primary/50"
       >
         {CHILD_ACTION_CHOICES.map((definition) => (
           <option key={definition.id} value={definition.id}>
@@ -185,10 +187,25 @@ function readableValue(value: string | number | boolean): string {
   return String(value).trim()
 }
 
+/** What Launch App will actually do: which app, and whether it restarts or resumes it. */
+function launchAppSummary(action: MaestroFlowAction, appId?: string): string | null {
+  if (action.command !== 'launchApp' || !appId?.trim()) return null
+  const resumes = action.config.stopApp === false
+  return `${appId.trim()} · ${resumes ? 'resumes the app' : 'restarts the app'}`
+}
+
 function actionSummary(
   action: MaestroFlowAction,
   definition: ReturnType<typeof findMaestroCommandDefinition>,
+  appId?: string,
 ): string {
+  const launch = launchAppSummary(action, appId)
+  if (launch) return launch
+  // A just-added step that still needs its target says so, instead of repeating the command's generic blurb.
+  if (definition?.requiresElement && !action.selector?.value.trim()) {
+    return 'Needs an element: pick one on the device or enter a selector'
+  }
+
   if (action.selector?.value.trim()) {
     return `${selectorLabel(action.selector.type)}: ${action.selector.value.trim()}`
   }
@@ -235,6 +252,7 @@ export default function MaestroActionCard({
   onActionKeyDown,
   onViewLogs,
   onEditAction,
+  appId,
 }: MaestroActionCardProps) {
   const [collapseOverride, setCollapseOverride] = useState<boolean | null>(null)
   const [advancedOpen, setAdvancedOpen] = useState(false)
@@ -260,7 +278,7 @@ export default function MaestroActionCard({
     []
   const advancedFields =
     definition?.fields.filter((field) => field.optional || field.advanced) ?? []
-  const summary = actionSummary(action, definition)
+  const summary = actionSummary(action, definition, appId)
 
   const selectAnd = (callback: () => void) => {
     onSelect?.(action.id)
@@ -277,7 +295,7 @@ export default function MaestroActionCard({
               event.stopPropagation()
               onViewLogs()
             }}
-            className="rounded border border-red-400/30 px-1.5 py-0.5 text-[8px] font-semibold text-red-300 hover:bg-red-400/10"
+            className="rounded border border-red-400/30 px-1.5 py-0.5 text-[10px] font-semibold text-red-300 hover:bg-red-400/10"
           >
             View Logs
           </button>
@@ -289,7 +307,7 @@ export default function MaestroActionCard({
               event.stopPropagation()
               onEditAction(action.id)
             }}
-            className="rounded border border-red-400/30 px-1.5 py-0.5 text-[8px] font-semibold text-red-300 hover:bg-red-400/10"
+            className="rounded border border-red-400/30 px-1.5 py-0.5 text-[10px] font-semibold text-red-300 hover:bg-red-400/10"
           >
             Edit Action
           </button>
@@ -318,7 +336,7 @@ export default function MaestroActionCard({
       className={`rounded-lg border p-2 outline-none focus-visible:ring-1 focus-visible:ring-primary/50 ${selected ? 'border-primary/60 bg-primary/10 ring-1 ring-primary/20' : hasIssuesInChildren ? 'border-amber-500/40 bg-amber-500/5' : 'border-[var(--border-subtle)] bg-black/10'} ${!action.enabled ? 'opacity-50' : ''} ${runStatus === 'running' ? 'border-primary/50' : ''}`}
     >
       <div className="flex items-start gap-2">
-        <span className="mt-1 w-4 shrink-0 text-right text-[8px] tabular-nums text-[var(--text-subtle)]">
+        <span className="mt-1 w-4 shrink-0 text-right text-[10px] tabular-nums text-[var(--text-subtle)]">
           {index + 1}
         </span>
         {badge && (
@@ -341,7 +359,7 @@ export default function MaestroActionCard({
               aria-pressed={action.enabled}
               className={`h-3 w-3 shrink-0 rounded-full border ${action.enabled ? 'border-primary bg-primary' : 'border-[var(--border-base)]'}`}
             />
-            <span className="truncate text-[9px] font-semibold text-[var(--text-muted)]">
+            <span className="truncate text-[11px] font-semibold text-[var(--text-muted)]">
               {definition?.label ?? action.command}
             </span>
             {hasIssues && (
@@ -367,15 +385,15 @@ export default function MaestroActionCard({
             </button>
           </div>
           {!expanded && (
-            <p className="mt-0.5 truncate text-[8px] text-[var(--text-subtle)]">
+            <p className={`mt-0.5 text-[10px] text-[var(--text-subtle)] ${launchAppSummary(action, appId) ? 'break-all' : 'truncate'}`}>
               {summary}
             </p>
           )}
           {failedActionControls}
           <div className={expanded ? '' : 'hidden'}>
-            {definition?.description && (
-              <p className="mt-0.5 truncate text-[8px] text-[var(--text-subtle)]">
-                {definition.description}
+            {(launchAppSummary(action, appId) ?? definition?.description) && (
+              <p className={`mt-0.5 text-[10px] text-[var(--text-subtle)] ${launchAppSummary(action, appId) ? 'break-all' : 'truncate'}`}>
+                {launchAppSummary(action, appId) ?? definition?.description}
               </p>
             )}
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
@@ -409,7 +427,7 @@ export default function MaestroActionCard({
                     event.stopPropagation()
                     setAdvancedOpen((value) => !value)
                   }}
-                  className="flex items-center gap-1 text-[8px] font-semibold text-[var(--text-subtle)] hover:text-primary"
+                  className="flex items-center gap-1 text-[10px] font-semibold text-[var(--text-subtle)] hover:text-primary"
                 >
                   <ChevronRight
                     size={9}
@@ -439,7 +457,7 @@ export default function MaestroActionCard({
                 {issues.map((issue, issueIndex) => (
                   <p
                     key={`${action.id}-issue-${issueIndex}`}
-                    className="text-[8px] text-amber-400"
+                    className="text-[10px] text-amber-400"
                   >
                     {issue}
                   </p>
@@ -471,11 +489,12 @@ export default function MaestroActionCard({
                         onActionKeyDown={onActionKeyDown}
                         onViewLogs={onViewLogs}
                         onEditAction={onEditAction}
+                        appId={appId}
                       />
                     ))}
                   </ol>
                 ) : (
-                  <p className="text-[8px] text-[var(--text-subtle)]">
+                  <p className="text-[10px] text-[var(--text-subtle)]">
                     No nested actions yet.
                   </p>
                 )}

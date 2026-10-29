@@ -7,7 +7,7 @@ import type {
 } from '../../types/maestroBuilder'
 
 const fieldClass =
-  'h-7 min-w-0 rounded-md border border-[var(--border-base)] bg-[var(--bg-input)] px-2 text-[9px] text-[var(--text-base)] outline-none focus:border-primary/50'
+  'h-7 min-w-0 rounded-md border border-[var(--border-base)] bg-[var(--bg-input)] px-2 text-[11px] text-[var(--text-base)] outline-none focus:border-primary/50'
 
 const SELECTOR_LABELS: Record<MaestroBuilderSelectorType, string> = {
   id: 'ID',
@@ -115,7 +115,7 @@ export default function MaestroSelectorEditor({
         type="button"
         onClick={() => setAdvancedOpen((v) => !v)}
         disabled={!hasPrimaryValue}
-        className="flex w-fit items-center gap-1 text-[8px] font-semibold text-[var(--text-subtle)] hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+        className="flex w-fit items-center gap-1 text-[10px] font-semibold text-[var(--text-subtle)] hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
       >
         <ChevronRight size={9} className={advancedOpen ? 'rotate-90 transition-transform' : 'transition-transform'} />
         Advanced · Relational selector
@@ -123,7 +123,7 @@ export default function MaestroSelectorEditor({
 
       {advancedOpen && hasPrimaryValue && (
         <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-[var(--border-subtle)] bg-black/10 p-1.5">
-          <span className="shrink-0 text-[8px] font-black uppercase tracking-wider text-[var(--text-subtle)]">Relation</span>
+          <span className="shrink-0 text-[10px] font-black uppercase tracking-wider text-[var(--text-subtle)]">Relation</span>
           <select
             value={relation ?? ''}
             onChange={(event) => updateRelation(event.target.value as MaestroSelectorRelation | '')}
@@ -139,7 +139,7 @@ export default function MaestroSelectorEditor({
           </select>
           {relation && (
             <>
-              <span className="shrink-0 text-[8px] font-black uppercase tracking-wider text-[var(--text-subtle)]">Related element</span>
+              <span className="shrink-0 text-[10px] font-black uppercase tracking-wider text-[var(--text-subtle)]">Related element</span>
               <input
                 value={relatedValue}
                 onChange={(event) => onChange(patchSelector({ relatedValue: event.target.value }))}

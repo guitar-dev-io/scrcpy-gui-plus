@@ -155,7 +155,7 @@ export default function MaestroFlowBuilderPanel({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--border-subtle)] px-3">
-        <span className="text-[8px] font-black uppercase tracking-widest text-[var(--text-muted)]">
+        <span className="text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)]">
           Steps ({flow.actions.length})
         </span>
         {onToggleRecording && (
@@ -163,7 +163,7 @@ export default function MaestroFlowBuilderPanel({
             type="button"
             onClick={onToggleRecording}
             aria-pressed={recording}
-            className={`ml-auto flex h-6 items-center gap-1 rounded border px-2 text-[8px] font-semibold ${recording ? 'border-red-400/50 bg-red-400/10 text-red-300' : 'border-[var(--border-base)] text-[var(--text-muted)] hover:border-primary/40 hover:text-primary'}`}
+            className={`ml-auto flex h-6 items-center gap-1 rounded border px-2 text-[10px] font-semibold ${recording ? 'border-red-400/50 bg-red-400/10 text-red-300' : 'border-[var(--border-base)] text-[var(--text-muted)] hover:border-primary/40 hover:text-primary'}`}
           >
             <Circle size={8} fill={recording ? 'currentColor' : 'none'} className={recording ? 'animate-pulse' : ''} />
             {recording ? 'Recording' : 'Record'}
@@ -171,11 +171,16 @@ export default function MaestroFlowBuilderPanel({
         )}
       </div>
       {actionIssues.length > 0 && (
-        <div className="flex shrink-0 items-center gap-1.5 border-b border-amber-500/20 bg-amber-500/10 px-3 py-1.5 text-[8px] font-semibold text-amber-400">
+        <div className="flex shrink-0 items-center gap-1.5 border-b border-amber-500/20 bg-amber-500/10 px-3 py-1.5 text-[10px] font-semibold text-amber-400">
           <AlertTriangle size={10} />
           {actionIssues.length} action{actionIssues.length === 1 ? '' : 's'}{' '}
           need attention
         </div>
+      )}
+      {recording && (
+        <p role="status" className="border-b border-red-400/25 bg-red-400/10 px-3 py-1.5 text-[11px] leading-snug text-red-300">
+          Recording: click an element in Device Preview to add a Tap step for it. Press R or Record to stop.
+        </p>
       )}
       <ol className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-2">
         {flow.actions.map((action, index) => (
@@ -195,6 +200,7 @@ export default function MaestroFlowBuilderPanel({
             onAddChildAction={onAddChildAction}
             runStatusByActionId={runStatusByActionId}
             selectedActionId={effectiveSelectedActionId}
+            appId={flow.appId}
             onSelect={selectAction}
             onActionKeyDown={handleActionKeyDown}
             onViewLogs={onViewLogs}
@@ -202,11 +208,11 @@ export default function MaestroFlowBuilderPanel({
           />
         ))}
         {flow.actions.length === 0 && (
-          <li className="rounded-lg border border-dashed border-[var(--border-subtle)] px-5 py-8 text-center text-[9px] text-[var(--text-subtle)]">
+          <li className="rounded-lg border border-dashed border-[var(--border-subtle)] px-5 py-8 text-center text-[11px] text-[var(--text-subtle)]">
             <p className="font-semibold text-[var(--text-muted)]">No steps yet</p>
             <p className="mt-1 leading-relaxed">Select an element from the device or start recording your actions.</p>
             {onToggleRecording && (
-              <button type="button" onClick={onToggleRecording} className="mt-3 rounded border border-red-400/35 px-2 py-1 text-[8px] font-semibold text-red-300 hover:bg-red-400/10">
+              <button type="button" onClick={onToggleRecording} className="mt-3 rounded border border-red-400/35 px-2 py-1 text-[10px] font-semibold text-red-300 hover:bg-red-400/10">
                 Start Recording
               </button>
             )}
@@ -219,11 +225,11 @@ export default function MaestroFlowBuilderPanel({
             aria-label="Step type"
             value={newCommand}
             onChange={(event) => setNewCommand(event.target.value)}
-            className="h-7 min-w-0 flex-1 rounded border border-[var(--border-base)] bg-[var(--bg-input)] px-1.5 text-[8px] text-[var(--text-muted)] outline-none focus:border-primary/50"
+            className="h-7 min-w-0 flex-1 rounded border border-[var(--border-base)] bg-[var(--bg-input)] px-1.5 text-[10px] text-[var(--text-muted)] outline-none focus:border-primary/50"
           >
             {MAESTRO_COMMON_COMMANDS.map((command) => <option key={command.id} value={command.id}>{command.label}</option>)}
           </select>
-          <button type="button" onClick={() => onAddAction(newCommand)} className="flex h-7 items-center gap-1 rounded border border-primary/35 px-2 text-[8px] font-semibold text-primary hover:bg-primary/10">
+          <button type="button" onClick={() => onAddAction(newCommand)} className="flex h-7 items-center gap-1 rounded border border-primary/35 px-2 text-[10px] font-semibold text-primary hover:bg-primary/10">
             <Plus size={9} /> Add Step
           </button>
         </div>

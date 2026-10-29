@@ -69,14 +69,14 @@ export default function MaestroCommandLibrary({
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search actions..."
             aria-label="Search actions"
-            className="h-7 w-full rounded-md border border-[var(--border-base)] bg-[var(--bg-input)] pl-6 pr-2 text-[9px] text-[var(--text-base)] outline-none focus:border-primary/50"
+            className="h-7 w-full rounded-md border border-[var(--border-base)] bg-[var(--bg-input)] pl-6 pr-2 text-[11px] text-[var(--text-base)] outline-none focus:border-primary/50"
           />
         </div>
       </div>
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-2">
         {!query && MAESTRO_COMMON_COMMANDS.length > 0 && (
           <div>
-            <p className="mb-1 px-1 text-[8px] font-black uppercase tracking-widest text-[var(--text-subtle)]">
+            <p className="mb-1 px-1 text-[10px] font-black uppercase tracking-widest text-[var(--text-subtle)]">
               Common
             </p>
             <div className="space-y-0.5">
@@ -86,7 +86,7 @@ export default function MaestroCommandLibrary({
                   type="button"
                   onClick={() => onAddCommand(definition.id)}
                   title={definition.description}
-                  className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[9px] text-[var(--text-muted)] hover:bg-primary/10 hover:text-primary"
+                  className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[11px] text-[var(--text-muted)] hover:bg-primary/10 hover:text-primary"
                 >
                   <Plus size={10} className="shrink-0" />
                   <span className="truncate">{definition.label}</span>
@@ -98,7 +98,7 @@ export default function MaestroCommandLibrary({
         {CATEGORY_ORDER.filter((category) => grouped.has(category)).map(
           (category) => (
             <div key={category}>
-              <p className="mb-1 px-1 text-[8px] font-black uppercase tracking-widest text-[var(--text-subtle)]">
+              <p className="mb-1 px-1 text-[10px] font-black uppercase tracking-widest text-[var(--text-subtle)]">
                 {CATEGORY_LABELS[category]}
               </p>
               <div className="space-y-0.5">
@@ -108,7 +108,7 @@ export default function MaestroCommandLibrary({
                     type="button"
                     onClick={() => onAddCommand(definition.id)}
                     title={definition.description}
-                    className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[9px] text-[var(--text-muted)] hover:bg-primary/10 hover:text-primary"
+                    className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[11px] text-[var(--text-muted)] hover:bg-primary/10 hover:text-primary"
                   >
                     <Plus size={10} className="shrink-0" />
                     <span className="truncate">{definition.label}</span>
@@ -119,7 +119,7 @@ export default function MaestroCommandLibrary({
           ),
         )}
         {results.length === 0 && (
-          <p className="px-1 text-[9px] text-[var(--text-subtle)]">
+          <p className="px-1 text-[11px] text-[var(--text-subtle)]">
             No actions match "{query}".
           </p>
         )}

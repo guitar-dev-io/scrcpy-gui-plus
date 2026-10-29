@@ -30,7 +30,7 @@ export default function MaestroCliStatusBanner({
 
   return (
     <div
-      className={`flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-[9px] ${className}`}
+      className={`flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-[11px] ${className}`}
       role={checking || availability?.found ? 'status' : 'alert'}
       aria-live={checking || availability?.found ? 'polite' : 'assertive'}
     >

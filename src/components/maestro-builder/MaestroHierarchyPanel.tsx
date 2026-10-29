@@ -66,7 +66,7 @@ function TreeRow({ node, selectedId, onSelect, query }: TreeRowProps) {
         >
           <ChevronRight size={10} className={open ? 'rotate-90' : ''} />
         </button>
-        <span className="min-w-0 flex-1 truncate text-[9px]">
+        <span className="min-w-0 flex-1 truncate text-[11px]">
           <span className="font-semibold">{shortClassName(node.className)}</span>
           {idLabel && <span className="text-[var(--text-subtle)]"> · {idLabel}</span>}
         </span>
@@ -103,8 +103,8 @@ export default function MaestroHierarchyPanel({ root, selected, onSelect, showHe
   return (
     <div className="flex h-full min-h-0 flex-col">
       {showHeader && <div className="flex h-8 shrink-0 items-center border-b border-[var(--border-subtle)] px-3">
-        <span className="text-[8px] font-black uppercase tracking-widest text-[var(--text-muted)]">Hierarchy</span>
-        <span className="ml-2 text-[8px] text-[var(--text-subtle)]">UI Tree</span>
+        <span className="text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)]">Hierarchy</span>
+        <span className="ml-2 text-[10px] text-[var(--text-subtle)]">UI Tree</span>
       </div>}
       <div className="relative shrink-0 p-2">
         <Search size={10} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-subtle)]" />
@@ -113,14 +113,14 @@ export default function MaestroHierarchyPanel({ root, selected, onSelect, showHe
           onChange={(event) => setDraft(event.target.value)}
           placeholder="Search element…"
           aria-label="Search hierarchy by id, text, or class"
-          className="h-7 w-full rounded border border-[var(--border-base)] bg-[var(--bg-input)] pl-6 pr-2 text-[9px] text-[var(--text-base)] outline-none focus:border-primary/60"
+          className="h-7 w-full rounded border border-[var(--border-base)] bg-[var(--bg-input)] pl-6 pr-2 text-[11px] text-[var(--text-base)] outline-none focus:border-primary/60"
         />
       </div>
       <div role="tree" className="min-h-0 flex-1 overflow-auto px-2 pb-2">
         {root ? (
           <TreeRow node={root} selectedId={selected?.id ?? null} onSelect={onSelect} query={query.toLowerCase()} />
         ) : (
-          <p className="p-3 text-center text-[9px] text-[var(--text-subtle)]">Refresh Device Preview to load the live hierarchy.</p>
+          <p className="p-3 text-center text-[11px] text-[var(--text-subtle)]">Refresh Device Preview to load the live hierarchy.</p>
         )}
       </div>
     </div>

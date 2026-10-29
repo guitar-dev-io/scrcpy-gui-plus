@@ -311,16 +311,16 @@ export default function MaestroDevicePreviewPanel(
     >
       <div className="flex shrink-0 items-center gap-1 border-b border-[var(--border-subtle)] px-3 py-1.5">
         <div className="min-w-0 flex-1">
-          <div className="text-[8px] font-black uppercase tracking-widest text-[var(--text-subtle)]">
+          <div className="text-[10px] font-black uppercase tracking-widest text-[var(--text-subtle)]">
             Device Preview {activeDevice ? `— ${activeDevice}` : ''}
           </div>
           <div
-            className="truncate text-[8px] text-[var(--text-subtle)]"
+            className="truncate text-[10px] text-[var(--text-subtle)]"
             title={identityLabel || 'No device selected'}
           >
             {identityLabel || 'No device selected'}
           </div>
-          <div className="text-[8px] text-[var(--text-subtle)]">
+          <div className="text-[10px] text-[var(--text-subtle)]">
             {resolutionLabel}
           </div>
         </div>
@@ -381,7 +381,7 @@ export default function MaestroDevicePreviewPanel(
         </button>
       </div>
       {recording && (
-        <div className="flex h-6 shrink-0 items-center justify-center gap-1.5 border-b border-red-400/20 bg-red-400/5 text-[8px] font-semibold text-red-300" role="status">
+        <div className="flex h-6 shrink-0 items-center justify-center gap-1.5 border-b border-red-400/20 bg-red-400/5 text-[10px] font-semibold text-red-300" role="status">
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-400" /> Recording · preview taps append locator-based steps
         </div>
       )}
@@ -389,7 +389,7 @@ export default function MaestroDevicePreviewPanel(
         <button
           type="button"
           onClick={() => setScale(100)}
-          className="h-5 rounded border border-[var(--border-base)] px-2 text-[8px] text-[var(--text-muted)] hover:text-primary"
+          className="h-5 rounded border border-[var(--border-base)] px-2 text-[10px] text-[var(--text-muted)] hover:text-primary"
         >
           Fit
         </button>
@@ -405,7 +405,7 @@ export default function MaestroDevicePreviewPanel(
         >
           <Minus size={10} />
         </button>
-        <span className="w-10 text-center text-[8px] tabular-nums text-[var(--text-muted)]">{scale}%</span>
+        <span className="w-10 text-center text-[10px] tabular-nums text-[var(--text-muted)]">{scale}%</span>
         <button
           type="button"
           aria-label="Zoom in"
@@ -421,7 +421,7 @@ export default function MaestroDevicePreviewPanel(
       </div>
       {feedback && (
         <p
-          className="shrink-0 truncate px-3 py-1 text-[8px] text-[var(--text-subtle)]"
+          className="shrink-0 truncate px-3 py-1 text-[10px] text-[var(--text-subtle)]"
           title={feedback}
           aria-live="polite"
         >
@@ -433,7 +433,7 @@ export default function MaestroDevicePreviewPanel(
           {!activeDevice ? (
             <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-[var(--text-subtle)]">
               <Smartphone size={20} />
-              <span className="text-[9px] uppercase tracking-widest">
+              <span className="text-[11px] uppercase tracking-widest">
                 No device selected
               </span>
             </div>
@@ -509,13 +509,13 @@ export default function MaestroDevicePreviewPanel(
           ) : (
             <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-center text-[var(--text-subtle)]">
               <Smartphone size={20} />
-              <span className="text-[9px] uppercase tracking-widest">
+              <span className="text-[11px] uppercase tracking-widest">
                 {error?.message || 'No preview yet'}
               </span>
               <button
                 type="button"
                 onClick={onRefresh}
-                className="mt-1 rounded-lg bg-primary px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-on-primary"
+                className="mt-1 rounded-lg bg-primary px-3 py-1.5 text-[11px] font-black uppercase tracking-widest text-on-primary"
               >
                 Capture preview
               </button>
@@ -523,7 +523,7 @@ export default function MaestroDevicePreviewPanel(
           )}
         </div>
       </div>
-      <div className="flex shrink-0 items-center justify-between gap-2 border-t border-[var(--border-subtle)] px-3 py-1.5 text-[8px] text-[var(--text-subtle)]">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-t border-[var(--border-subtle)] px-3 py-1.5 text-[10px] text-[var(--text-subtle)]">
         <span
           className="truncate"
           title={identityLabel || 'No device selected'}

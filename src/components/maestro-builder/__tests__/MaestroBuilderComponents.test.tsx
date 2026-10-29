@@ -288,3 +288,44 @@ describe('MaestroFlowBuilderPanel', () => {
     expect(screen.queryByText(/action needs attention/)).not.toBeInTheDocument()
   })
 })
+
+describe('Launch App, new steps and recording hints', () => {
+  const renderCard = (action: MaestroFlowAction, appId?: string) =>
+    render(
+      <MaestroActionCard action={action} index={0} total={1} allIssues={noIssues} appId={appId} {...cardCallbacks()} />,
+    )
+
+  it('names the app a Launch App step opens and whether it restarts or resumes it', () => {
+    const { unmount } = renderCard(actionWithId('launchApp', 'launch'), 'com.laundryyou.washxpress.staging')
+    expect(screen.getAllByText('com.laundryyou.washxpress.staging · restarts the app').length).toBeGreaterThan(0)
+    unmount()
+
+    const resume = { ...actionWithId('launchApp', 'resume'), config: { stopApp: false } }
+    renderCard(resume, 'com.laundryyou.washxpress.staging')
+    expect(screen.getAllByText('com.laundryyou.washxpress.staging · resumes the app').length).toBeGreaterThan(0)
+  })
+
+  it('falls back to the generic description when the flow has no app id', () => {
+    renderCard(actionWithId('launchApp', 'launch'), '  ')
+    expect(screen.getAllByText('Launch, restart, or resume the app under test.').length).toBeGreaterThan(0)
+  })
+
+  it('tells a just-added element step that it still needs an element', () => {
+    renderCard(actionWithId('tapOn', 'tap'))
+    expect(screen.getAllByText(/Needs an element/).length).toBeGreaterThan(0)
+  })
+
+  it('explains what recording does only while it is on', () => {
+    const flow = panelFlow([])
+    const props = {
+      flow, issues: noIssues, onToggleEnabled: vi.fn(), onMove: vi.fn(), onDuplicate: vi.fn(), onDelete: vi.fn(),
+      onSelectorChange: vi.fn(), onFieldChange: vi.fn(), onToggleRecording: vi.fn(),
+    }
+    const { rerender } = render(<MaestroFlowBuilderPanel {...props} recording={false} />)
+    expect(screen.queryByText(/Recording: click an element/)).not.toBeInTheDocument()
+
+    rerender(<MaestroFlowBuilderPanel {...props} recording />)
+    expect(screen.getByRole('status')).toHaveTextContent('Recording: click an element in Device Preview to add a Tap step')
+  })
+})
+
