@@ -7,7 +7,8 @@ import { useMaestroTest } from '../../hooks/useMaestroTest'
 import { useMaestroRunProgress } from '../../hooks/useMaestroRunProgress'
 import { parseMaestroBuilderYaml } from '../../utils/maestroBuilderParser'
 import { validateMaestroBuilderFlow } from '../../utils/maestroBuilderValidator'
-import { findMaestroFlowAction } from '../../utils/maestroBuilderFlow'
+import { findMaestroFlowAction, sliceMaestroFlow, topLevelActionIndex, type MaestroPartialRunScope } from '../../utils/maestroBuilderFlow'
+import { buildMaestroBuilderYaml } from '../../utils/maestroBuilderSerializer'
 import { findMaestroCommandDefinition } from '../../utils/maestroCommandRegistry'
 import { recommendMaestroSelectors } from '../../utils/maestroSelectorRecommendation'
 import { cancelMaestroRun, getForegroundAppPackage, getMaestroFlowDirectory, onMaestroRunProgress, readMaestroFlow, runMaestroTest, saveMaestroFlow, saveMaestroFlowAs } from '../../services/maestroService'
@@ -20,7 +21,7 @@ import { resolveAutomationTarget } from '../../services/automationTargetService'
 import { useDeviceGroups } from '../../hooks/useDeviceGroups'
 import type { AutomationBatchRunRecord } from '../../types/automationBatchRun'
 import type { AutomationTarget } from '../../types/automationTarget'
-import type { MaestroBuilderSelector, MaestroCommandId, MaestroFlowAction } from '../../types/maestroBuilder'
+import type { MaestroBuilderSelector, MaestroCommandId, MaestroFlow, MaestroFlowAction } from '../../types/maestroBuilder'
 import type { UiNode } from '../../types/uiInspector'
 import type { AutomationDataCheckpoint, AutomationDataRecord, AutomationDataRunOptions, AutomationDataSource, AutomationSequentialCheckpoint, AutomationSequentialOptions } from '../../types/automationData'
 import { applyAutomationRecord } from '../../utils/automationData'
@@ -88,6 +89,8 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
   const inspector = useUiInspector({ activeDevice, customPath, enabled: true })
   const maestro = useMaestroTest(activeDevice)
   const [tagDraft, setTagDraft] = useState('')
+  // The trimmed flow of the latest partial run, so step progress maps to its steps.
+  const [partialFlow, setPartialFlow] = useState<MaestroFlow | null>(null)
   const [pickTargetActionId, setPickTargetActionId] = useState<string | null>(null)
   const [runHistoryToken, setRunHistoryToken] = useState(0)
   const [advancedOpen, setAdvancedOpen] = useState(false)
@@ -183,7 +186,9 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
     }))
   }
 
-  const writeFlowFile = async () => {
+  const writeFlowFile = async (partialYaml?: string) => {
+    // A partial run goes to its own file so the user's saved flow stays intact.
+    if (partialYaml) return saveMaestroFlow(partialYaml, `${slugForFilename(builder.flow.name).slice(0, 80)}-partial`)
     const path = flowFilePath
       ? await saveMaestroFlowAs(builder.yaml, flowFilePath)
       : await saveMaestroFlow(builder.yaml, slugForFilename(builder.flow.name))
@@ -514,8 +519,16 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
     }
   }
 
-  const handleRun = async () => {
+  const handleRun = async (scope?: MaestroPartialRunScope) => {
     if (!builder.isValid || maestro.running || batchRunning || !targetResolution.isValid) return
+    const sliced = scope && builder.selectedActionId ? sliceMaestroFlow(builder.flow, builder.selectedActionId, scope) : null
+    if (scope && (!sliced || enabledExecutableActionIds(sliced.actions).length === 0)) {
+      notify('Nothing to run', 'The selected step has no enabled steps to run.', 'warning')
+      return
+    }
+    setPartialFlow(sliced)
+    const runYaml = sliced ? buildMaestroBuilderYaml(sliced) : builder.yaml
+    const runName = sliced ? `${builder.flow.name} (${scope === 'only' ? 'step' : 'from step'} ${topLevelActionIndex(builder.flow.actions, builder.selectedActionId!) + 1})` : builder.flow.name
     setLiveMaestroLog([])
     runCaptureRef.current = true
     setFailedActionId(null)
@@ -527,18 +540,18 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
       setBatchRunning(true)
       setLowerRightTab('logs')
       try {
-        const path = await writeFlowFile()
+        const path = await writeFlowFile(sliced ? runYaml : undefined)
         const batch = await runAutomationBatch(
           {
             automationId: builder.flow.id,
-            automationName: builder.flow.name,
+            automationName: runName,
             deviceSerials: targetResolution.serials,
           },
           async (serial, context) => {
             const runId = `${parentId}-${context.index}`
             activeBatchRunsRef.current.add(runId)
             appendLiveLog(`\n=== Device ${serial} · starting ===`)
-            context.log(`Starting ${builder.flow.name} on ${serial}`)
+            context.log(`Starting ${runName} on ${serial}`)
             try {
               const result = await runMaestroTest(path, serial, runId)
               result.artifacts.forEach((artifact) => context.addArtifact('screenshot', artifact.path))
@@ -567,7 +580,7 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
     }
     let path: string
     try {
-      path = await writeFlowFile()
+      path = await writeFlowFile(sliced ? runYaml : undefined)
     } catch (cause) {
       runCaptureRef.current = false
       notify('Could not save YAML for run', String(cause), 'error')
@@ -578,9 +591,9 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
       if (repeatCount > 1) appendLiveLog(`\n=== Repeat ${index + 1}/${repeatCount} ===`)
       lastResult = await maestro.run(path, {
         flowId: builder.flow.id,
-        flowName: builder.flow.name,
+        flowName: runName,
         appId: builder.flow.appId,
-        yaml: builder.yaml,
+        yaml: runYaml,
       })
       if (!lastResult?.success) break
     }
@@ -618,8 +631,9 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
     await maestro.cancel()
   }
 
+  const selectedStepNumber = builder.selectedActionId ? topLevelActionIndex(builder.flow.actions, builder.selectedActionId) + 1 : 0
   const runDisabled = !targetResolution.isValid || !builder.isValid || maestro.running || batchRunning || !maestro.availability?.found
-  const orderedActionIds = useMemo(() => enabledExecutableActionIds(builder.flow.actions), [builder.flow.actions])
+  const orderedActionIds = useMemo(() => enabledExecutableActionIds((partialFlow ?? builder.flow).actions), [partialFlow, builder.flow])
   const handleActionStatus = useCallback((actionId: string, status: 'passed' | 'failed') => {
     if (status !== 'failed') return
     const action = findMaestroFlowAction(builder.flow.actions, actionId)
@@ -710,7 +724,15 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
           {maestro.running || batchRunning ? (
             <button type="button" onClick={() => void cancelRun()} disabled={maestro.cancelling} className="flex h-7 items-center gap-1 rounded bg-red-500/15 px-3 text-[8px] font-bold text-red-300"><Square size={9} fill="currentColor" /> Stop</button>
           ) : (
-            <button type="button" onClick={() => void handleRun()} disabled={runDisabled} className="flex h-7 items-center gap-1 rounded bg-primary px-4 text-[8px] font-black text-on-primary disabled:cursor-not-allowed disabled:opacity-35"><Play size={10} fill="currentColor" /> Run</button>
+            <>
+              {selectedStepNumber > 0 && (
+                <>
+                  <button type="button" onClick={() => void handleRun('only')} disabled={runDisabled} title={`Run only step ${selectedStepNumber}, on the current screen state`} className="flex h-7 items-center gap-1 rounded border border-primary/50 px-2.5 text-[10px] font-semibold text-primary hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-35"><Play size={10} /> Step {selectedStepNumber}</button>
+                  <button type="button" onClick={() => void handleRun('from')} disabled={runDisabled} title={`Run from step ${selectedStepNumber} to the end, without the steps before it`} className="flex h-7 items-center gap-1 rounded border border-primary/50 px-2.5 text-[10px] font-semibold text-primary hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-35"><Play size={10} /> From step {selectedStepNumber}</button>
+                </>
+              )}
+              <button type="button" onClick={() => void handleRun()} disabled={runDisabled} className="flex h-7 items-center gap-1 rounded bg-primary px-4 text-[8px] font-black text-on-primary disabled:cursor-not-allowed disabled:opacity-35"><Play size={10} fill="currentColor" /> Run</button>
+            </>
           )}
         </div>
 

@@ -124,20 +124,20 @@ export default function Header({
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h1 className="truncate text-[12px] font-semibold text-[var(--text-base)]">
-                {deviceStatus?.model || activeDevice || 'No Android device selected'}
+                {deviceStatus?.model || activeDevice || t('chrome.device.noDeviceSelected')}
               </h1>
               <span className={`rounded px-1.5 py-0.5 text-[8px] font-semibold ${activeDevice ? 'bg-emerald-500/15 text-emerald-400' : 'bg-[var(--bg-hover)] text-[var(--text-subtle)]'}`}>
-                {activeDevice ? 'Online' : 'Offline'}
+                {activeDevice ? t('chrome.device.online') : t('chrome.device.offline')}
               </span>
             </div>
             <p className="mt-0.5 truncate text-[10px] text-[var(--text-subtle)]">
               {activeDevice
-                ? [activeDevice, deviceStatus?.androidVersion && `Android ${deviceStatus.androidVersion}`].filter(Boolean).join(' · ')
-                : 'Connect a device to begin'}
+                ? [activeDevice, deviceStatus?.androidVersion && t('chrome.device.androidVersion', { version: deviceStatus.androidVersion })].filter(Boolean).join(' · ')
+                : t('chrome.device.connectDevice')}
             </p>
           </div>
           <div className="ml-auto hidden items-center gap-5 text-[10px] text-[var(--text-subtle)] md:flex">
-            <span className="flex items-center gap-1.5"><Maximize2 size={13} /> {deviceStatus?.resolution || (connected ? 'Session active' : 'Ready')}</span>
+            <span className="flex items-center gap-1.5"><Maximize2 size={13} /> {deviceStatus?.resolution || (connected ? t('chrome.device.sessionActive') : t('chrome.device.ready'))}</span>
             <span className="flex items-center gap-1.5"><BatteryMedium size={13} /> {deviceStatus?.batteryLevel !== undefined ? `${deviceStatus.batteryLevel}%` : '—'}</span>
             <Wifi size={13} />
           </div>
@@ -146,7 +146,7 @@ export default function Header({
         <div ref={menuRef} className={`relative flex min-w-0 items-center px-2 ${compact ? 'bg-transparent sm:min-w-0' : 'rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] shadow-[var(--shadow-sm)] sm:min-w-[340px] sm:px-4'}`}>
           <div className={`${compact ? 'mr-2 hidden xl:block' : 'mr-auto'} min-w-0`}>
             <div className="flex items-center gap-2">
-              <p className="text-[9px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Scrcpy Engine</p>
+              <p className="text-[9px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">{t('chrome.device.engine')}</p>
               <span className={`h-1.5 w-1.5 rounded-full ${binaryStatus.found ? 'bg-emerald-400' : 'bg-amber-400'}`} />
             </div>
             <p className={`mt-0.5 max-w-32 truncate text-[9px] font-semibold uppercase ${binaryStatus.found ? 'text-emerald-400' : 'text-amber-400'}`}>

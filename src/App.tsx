@@ -77,7 +77,7 @@ import { useDeviceRecoverySnapshot } from './hooks/useDeviceRecoverySnapshot'
 import { getAdbLiveFrameDataUrl } from './utils/adbLiveFrame'
 import { useIosMirror, type IosDeviceInfo } from './hooks/useIosMirror'
 import { getVersion } from '@tauri-apps/api/app'
-import { isTauri } from './utils/tauriEnv'
+import { hasAdbBackend, isTauri } from './utils/tauriEnv'
 import { createBugReport } from './services/bugReportService'
 import {
   capturePreviewFrame,
@@ -1077,7 +1077,7 @@ function AppContent() {
   }, [])
 
   useEffect(() => {
-    if (!isTauri()) return
+    if (!hasAdbBackend()) return
     // Initial check (once on mount) - Silent to avoid log clatter
     checkScrcpy(config.scrcpyPath)
     refreshDevices(config.scrcpyPath, true)

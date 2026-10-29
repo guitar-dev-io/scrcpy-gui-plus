@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { classNames } from '../ui/classNames'
 import { useShellUi } from '../../contexts/ShellUiContext'
+import { useI18n } from '../../i18n'
 import type { WorkspaceToolTab } from '../../types/workspace'
 
 interface WorkspaceTabBarProps {
@@ -32,14 +33,13 @@ interface WorkspaceTabBarProps {
 
 const toolTabs: ReadonlyArray<{
   id: WorkspaceToolTab
-  label: string
   icon: typeof ListChecks
 }> = [
-  { id: 'test-runner', label: 'Test Run', icon: ListChecks },
-  { id: 'logcat', label: 'Logcat', icon: ScrollText },
-  { id: 'shell', label: 'Shell', icon: Terminal },
-  { id: 'file-explorer', label: 'File Explorer', icon: FileText },
-  { id: 'compare', label: 'Compare', icon: Columns3 },
+  { id: 'test-runner', icon: ListChecks },
+  { id: 'logcat', icon: ScrollText },
+  { id: 'shell', icon: Terminal },
+  { id: 'file-explorer', icon: FileText },
+  { id: 'compare', icon: Columns3 },
 ]
 
 /**
@@ -83,6 +83,8 @@ export default function WorkspaceTabBar({
     selectWorkspaceTool: onSelectToolTab,
     closeWorkspaceTool: onCloseToolTab,
   } = useShellUi()
+  const { t } = useI18n()
+  const toolLabel = (id: WorkspaceToolTab) => t(`chrome.tools.${id}.title`)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const tabListRef = useRef<HTMLDivElement>(null)
@@ -123,7 +125,7 @@ export default function WorkspaceTabBar({
       <div
         ref={tabListRef}
         role="tablist"
-        aria-label="Open workspaces"
+        aria-label={t('chrome.tabs.openWorkspaces')}
         // A visible scrollbar made the bar look broken even when tabs barely
         // overflowed; a mouse wheel scrolls the strip sideways instead.
         className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
@@ -140,16 +142,16 @@ export default function WorkspaceTabBar({
           const kind = deviceKinds?.[serial] ?? 'android'
           const closeLabel =
             kind === 'ios'
-              ? `Close iOS workspace for ${serial}`
+              ? t('chrome.tabs.closeIosFor', { serial })
               : kind === 'companion'
-                ? `Close Companion workspace for ${serial}`
-                : `Stop session on ${serial}`
+                ? t('chrome.tabs.closeCompanionFor', { serial })
+                : t('chrome.tabs.stopSessionOn', { serial })
           const closeTitle =
             kind === 'ios'
-              ? 'Close iOS workspace'
+              ? t('chrome.tabs.closeIos')
               : kind === 'companion'
-                ? 'Close Companion workspace'
-                : 'Stop session'
+                ? t('chrome.tabs.closeCompanion')
+                : t('chrome.tabs.stopSession')
           return (
             <div
               key={serial}
@@ -178,7 +180,7 @@ export default function WorkspaceTabBar({
                 {runningDevices.includes(serial) && (
                   <span
                     className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400"
-                    aria-label="Session running"
+                    aria-label={t('chrome.tabs.sessionRunning')}
                   />
                 )}
               </button>
@@ -195,7 +197,8 @@ export default function WorkspaceTabBar({
           )
         })}
 
-        {visibleTools.map(({ id, label, icon: Icon }) => {
+        {visibleTools.map(({ id, icon: Icon }) => {
+          const label = toolLabel(id)
           const active = activeToolTab === id
           return (
             <div
@@ -220,7 +223,7 @@ export default function WorkspaceTabBar({
               <button
                 type="button"
                 onClick={() => onCloseToolTab(id)}
-                aria-label={`Close ${label} workspace`}
+                aria-label={t('chrome.tabs.closeToolWorkspace', { label })}
                 className="mr-1.5 flex h-5 w-5 items-center justify-center rounded text-[var(--text-subtle)] opacity-60 hover:bg-[var(--bg-hover)] hover:text-[var(--text-base)] group-hover:opacity-100 focus:opacity-100"
               >
                 <X size={11} />
@@ -231,7 +234,7 @@ export default function WorkspaceTabBar({
 
         {devices.length === 0 && visibleTools.length === 0 && (
           <span className="px-2 text-[10px] text-[var(--text-subtle)]">
-            No open workspaces
+            {t('chrome.tabs.noOpenWorkspaces')}
           </span>
         )}
       </div>
@@ -240,10 +243,10 @@ export default function WorkspaceTabBar({
           type="button"
           onClick={onToggleMultiDeviceView}
           aria-label={
-            multiDeviceView ? 'Show focused device' : 'Show all devices'
+            multiDeviceView ? t('chrome.tabs.showFocused') : t('chrome.tabs.showAll')
           }
           aria-pressed={multiDeviceView}
-          title={multiDeviceView ? 'Focused device view' : 'Multi-device grid'}
+          title={multiDeviceView ? t('chrome.tabs.focusedView') : t('chrome.tabs.multiGrid')}
           className={`ml-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${multiDeviceView ? 'bg-primary/15 text-primary' : 'text-[var(--text-subtle)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-base)]'}`}
         >
           <LayoutGrid size={13} />
@@ -253,10 +256,10 @@ export default function WorkspaceTabBar({
         <button
           type="button"
           onClick={() => setMenuOpen((open) => !open)}
-          aria-label="Open workspace"
+          aria-label={t('chrome.tabs.openWorkspace')}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
-          title="Open workspace"
+          title={t('chrome.tabs.openWorkspace')}
           className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-subtle)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-base)]"
         >
           <Plus size={13} />
@@ -264,7 +267,7 @@ export default function WorkspaceTabBar({
         {menuOpen && (
           <div
             role="menu"
-            aria-label="Workspace types"
+            aria-label={t('chrome.tabs.workspaceTypes')}
             className="absolute right-0 top-9 z-[calc(var(--z-topbar)+1)] w-48 rounded-lg border border-[var(--border-base)] bg-[var(--bg-elevated)] p-1.5 shadow-[0_14px_36px_rgba(0,0,0,.32)]"
           >
             <button
@@ -277,23 +280,24 @@ export default function WorkspaceTabBar({
               className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[10px] text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-base)]"
             >
               <Smartphone size={12} />
-              Add device session
+              {t('chrome.tabs.addDeviceSession')}
             </button>
             <div className="my-1 border-t border-[var(--border-subtle)]" />
-            {toolTabs.map(({ id, label, icon: Icon }) => {
+            {toolTabs.map(({ id, icon: Icon }) => {
+              const label = toolLabel(id)
               const open = openToolTabs.includes(id)
               return (
                 <button
                   key={id}
                   type="button"
                   role="menuitem"
-                  aria-label={`${label}${open ? ' (open)' : ''}`}
+                  aria-label={open ? t('chrome.tabs.openSuffix', { label }) : label}
                   onClick={() => selectTool(id)}
                   className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[10px] text-[var(--text-muted)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-base)]"
                 >
                   <Icon size={12} />
                   <span className="flex-1">{label}</span>
-                  {open && <Check size={11} aria-label="Open" />}
+                  {open && <Check size={11} aria-label={t('chrome.tabs.open')} />}
                 </button>
               )
             })}

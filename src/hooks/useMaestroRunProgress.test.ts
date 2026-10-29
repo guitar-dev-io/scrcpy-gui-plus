@@ -17,6 +17,21 @@ describe('classifyProgressLine', () => {
     expect(classifyProgressLine('Step FAILED')).toBe('failed')
   })
 
+  it('classifies real Maestro 2.1.0 --no-ansi step lines', () => {
+    expect(classifyProgressLine('Press Home key... COMPLETED')).toBe('passed')
+    expect(classifyProgressLine('Take screenshot step2... COMPLETED')).toBe('passed')
+    expect(classifyProgressLine('Assert that "zzz" is visible... FAILED')).toBe('failed')
+  })
+
+  it('ignores failure detail that follows a failed step, so it is not counted as the next step', () => {
+    expect(classifyProgressLine('Assertion is false: "zzz" is visible')).toBeNull()
+    expect(
+      classifyProgressLine('Assertion \'"zzz" is visible\' failed. Check the UI hierarchy in debug artifacts.'),
+    ).toBeNull()
+    expect(classifyProgressLine(' > Flow fail')).toBeNull()
+    expect(classifyProgressLine('Running on 6e229cf6')).toBeNull()
+  })
+
   it('never classifies unrelated output — the core safety property', () => {
     expect(classifyProgressLine('')).toBeNull()
     expect(classifyProgressLine('   ')).toBeNull()

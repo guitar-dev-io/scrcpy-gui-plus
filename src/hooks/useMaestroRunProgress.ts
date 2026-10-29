@@ -18,37 +18,40 @@ export type MaestroActionStatusListener = (
 /**
  * Classifies one streamed Maestro CLI output line as a step pass/fail marker.
  *
- * ASSUMPTION — UNVERIFIED. No Maestro CLI or connected device was available
- * in the sandbox this was built in, so this pattern has never been checked
- * against real `maestro --no-ansi test` output. It looks for a line
- * containing a leading/embedded pass or fail glyph, or a plain-text
- * fallback some CLI versions may use instead of unicode glyphs:
- *   passed: ✓ ✔  or the word PASS/PASSED, or a "[x]"/"[X]" checkbox prefix
- *   failed: ✗ ✘  or the word FAIL/FAILED, or a "[!]" prefix
- * Any line matching neither is ignored — it can never be mistaken for a
- * step result. If this assumption is wrong for the installed Maestro
- * version, `classifyProgressLine` simply never matches and the whole
- * per-step feature quietly no-ops (see the cleanup effect below): the UI
- * falls back to exactly the previous behavior — only the overall
- * Running/Passed/Failed state, no per-step detail.
+ * Verified against Maestro CLI 2.1.0 `--no-ansi test` on a real device: it
+ * prints a ` > Flow <name>` header, then one `<command description>...
+ * COMPLETED` or `... FAILED` line per command, followed by free-form failure
+ * detail (for example "Assertion '…' failed. Check the UI…") that must not be
+ * counted as another step. So the word forms only match at the end of a line,
+ * and the flow header is ignored (a flow named "… fail" would otherwise match).
  *
- * MUST be verified against a real `maestro --no-ansi test` run and the
- * regexes adjusted if the real format differs.
+ * Older/other CLI versions may use glyphs or checkbox prefixes instead, which
+ * are still recognised:
+ *   passed: ✓ ✔, a "[x]"/"[X]" prefix, or a trailing PASS/PASSED/COMPLETED
+ *   failed: ✗ ✘, a "[!]" prefix, or a trailing FAIL/FAILED
+ * Any line matching neither is ignored — it can never be mistaken for a step
+ * result. If the format changes, `classifyProgressLine` simply never matches
+ * and the per-step feature quietly no-ops (see the cleanup effect below): the
+ * UI falls back to the overall Running/Passed/Failed state only.
+ *
+ * Not yet handled: commands Maestro prints as SKIPPED or WARNED are ignored,
+ * so a flow that skips commands can misalign the by-sequence mapping.
  */
 export function classifyProgressLine(line: string): 'passed' | 'failed' | null {
   const trimmed = line.trim()
   if (!trimmed) return null
+  if (trimmed.startsWith('>')) return null
   if (
     /[✓✔]/.test(trimmed) ||
     /^\[[xX]\]/.test(trimmed) ||
-    /\bPASS(?:ED)?\b/i.test(trimmed)
+    /\b(?:PASS(?:ED)?|COMPLETED)\s*$/i.test(trimmed)
   ) {
     return 'passed'
   }
   if (
     /[✗✘]/.test(trimmed) ||
     /^\[!\]/.test(trimmed) ||
-    /\bFAIL(?:ED)?\b/i.test(trimmed)
+    /\bFAIL(?:ED)?\s*$/i.test(trimmed)
   ) {
     return 'failed'
   }
