@@ -6,6 +6,7 @@ import {
   Settings2,
   Wifi,
 } from 'lucide-react'
+import { useI18n } from '../../i18n'
 
 interface DashboardWorkspaceStageProps {
   deviceName: string
@@ -38,6 +39,7 @@ export default function DashboardWorkspaceStage({
   actionRail,
   onOpenControls,
 }: DashboardWorkspaceStageProps) {
+  const { t } = useI18n()
   return (
     <section className="flex min-h-127.5 min-w-0 flex-col overflow-hidden rounded-2xl border border-(--border-subtle) bg-[var(--bg-surface)] shadow-[var(--shadow-md)]">
       <div className="flex min-h-12 shrink-0 flex-wrap items-center gap-3 border-b border-(--border-subtle) bg-[var(--bg-elevated)]/75 px-4 py-2">
@@ -47,7 +49,7 @@ export default function DashboardWorkspaceStage({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h2 className="truncate text-[11px] font-semibold text-(--text-base)">
-              {deviceName || 'Device Workspace'}
+              {deviceName || t('chrome.device.workspaceTitle')}
             </h2>
             <span
               className={`rounded px-1.5 py-0.5 text-[8px] font-semibold ${
@@ -57,14 +59,14 @@ export default function DashboardWorkspaceStage({
               }`}
             >
               {connected
-                ? 'Session active'
+                ? t('chrome.device.sessionActive')
                 : deviceSerial
-                  ? 'Ready'
-                  : 'Offline'}
+                  ? t('chrome.device.ready')
+                  : t('chrome.device.offline')}
             </span>
           </div>
           <p className="mt-0.5 max-w-52 truncate text-[8px] text-(--text-subtle)">
-            {deviceSerial || 'Select a device to begin'}
+            {deviceSerial || t('chrome.device.selectDevice')}
           </p>
         </div>
 

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Columns3, ListChecks, ScrollText, Terminal } from 'lucide-react'
 import type { WorkspaceToolTab } from '../../types/workspace'
+import { useI18n } from '../../i18n'
 
 interface WorkspaceToolSurfaceProps {
   tool: Exclude<WorkspaceToolTab, 'file-explorer'>
@@ -9,23 +10,15 @@ interface WorkspaceToolSurfaceProps {
 
 const metadata = {
   'test-runner': {
-    title: 'Test Run',
-    description: 'Run saved automation and inspect real step results.',
     icon: ListChecks,
   },
   logcat: {
-    title: 'Logcat',
-    description: 'Inspect and filter the current device log stream.',
     icon: ScrollText,
   },
   shell: {
-    title: 'Shell',
-    description: 'Run commands against the selected device.',
     icon: Terminal,
   },
   compare: {
-    title: 'Compare',
-    description: 'Review captures across devices and choose a reference.',
     icon: Columns3,
   },
 } as const
@@ -34,7 +27,10 @@ export default function WorkspaceToolSurface({
   tool,
   children,
 }: WorkspaceToolSurfaceProps) {
-  const { title, description, icon: Icon } = metadata[tool]
+  const { t } = useI18n()
+  const { icon: Icon } = metadata[tool]
+  const title = t(`chrome.tools.${tool}.title`)
+  const description = t(`chrome.tools.${tool}.description`)
 
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--bg-base)] p-3">
