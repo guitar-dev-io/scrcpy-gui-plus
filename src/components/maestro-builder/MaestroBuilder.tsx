@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog'
-import { CheckCircle2, ChevronDown, Database, FileInput, FileOutput, FilePlus2, FolderOpen, Package, Pencil, Play, Save, Square, X } from 'lucide-react'
+import { CheckCircle2, ChevronDown, ChevronUp, Database, FileInput, FileOutput, FilePlus2, FolderOpen, Package, Pencil, Play, Save, Square, X } from 'lucide-react'
 import { useMaestroBuilder } from '../../hooks/useMaestroBuilder'
 import { useUiInspector } from '../../hooks/useUiInspector'
 import { useMaestroTest } from '../../hooks/useMaestroTest'
@@ -57,6 +57,7 @@ function slugForFilename(name: string): string {
 
 const FLOW_FILE_PATHS_KEY = 'scrcpy_maestro_builder_file_paths'
 const DATA_SOURCE_PATHS_KEY = 'scrcpy_maestro_builder_data_source_paths'
+const LOWER_COLLAPSED_KEY = 'scrcpy_maestro_builder_lower_collapsed'
 
 function loadFlowFilePaths(): Record<string, string> {
   try {
@@ -105,6 +106,33 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
   const [recording, setRecording] = useState(false)
   const [lowerLeftTab, setLowerLeftTab] = useState<'hierarchy' | 'library' | 'inspector'>('hierarchy')
   const [lowerRightTab, setLowerRightTab] = useState<'history' | 'logs'>('history')
+  // The hierarchy / YAML / history row can be folded away to give the steps and preview the room.
+  const [lowerCollapsed, setLowerCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(LOWER_COLLAPSED_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+  const toggleLower = () => {
+    setLowerCollapsed((collapsed) => {
+      try {
+        localStorage.setItem(LOWER_COLLAPSED_KEY, collapsed ? '0' : '1')
+      } catch {
+        // Not persisting is fine.
+      }
+      return !collapsed
+    })
+  }
+  // Anything that points at a lower panel (run logs, the command library) must make it visible.
+  const showLowerRight = (tab: 'history' | 'logs') => {
+    setLowerRightTab(tab)
+    setLowerCollapsed(false)
+  }
+  const showLowerLeft = (tab: 'hierarchy' | 'library' | 'inspector') => {
+    setLowerLeftTab(tab)
+    setLowerCollapsed(false)
+  }
   const [repeatCount, setRepeatCount] = useState(1)
   const [target, setTarget] = useState<AutomationTarget>({ mode: 'current' })
   const [batchRunning, setBatchRunning] = useState(false)
@@ -364,7 +392,7 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
     setLiveMaestroLog([])
     runCaptureRef.current = true
     setDataRunning(true)
-    setLowerRightTab('logs')
+    showLowerRight('logs')
     const allJobs = createAutomationDataJobs(records)
     const jobs = jobsForResultSubset(allJobs, dataCheckpoint, subset)
     const control: AutomationDataBatchControl = { paused: false, stopped: false }
@@ -420,7 +448,7 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
     runCaptureRef.current = true
     setDataRunning(true)
     setDataProgress(undefined)
-    setLowerRightTab('logs')
+    showLowerRight('logs')
     const control: AutomationDataBatchControl = { paused: false, stopped: false }
     dataControlRef.current = control
     try {
@@ -546,7 +574,7 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
       batchAbortRef.current = controller
       activeBatchRunsRef.current.clear()
       setBatchRunning(true)
-      setLowerRightTab('logs')
+      showLowerRight('logs')
       try {
         const path = await writeFlowFile(sliced ? runYaml : undefined)
         const batch = await runAutomationBatch(
@@ -608,7 +636,9 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
     runCaptureRef.current = false
     if (!lastResult) return
     setRunHistoryToken((token) => token + 1)
-    setLowerRightTab(lastResult.success ? 'history' : 'logs')
+    // A pass keeps a folded row folded; a failure needs its logs.
+    if (lastResult.success) setLowerRightTab('history')
+    else showLowerRight('logs')
     notify(
       lastResult.cancelled ? 'Maestro flow stopped' : lastResult.success ? 'Maestro flow passed' : 'Maestro flow failed',
       formatRunDuration(lastResult.durationMs),
@@ -687,7 +717,7 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
         void handleRun()
       } else if (event.key.toLowerCase() === 'f') {
         event.preventDefault()
-        setLowerLeftTab('library')
+        showLowerLeft('library')
         requestAnimationFrame(() => searchInputRef.current?.focus())
       } else if (event.key.toLowerCase() === 'd' && builder.selectedActionId && !isFormTarget(event.target)) {
         event.preventDefault()
@@ -845,7 +875,7 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
       <div className="grid min-h-[260px] flex-[3] grid-cols-1 gap-2 md:grid-cols-[minmax(190px,35fr)_minmax(300px,65fr)] xl:grid-cols-[minmax(210px,24fr)_minmax(300px,47fr)_minmax(240px,29fr)]">
         <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--border-base)] bg-[var(--bg-surface)]">
           <div className="min-h-0 flex-1">
-            <MaestroFlowBuilderPanel flow={builder.flow} issues={builder.issues} onToggleEnabled={builder.toggleActionEnabled} onMove={builder.moveAction} onDuplicate={builder.duplicateAction} onDelete={builder.removeAction} onSelectorChange={builder.updateActionSelector} onFieldChange={builder.updateActionConfigField} onPickElement={setPickTargetActionId} onAddChildAction={builder.addChildAction} runStatusByActionId={hasProgress ? runProgress.statusByActionId : undefined} selectedActionId={builder.selectedActionId} onSelectAction={builder.selectAction} onClearSelection={builder.clearSelection} onViewLogs={() => setLowerRightTab('logs')} onEditAction={builder.selectAction} onAddAction={builder.addAction} recording={recording} onToggleRecording={() => setRecording((value) => !value)} />
+            <MaestroFlowBuilderPanel flow={builder.flow} issues={builder.issues} onToggleEnabled={builder.toggleActionEnabled} onMove={builder.moveAction} onDuplicate={builder.duplicateAction} onDelete={builder.removeAction} onSelectorChange={builder.updateActionSelector} onFieldChange={builder.updateActionConfigField} onPickElement={setPickTargetActionId} onAddChildAction={builder.addChildAction} runStatusByActionId={hasProgress ? runProgress.statusByActionId : undefined} selectedActionId={builder.selectedActionId} onSelectAction={builder.selectAction} onClearSelection={builder.clearSelection} onViewLogs={() => showLowerRight('logs')} onEditAction={builder.selectAction} onAddAction={builder.addAction} recording={recording} onToggleRecording={() => setRecording((value) => !value)} />
           </div>
           <MaestroVariablesPanel variables={builder.flow.variables ?? []} onChange={(variables) => builder.updateFlow({ variables })} />
         </div>
@@ -859,10 +889,30 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
 
       {pickTargetActionId && <div className="shrink-0 rounded border border-primary/30 bg-primary/10 px-3 py-1 text-[10px] font-semibold text-primary">Select an element in Device Preview or Hierarchy to set the step target. <button type="button" onClick={() => setPickTargetActionId(null)} className="ml-2 underline">Cancel</button></div>}
 
-      <div className="grid h-[clamp(8rem,20vh,13rem)] shrink-0 grid-cols-1 gap-2 md:grid-cols-[1.15fr_.95fr_1.1fr]">
+      <div className="flex shrink-0 items-center gap-2 px-1 text-[11px]">
+        <button
+          type="button"
+          onClick={toggleLower}
+          aria-expanded={!lowerCollapsed}
+          aria-controls="maestro-lower-panels"
+          className="flex h-6 items-center gap-1 rounded border border-[var(--border-base)] px-2 font-semibold text-[var(--text-muted)] hover:border-primary/40 hover:text-primary"
+        >
+          {lowerCollapsed ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+          {lowerCollapsed ? 'Show hierarchy, YAML and run history' : 'Hide hierarchy, YAML and run history'}
+        </button>
+        {lowerCollapsed && (maestro.running || batchRunning) && <span className="font-semibold text-primary">Running…</span>}
+        {lowerCollapsed && !maestro.running && !batchRunning && maestro.result && (
+          <span className={maestro.result.success ? 'text-emerald-400' : 'font-semibold text-red-300'}>
+            Last run {maestro.result.cancelled ? 'stopped' : maestro.result.success ? 'passed' : 'failed'}
+          </span>
+        )}
+      </div>
+
+      {!lowerCollapsed && (
+      <div id="maestro-lower-panels" className="grid h-[clamp(8rem,20vh,13rem)] shrink-0 grid-cols-1 gap-2 md:grid-cols-[1.15fr_.95fr_1.1fr]">
         <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--border-base)] bg-[var(--bg-surface)]">
           <div className="flex h-8 border-b border-[var(--border-subtle)] px-2">
-            {(['hierarchy', 'library', 'inspector'] as const).map((tab) => <button key={tab} type="button" onClick={() => setLowerLeftTab(tab)} className={`relative px-2 text-[10px] font-semibold capitalize ${lowerLeftTab === tab ? 'text-primary after:absolute after:inset-x-1 after:bottom-0 after:h-0.5 after:bg-primary' : 'text-[var(--text-subtle)]'}`}>{tab === 'library' ? 'Actions' : tab === 'inspector' ? 'Inspector' : 'Hierarchy'}</button>)}
+            {(['hierarchy', 'library', 'inspector'] as const).map((tab) => <button key={tab} type="button" onClick={() => showLowerLeft(tab)} className={`relative px-2 text-[10px] font-semibold capitalize ${lowerLeftTab === tab ? 'text-primary after:absolute after:inset-x-1 after:bottom-0 after:h-0.5 after:bg-primary' : 'text-[var(--text-subtle)]'}`}>{tab === 'library' ? 'Actions' : tab === 'inspector' ? 'Inspector' : 'Hierarchy'}</button>)}
           </div>
           <div className="min-h-0 flex-1">
             {lowerLeftTab === 'hierarchy' ? <MaestroHierarchyPanel root={inspector.root} selected={inspector.selected} onSelect={handleSelectNode} showHeader={false} /> : lowerLeftTab === 'library' ? <MaestroCommandLibrary searchInputRef={searchInputRef} onAddCommand={builder.addAction} /> : <MaestroElementInspectorPanel root={inspector.root} selected={inspector.selected} onQuickAction={handleQuickAction} />}
@@ -871,7 +921,7 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
         <div className="min-h-0 overflow-hidden rounded-lg border border-[var(--border-base)] bg-[var(--bg-surface)]"><MaestroYamlPreviewPanel yaml={builder.yaml} onImport={handleImport} /></div>
         <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--border-base)] bg-[var(--bg-surface)]">
           <div className="flex h-8 border-b border-[var(--border-subtle)] px-2">
-            {(['history', 'logs'] as const).map((tab) => <button key={tab} type="button" onClick={() => setLowerRightTab(tab)} className={`relative px-2 text-[10px] font-semibold capitalize ${lowerRightTab === tab ? 'text-primary after:absolute after:inset-x-1 after:bottom-0 after:h-0.5 after:bg-primary' : 'text-[var(--text-subtle)]'}`}>{tab === 'history' ? 'Run History' : 'Logs'}</button>)}
+            {(['history', 'logs'] as const).map((tab) => <button key={tab} type="button" onClick={() => showLowerRight(tab)} className={`relative px-2 text-[10px] font-semibold capitalize ${lowerRightTab === tab ? 'text-primary after:absolute after:inset-x-1 after:bottom-0 after:h-0.5 after:bg-primary' : 'text-[var(--text-subtle)]'}`}>{tab === 'history' ? 'Run History' : 'Logs'}</button>)}
           </div>
           <div className="min-h-0 flex-1">
             {lowerRightTab === 'history' ? <MaestroRunHistoryPanel refreshToken={runHistoryToken} showHeader={false} /> : (
@@ -896,6 +946,7 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
           </div>
         </div>
       </div>
+      )}
 
       {yamlEditorMode && (
         <MaestroYamlEditorDialog
