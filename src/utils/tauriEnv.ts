@@ -13,3 +13,12 @@ export function isTauri(): boolean {
     typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
   )
 }
+
+/**
+ * Whether device calls have somewhere to go: the Tauri backend, or the
+ * read-only adb bridge the vite dev server provides to a plain browser
+ * (see vite/adbBridge.ts). Never true in builds or under vitest.
+ */
+export function hasAdbBackend(): boolean {
+  return isTauri() || (import.meta.env.DEV && import.meta.env.MODE !== 'test')
+}

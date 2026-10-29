@@ -3,6 +3,7 @@ import type { ReactElement } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import WorkspaceTabBar, { resolveTabLabels } from './WorkspaceTabBar'
 import { ShellUiProvider } from '../../contexts/ShellUiContext'
+import { I18nProvider } from '../../i18n'
 import type { WorkspaceToolTab } from '../../types/workspace'
 
 const baseProps = {
@@ -233,6 +234,30 @@ describe('WorkspaceTabBar', () => {
 
     it('does not decorate serial fallbacks', () => {
       expect(resolveTabLabels(['a', 'b'], undefined)).toEqual({ a: 'a', b: 'b' })
+    })
+  })
+
+  describe('translations', () => {
+    it('renders tool tabs and controls in Thai', () => {
+      render(
+        <I18nProvider initialLocale="th">
+          <ShellUiProvider
+            initialRoute="dashboard"
+            initialOpenWorkspaceTools={['test-runner', 'logcat']}
+          >
+            <WorkspaceTabBar {...baseProps} />
+          </ShellUiProvider>
+        </I18nProvider>,
+      )
+
+      expect(screen.getByRole('tab', { name: 'รันทดสอบ' })).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: 'Logcat' })).toBeInTheDocument()
+      expect(screen.getByRole('tablist', { name: 'พื้นที่ทำงานที่เปิดอยู่' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'ปิดพื้นที่ทำงาน รันทดสอบ' })).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'เปิดพื้นที่ทำงาน' }))
+      expect(screen.getByRole('menuitem', { name: 'รันทดสอบ (เปิดอยู่)' })).toBeInTheDocument()
+      expect(screen.getByRole('menuitem', { name: 'เปรียบเทียบ' })).toBeInTheDocument()
     })
   })
 })

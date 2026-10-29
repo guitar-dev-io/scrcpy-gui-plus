@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { ExternalLink, Maximize2, MonitorSmartphone, X } from 'lucide-react'
+import { useI18n } from '../../i18n'
 
 interface DeviceHeaderProps {
   deviceName: string
@@ -40,13 +41,14 @@ export default function DeviceHeader({
   statusLabel: statusLabelOverride,
   actions,
 }: DeviceHeaderProps) {
+  const { t } = useI18n()
   const statusLabel = statusLabelOverride ?? (connected
-    ? 'Session active'
+    ? t('chrome.device.sessionActive')
     : busy
-      ? 'Connecting'
+      ? t('chrome.device.connecting')
       : deviceSerial
-        ? 'Ready'
-        : 'Offline')
+        ? t('chrome.device.ready')
+        : t('chrome.device.offline'))
 
   return (
     <header className={`flex min-h-14 shrink-0 flex-wrap items-center gap-x-4 gap-y-2 bg-[var(--bg-elevated)] px-4 py-2.5 ${standalone ? 'mb-3 rounded-xl border border-[var(--border-subtle)]' : 'border-b border-[var(--border-subtle)]'}`}>
@@ -57,7 +59,7 @@ export default function DeviceHeader({
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           <h2 className="truncate text-xs font-semibold text-[var(--text-base)]">
-            {deviceName || 'Device Workspace'}
+            {deviceName || t('chrome.device.workspaceTitle')}
           </h2>
           <span
             className={`rounded px-1.5 py-0.5 text-[8px] font-semibold ${
@@ -73,8 +75,8 @@ export default function DeviceHeader({
         </div>
         <p className="mt-0.5 max-w-72 truncate text-[9px] text-[var(--text-subtle)]">
           {deviceSerial
-            ? [deviceSerial, androidVersion && `Android ${androidVersion}`, connection, batteryLevel !== undefined && `Battery ${batteryLevel}%`].filter(Boolean).join(' · ')
-            : 'Select a device to begin'}
+            ? [deviceSerial, androidVersion && t('chrome.device.androidVersion', { version: androidVersion }), connection, batteryLevel !== undefined && t('chrome.device.battery', { level: batteryLevel })].filter(Boolean).join(' · ')
+            : t('chrome.device.selectDevice')}
         </p>
       </div>
 
