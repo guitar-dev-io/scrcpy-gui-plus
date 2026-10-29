@@ -266,4 +266,20 @@ describe('AppManager workspace', () => {
     expect(menu).toHaveClass('top-12')
     expect(menu).not.toHaveClass('bottom-12')
   })
+
+  it('hides the summary, pagination and inspector until a device is selected', () => {
+    mocks.state.packages = []
+    const { props } = renderManager({ activeDevice: '' })
+
+    expect(screen.queryByLabelText('App inventory summary')).not.toBeInTheDocument()
+    expect(screen.queryByText(/^Showing /)).not.toBeInTheDocument()
+    expect(screen.queryByText('App Inspector')).not.toBeInTheDocument()
+
+    const install = screen.getByText('Install APK').closest('summary')!
+    expect(install).toHaveAttribute('aria-disabled', 'true')
+    expect(install).toHaveAttribute('title', expect.stringContaining('Connect or select an Android device'))
+    install.click()
+    expect(props.onInstallApk).not.toHaveBeenCalled()
+    expect(install.closest('details')).not.toHaveAttribute('open')
+  })
 })
