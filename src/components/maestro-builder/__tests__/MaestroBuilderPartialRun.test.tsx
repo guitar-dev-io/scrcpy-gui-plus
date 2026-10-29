@@ -116,5 +116,24 @@ describe('MaestroBuilder partial runs', () => {
     fireEvent.click(screen.getByRole('button', { name: 'App ID com.laundryyou.washxpress.staging. Edit' }))
     expect(screen.getByLabelText('Application package')).toHaveValue('com.laundryyou.washxpress.staging')
   })
+
+  it('warns while the flow still targets the template app and offers to fix it', () => {
+    render(<MaestroBuilder activeDevice="pixel-1" notify={mocks.notify} />)
+
+    expect(screen.getByRole('alert')).toHaveTextContent('still targets the template app (com.example.app)')
+    expect(screen.getByRole('button', { name: 'Use foreground app' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Enter package name' }))
+    expect(screen.getByLabelText('Application package')).toBeInTheDocument()
+  })
+
+  it('does not warn once a real app is set, and cannot detect without a device', () => {
+    const { unmount } = render(<MaestroBuilder activeDevice="pixel-1" packageName="com.laundryyou.washxpress.staging" notify={mocks.notify} />)
+    expect(screen.queryByText(/template app/)).not.toBeInTheDocument()
+    unmount()
+    localStorage.clear() // the first flow auto-saved with the real app id
+
+    render(<MaestroBuilder activeDevice="" notify={mocks.notify} />)
+    expect(screen.getByRole('button', { name: 'Use foreground app' })).toBeDisabled()
+  })
 })
 

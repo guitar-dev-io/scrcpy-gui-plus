@@ -78,6 +78,14 @@ function isFormTarget(target: EventTarget | null): boolean {
   return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable)
 }
 
+const PLACEHOLDER_APP_ID = 'com.example.app'
+
+/** A flow still pointing at the template app id will fail to launch ("not installed"). */
+function needsAppId(appId: string): boolean {
+  const value = appId.trim()
+  return value === '' || value === PLACEHOLDER_APP_ID
+}
+
 function enabledExecutableActionIds(actions: MaestroFlowAction[]): string[] {
   return actions.filter((action) => action.enabled).flatMap((action) =>
     action.children?.length ? enabledExecutableActionIds(action.children) : [action.id],
@@ -712,7 +720,7 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
                 onClick={() => setAdvancedOpen(true)}
                 title="The app this flow tests. Click to change it."
                 aria-label={builder.flow.appId ? `App ID ${builder.flow.appId}. Edit` : 'Set app ID'}
-                className={`flex max-w-64 shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[12px] ${builder.flow.appId ? 'border-[var(--border-base)] text-[var(--text-muted)] hover:border-primary/40 hover:text-primary' : 'border-amber-500/40 text-amber-400'}`}
+                className={`flex max-w-64 shrink-0 items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[12px] ${needsAppId(builder.flow.appId) ? 'border-amber-500/40 text-amber-400' : 'border-[var(--border-base)] text-[var(--text-muted)] hover:border-primary/40 hover:text-primary'}`}
               >
                 <Package size={10} className="shrink-0" />
                 <span className="truncate">{builder.flow.appId || 'Set app ID'}</span>
@@ -780,6 +788,18 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
           {batchRunning && <span className="ml-auto font-semibold text-primary">Running {targetResolution.serials.length} devices independently…</span>}
           {!targetResolution.isValid && <span role="alert" className="ml-auto text-red-300">{targetResolution.error?.message}</span>}
         </div>
+
+        {needsAppId(builder.flow.appId) && (
+          <div role="alert" className="flex flex-wrap items-center gap-2 border-t border-amber-500/25 bg-amber-500/10 px-3 py-1.5 text-[11px] text-amber-300">
+            <span className="min-w-0 flex-1">
+              {builder.flow.appId.trim() === '' ? 'This flow has no app to test.' : `This flow still targets the template app (${PLACEHOLDER_APP_ID}), which is not installed on your device.`}
+              {' '}Open the app on the device and detect it, or enter its package name.
+            </span>
+            <button type="button" onClick={() => void detectForegroundApp()} disabled={!activeDevice || foregroundLoading} className="h-6 shrink-0 rounded border border-amber-500/40 px-2 font-semibold hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-40">{foregroundLoading ? 'Detecting…' : 'Use foreground app'}</button>
+            <button type="button" onClick={() => setAdvancedOpen(true)} className="h-6 shrink-0 rounded border border-amber-500/40 px-2 font-semibold hover:bg-amber-500/10">Enter package name</button>
+            {foregroundError && <span className="basis-full text-red-300">Could not detect the foreground app: {foregroundError}</span>}
+          </div>
+        )}
 
         <div className="flex min-h-7 items-center gap-2 border-t border-[var(--border-subtle)] px-3 text-[10px]">
           <span className="shrink-0 font-semibold uppercase tracking-wider text-[var(--text-subtle)]">Flow file</span>

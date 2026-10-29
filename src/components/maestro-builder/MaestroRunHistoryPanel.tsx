@@ -102,6 +102,11 @@ export default function MaestroRunHistoryPanel({
                           : '—'}{' '}
                         · {timeAgo(run.createdAt)}
                       </p>
+                      {run.status === 'failed' && (run.maestro?.failure?.reason || run.maestro?.failure?.message) && (
+                        <p className="mt-0.5 truncate text-[10px] text-red-300" title={run.maestro.failure.reason || run.maestro.failure.message}>
+                          {run.maestro.failure.reason || run.maestro.failure.message}
+                        </p>
+                      )}
                     </div>
                   </button>
                   {expanded && (
