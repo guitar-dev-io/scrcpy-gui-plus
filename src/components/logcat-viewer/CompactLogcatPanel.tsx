@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { Pause, Play, Search, Trash2 } from 'lucide-react'
+import { useI18n } from '../../i18n'
 import { useLogcat } from '../../hooks/useLogcat'
 import { LOG_LEVELS, type LogLevel } from '../../types/logcat'
 
@@ -9,13 +10,13 @@ interface CompactLogcatPanelProps {
   enabled: boolean
 }
 
-const LEVEL_LABELS: Record<LogLevel, string> = {
-  V: 'Verbose',
-  D: 'Debug',
-  I: 'Info',
-  W: 'Warning',
-  E: 'Error',
-  F: 'Fatal',
+const LEVEL_LABEL_KEYS: Record<LogLevel, string> = {
+  V: 'logcatViewer.levelVerbose',
+  D: 'logcatViewer.levelDebug',
+  I: 'logcatViewer.levelInfo',
+  W: 'logcatViewer.levelWarning',
+  E: 'logcatViewer.levelError',
+  F: 'logcatViewer.levelFatal',
 }
 
 const LEVEL_TONES: Record<LogLevel, string> = {
@@ -33,6 +34,7 @@ export default function CompactLogcatPanel({
   customPath,
   enabled,
 }: CompactLogcatPanelProps) {
+  const { t } = useI18n()
   const logcat = useLogcat({ activeDevice, customPath, enabled })
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
@@ -51,13 +53,13 @@ export default function CompactLogcatPanel({
       <div className="flex h-10 shrink-0 items-center gap-2 border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)] px-3">
         <span className={`h-1.5 w-1.5 rounded-full ${logcat.running ? 'bg-emerald-400' : 'bg-zinc-600'}`} />
         <select
-          aria-label="Minimum log level"
+          aria-label={t('logcat.minLevel')}
           value={logcat.minLevel}
           onChange={(event) => logcat.setMinLevel(event.target.value as LogLevel)}
           className="h-7 rounded-md border border-[var(--border-base)] bg-[var(--bg-input)] px-2 text-[9px] text-[var(--text-muted)] outline-none focus:border-primary"
         >
           {LOG_LEVELS.map((level) => (
-            <option key={level} value={level}>{LEVEL_LABELS[level]}</option>
+            <option key={level} value={level}>{t(LEVEL_LABEL_KEYS[level])}</option>
           ))}
         </select>
         <label className="relative min-w-0 flex-1">
@@ -65,15 +67,15 @@ export default function CompactLogcatPanel({
           <input
             value={logcat.search}
             onChange={(event) => logcat.setSearch(event.target.value)}
-            aria-label="Filter logcat"
-            placeholder="Filter tag, package or message…"
+            aria-label={t('logcatViewer.filterAria')}
+            placeholder={t('logcatViewer.filterPlaceholder')}
             className="h-7 w-full rounded-md border border-[var(--border-base)] bg-black/20 pl-7 pr-2 text-[9px] text-[var(--text-muted)] outline-none placeholder:text-[var(--text-subtle)] focus:border-primary"
           />
         </label>
         <button
           type="button"
           onClick={logcat.togglePause}
-          aria-label={logcat.paused ? 'Resume logcat' : 'Pause logcat'}
+          aria-label={logcat.paused ? t('logcatViewer.resumeAria') : t('logcatViewer.pauseAria')}
           aria-pressed={logcat.paused}
           className={`flex h-7 w-7 items-center justify-center rounded-md ${logcat.paused ? 'bg-amber-500/10 text-amber-400' : 'text-[var(--text-subtle)] hover:bg-white/5 hover:text-primary'}`}
         >
@@ -82,7 +84,7 @@ export default function CompactLogcatPanel({
         <button
           type="button"
           onClick={logcat.clear}
-          aria-label="Clear logcat view"
+          aria-label={t('logcatViewer.clearViewAria')}
           className="flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-subtle)] hover:bg-white/5 hover:text-red-400"
         >
           <Trash2 size={11} />
@@ -94,10 +96,10 @@ export default function CompactLogcatPanel({
 
       <div ref={scrollRef} className="custom-scrollbar min-h-0 flex-1 overflow-y-auto px-3 py-2">
         {!activeDevice ? (
-          <p className="py-8 text-center text-zinc-600">Select a device to stream logcat.</p>
+          <p className="py-8 text-center text-zinc-600">{t('logcatViewer.selectDevice')}</p>
         ) : logcat.filtered.length === 0 ? (
           <p className="py-8 text-center text-zinc-600">
-            {logcat.running ? 'Waiting for matching logcat entries…' : 'Starting logcat stream…'}
+            {logcat.running ? t('logcatViewer.waitingMatching') : t('logcatViewer.starting')}
           </p>
         ) : logcat.filtered.map((entry) => (
           <div key={entry.id} className="flex gap-2 border-l border-zinc-900 py-0.5 pl-2 leading-relaxed hover:border-primary/30">

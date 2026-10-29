@@ -25,7 +25,7 @@ export default function InputControlPage({
         />
       </header>
 
-      <section aria-label="Keymap controller" className="mt-5 min-h-0 flex-1">
+      <section aria-label={t('pages.inputControl.keymapAria')} className="mt-5 min-h-0 flex-1">
         <KeymapController
           embedded
           isOpen={false}

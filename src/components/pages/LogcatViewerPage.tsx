@@ -27,7 +27,7 @@ export default function LogcatViewerPage({
         />
       </header>
 
-      <section aria-label="Logcat stream" className="mt-5 min-h-0 flex-1">
+      <section aria-label={t('logcatViewer.streamAria')} className="mt-5 min-h-0 flex-1">
         <LogcatViewer
           embedded
           isOpen={false}
