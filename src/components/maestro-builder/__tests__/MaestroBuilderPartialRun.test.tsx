@@ -74,8 +74,8 @@ describe('MaestroBuilder partial runs', () => {
 
   it('runs the selected step alone through a separate file and leaves the flow file untouched', async () => {
     render(<MaestroBuilder activeDevice="pixel-1" notify={mocks.notify} />)
-    fireEvent.click(screen.getByRole('button', { name: /Add Step/i }))
-    fireEvent.click(screen.getByRole('button', { name: /Add Step/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add Launch App' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add Launch App' }))
 
     fireEvent.click(await screen.findByRole('button', { name: 'Step 2' }))
 
@@ -90,7 +90,7 @@ describe('MaestroBuilder partial runs', () => {
 
   it('runs from the selected step to the end', async () => {
     render(<MaestroBuilder activeDevice="pixel-1" notify={mocks.notify} />)
-    for (let count = 0; count < 3; count += 1) fireEvent.click(screen.getByRole('button', { name: /Add Step/i }))
+    for (let count = 0; count < 3; count += 1) fireEvent.click(screen.getByRole('button', { name: 'Add Launch App' }))
 
     // Select the middle step through its card, then run from there: steps 2 and 3 remain.
     await screen.findByRole('button', { name: 'From step 3' })

@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState, type KeyboardEvent } from 'react'
-import { AlertTriangle, Circle, Plus } from 'lucide-react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { createPortal } from 'react-dom'
+import { AlertTriangle, Circle, Plus, Search } from 'lucide-react'
 import type {
   MaestroBuilderSelector,
   MaestroCommandId,
@@ -9,7 +10,11 @@ import type {
 } from '../../types/maestroBuilder'
 import type { MaestroActionRunStatus } from '../../hooks/useMaestroRunProgress'
 import MaestroActionCard from './MaestroActionCard'
+import MaestroCommandLibrary from './MaestroCommandLibrary'
 import { MAESTRO_COMMON_COMMANDS } from '../../utils/maestroCommandRegistry'
+
+/** One-click steps. Kept short so the step list keeps its room; everything else is under All actions. */
+const QUICK_STEP_IDS = ['launchApp', 'tapOn', 'inputText', 'assertVisible']
 
 interface MaestroFlowBuilderPanelProps {
   flow: MaestroFlow
@@ -90,9 +95,47 @@ export default function MaestroFlowBuilderPanel({
 }: MaestroFlowBuilderPanelProps) {
   const [uncontrolledSelectedActionId, setUncontrolledSelectedActionId] =
     useState<string | null>(null)
-  const [newCommand, setNewCommand] = useState(
-    MAESTRO_COMMON_COMMANDS[0]?.id ?? 'launchApp',
-  )
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const pickerRef = useRef<HTMLDivElement>(null)
+  const pickerButtonRef = useRef<HTMLButtonElement>(null)
+  const pickerSearchRef = useRef<HTMLInputElement | null>(null)
+  const [pickerBox, setPickerBox] = useState<{ left: number; bottom: number; width: number; maxHeight: number } | null>(null)
+
+  // The panel clips overflow, so the list is portalled and placed just above the button.
+  useLayoutEffect(() => {
+    if (!pickerOpen) return
+    const place = () => {
+      const rect = pickerButtonRef.current?.getBoundingClientRect()
+      if (!rect) return
+      const width = Math.min(360, window.innerWidth - 16)
+      setPickerBox({
+        left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)),
+        bottom: window.innerHeight - rect.top + 6,
+        width,
+        maxHeight: Math.max(200, Math.min(440, rect.top - 16)),
+      })
+    }
+    place()
+    window.addEventListener('resize', place)
+    return () => window.removeEventListener('resize', place)
+  }, [pickerOpen])
+
+  // The full action list opens above the bar; it closes on Escape or a click elsewhere.
+  const pickerPlaced = pickerBox !== null
+  useEffect(() => {
+    if (!pickerOpen) {
+      setPickerBox(null)
+      return
+    }
+    if (pickerPlaced) pickerSearchRef.current?.focus()
+    const onMouseDown = (event: MouseEvent) => {
+      const target = event.target as Node
+      if (pickerRef.current?.contains(target) || pickerButtonRef.current?.contains(target)) return
+      setPickerOpen(false)
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [pickerOpen, pickerPlaced])
   const controlledSelection = selectedActionId !== undefined
   const effectiveSelectedActionId = controlledSelection
     ? selectedActionId
@@ -220,18 +263,56 @@ export default function MaestroFlowBuilderPanel({
         )}
       </ol>
       {onAddAction && (
-        <div className="flex shrink-0 items-center gap-1 border-t border-[var(--border-subtle)] p-2">
-          <select
-            aria-label="Step type"
-            value={newCommand}
-            onChange={(event) => setNewCommand(event.target.value)}
-            className="h-7 min-w-0 flex-1 rounded border border-[var(--border-base)] bg-[var(--bg-input)] px-1.5 text-[10px] text-[var(--text-muted)] outline-none focus:border-primary/50"
-          >
-            {MAESTRO_COMMON_COMMANDS.map((command) => <option key={command.id} value={command.id}>{command.label}</option>)}
-          </select>
-          <button type="button" onClick={() => onAddAction(newCommand)} className="flex h-7 items-center gap-1 rounded border border-primary/35 px-2 text-[10px] font-semibold text-primary hover:bg-primary/10">
-            <Plus size={9} /> Add Step
-          </button>
+        <div className="relative shrink-0 border-t border-[var(--border-subtle)] p-2">
+          {pickerOpen && pickerBox && createPortal(
+            <div
+              ref={pickerRef}
+              role="dialog"
+              aria-label="Choose a step"
+              style={{ left: pickerBox.left, bottom: pickerBox.bottom, width: pickerBox.width, height: pickerBox.maxHeight }}
+              className="fixed z-[400] overflow-hidden rounded-lg border border-[var(--border-base)] bg-[var(--bg-elevated)] shadow-2xl"
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.stopPropagation()
+                  setPickerOpen(false)
+                  pickerButtonRef.current?.focus()
+                }
+              }}
+            >
+              <MaestroCommandLibrary
+                searchInputRef={pickerSearchRef}
+                onAddCommand={(commandId) => {
+                  onAddAction(commandId)
+                  setPickerOpen(false)
+                }}
+              />
+            </div>,
+            document.body,
+          )}
+          <div role="group" aria-label="Add step" className="flex flex-wrap gap-1">
+            {QUICK_STEP_IDS.map((id) => MAESTRO_COMMON_COMMANDS.find((command) => command.id === id)).filter((command): command is NonNullable<typeof command> => Boolean(command)).map((command) => (
+              <button
+                key={command.id}
+                type="button"
+                title={command.description}
+                aria-label={`Add ${command.label}`}
+                onClick={() => onAddAction(command.id)}
+                className="flex h-7 items-center gap-1 rounded border border-[var(--border-base)] bg-black/10 px-2 text-[11px] font-semibold text-[var(--text-muted)] hover:border-primary/45 hover:bg-primary/10 hover:text-primary"
+              >
+                <Plus size={10} /> {command.label}
+              </button>
+            ))}
+            <button
+              ref={pickerButtonRef}
+              type="button"
+              aria-haspopup="dialog"
+              aria-expanded={pickerOpen}
+              onClick={() => setPickerOpen((open) => !open)}
+              className="flex h-7 items-center gap-1 rounded border border-primary/35 px-2 text-[11px] font-semibold text-primary hover:bg-primary/10"
+            >
+              <Search size={10} /> All actions…
+            </button>
+          </div>
         </div>
       )}
     </div>
