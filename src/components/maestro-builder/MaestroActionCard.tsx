@@ -62,6 +62,8 @@ interface MaestroActionCardProps {
   onEditAction?: (actionId: string) => void
   /** The flow's application package, shown on Launch App so it says which app it opens. */
   appId?: string
+  /** Soft tips for this step (see stepHints); never block a run. */
+  hints?: string[]
 }
 
 const RUN_STATUS_BADGE: Record<
@@ -253,6 +255,7 @@ export default function MaestroActionCard({
   onViewLogs,
   onEditAction,
   appId,
+  hints = [],
 }: MaestroActionCardProps) {
   const [collapseOverride, setCollapseOverride] = useState<boolean | null>(null)
   const [advancedOpen, setAdvancedOpen] = useState(false)
@@ -388,6 +391,16 @@ export default function MaestroActionCard({
             <p className={`mt-0.5 text-[10px] text-[var(--text-subtle)] ${launchAppSummary(action, appId) ? 'break-all' : 'truncate'}`}>
               {summary}
             </p>
+          )}
+          {hints.length > 0 && (
+            <ul aria-label="Tips" className="mt-1 space-y-0.5">
+              {hints.map((hint) => (
+                <li key={hint} className="flex gap-1 text-[11px] leading-snug text-amber-300">
+                  <span aria-hidden>💡</span>
+                  <span>{hint}</span>
+                </li>
+              ))}
+            </ul>
           )}
           {failedActionControls}
           <div className={expanded ? '' : 'hidden'}>

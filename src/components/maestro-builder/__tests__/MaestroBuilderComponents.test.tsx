@@ -394,3 +394,26 @@ describe('Add step picker', () => {
   })
 })
 
+describe('Step tips', () => {
+  it('shows the tips under the step they apply to, and only there', () => {
+    const flow = panelFlow([actionWithId('launchApp', 'launch'), actionWithId('inputText', 'type')])
+    render(
+      <MaestroFlowBuilderPanel
+        flow={flow}
+        issues={noIssues}
+        onToggleEnabled={vi.fn()}
+        onMove={vi.fn()}
+        onDuplicate={vi.fn()}
+        onDelete={vi.fn()}
+        onSelectorChange={vi.fn()}
+        onFieldChange={vi.fn()}
+      />,
+    )
+
+    const tips = screen.getAllByRole('list', { name: 'Tips' })
+    expect(tips).toHaveLength(1)
+    expect(tips[0]).toHaveTextContent('Add Wait For Element before this step.')
+    expect(tips[0]).toHaveTextContent('Tap the field first')
+  })
+})
+
