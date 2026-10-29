@@ -49,14 +49,14 @@ export default function CompactLogcatPanel({
   }, [logcat.filtered, logcat.paused])
 
   return (
-    <section className="flex h-full min-h-0 flex-col bg-[#070a10] font-mono text-[10px]">
+    <section className="flex h-full min-h-0 flex-col bg-[#070a10] font-mono text-[12px]">
       <div className="flex h-10 shrink-0 items-center gap-2 border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)] px-3">
         <span className={`h-1.5 w-1.5 rounded-full ${logcat.running ? 'bg-emerald-400' : 'bg-zinc-600'}`} />
         <select
           aria-label={t('logcat.minLevel')}
           value={logcat.minLevel}
           onChange={(event) => logcat.setMinLevel(event.target.value as LogLevel)}
-          className="h-7 rounded-md border border-[var(--border-base)] bg-[var(--bg-input)] px-2 text-[9px] text-[var(--text-muted)] outline-none focus:border-primary"
+          className="h-7 rounded-md border border-[var(--border-base)] bg-[var(--bg-input)] px-2 text-[11px] text-[var(--text-muted)] outline-none focus:border-primary"
         >
           {LOG_LEVELS.map((level) => (
             <option key={level} value={level}>{t(LEVEL_LABEL_KEYS[level])}</option>
@@ -69,7 +69,7 @@ export default function CompactLogcatPanel({
             onChange={(event) => logcat.setSearch(event.target.value)}
             aria-label={t('logcatViewer.filterAria')}
             placeholder={t('logcatViewer.filterPlaceholder')}
-            className="h-7 w-full rounded-md border border-[var(--border-base)] bg-black/20 pl-7 pr-2 text-[9px] text-[var(--text-muted)] outline-none placeholder:text-[var(--text-subtle)] focus:border-primary"
+            className="h-7 w-full rounded-md border border-[var(--border-base)] bg-black/20 pl-7 pr-2 text-[11px] text-[var(--text-muted)] outline-none placeholder:text-[var(--text-subtle)] focus:border-primary"
           />
         </label>
         <button
@@ -89,7 +89,7 @@ export default function CompactLogcatPanel({
         >
           <Trash2 size={11} />
         </button>
-        <span className="w-14 shrink-0 text-right text-[8px] tabular-nums text-[var(--text-subtle)]">
+        <span className="w-14 shrink-0 text-right text-[10px] tabular-nums text-[var(--text-subtle)]">
           {logcat.filtered.length}/{logcat.entries.length}
         </span>
       </div>
