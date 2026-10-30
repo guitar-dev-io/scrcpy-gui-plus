@@ -4,6 +4,7 @@ import {
   Clipboard,
   Eye,
   ExternalLink,
+  Hand,
   Info,
   Keyboard,
   Loader2,
@@ -52,6 +53,8 @@ interface CompanionPanelProps {
   onStopScreen?: () => Promise<unknown> | void
   onDisconnect?: () => Promise<void> | void
   onRequest?: CompanionRequest
+  /** Opens the full-size Companion workspace, where the phone can be controlled. */
+  onOpenWorkspace?: (device: CompanionDevice) => void
   androidTargets?: string[]
   embeddedConnections?: Record<string, boolean>
   selectedAndroidTarget?: string
@@ -131,6 +134,7 @@ export default function CompanionPanel({
   onStopScreen,
   onDisconnect,
   onRequest,
+  onOpenWorkspace,
   androidTargets = [],
   embeddedConnections = {},
   selectedAndroidTarget = '',
@@ -622,6 +626,16 @@ export default function CompanionPanel({
             </div>
           )}
 
+          {onOpenWorkspace && (
+            <button
+              type="button"
+              onClick={() => onOpenWorkspace(device)}
+              className="flex w-full items-center justify-center gap-1.5 rounded-md bg-primary px-2 py-2 text-[10px] font-black uppercase tracking-widest text-on-primary hover:brightness-110"
+            >
+              <Hand size={12} /> {t('companion.openWorkspace')}
+            </button>
+          )}
+
           {screenSupported && (
             <div className="space-y-2 border-t border-zinc-800/60 pt-2">
               <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-zinc-500">
@@ -645,13 +659,19 @@ export default function CompanionPanel({
                   </p>
                 )}
               {screenFrame ? (
-                <div className="overflow-hidden rounded-md border border-zinc-800 bg-black">
+                <button
+                  type="button"
+                  onClick={() => onOpenWorkspace?.(device)}
+                  disabled={!onOpenWorkspace}
+                  title={onOpenWorkspace ? t('companion.openWorkspace') : undefined}
+                  className="block w-full overflow-hidden rounded-md border border-zinc-800 bg-black enabled:hover:border-primary/60"
+                >
                   <img
                     src={screenFrame}
                     alt={t('companion.screenPreview')}
                     className="block max-h-64 w-full object-contain"
                   />
-                </div>
+                </button>
               ) : (
                 <div className="rounded-md border border-dashed border-zinc-800 bg-black/30 px-2.5 py-3 text-center text-[9px] leading-relaxed text-zinc-600">
                   {screenStatus?.message || t('companion.screenPermissionHint')}

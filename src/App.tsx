@@ -1328,6 +1328,7 @@ function AppContent() {
       onStopScreen={companion.stopScreen}
       onDisconnect={companion.disconnect}
       onRequest={companion.request}
+      onOpenWorkspace={openCompanionWorkspace}
       androidTargets={devices}
       embeddedConnections={embeddedConnections}
       selectedAndroidTarget={activeDevice}

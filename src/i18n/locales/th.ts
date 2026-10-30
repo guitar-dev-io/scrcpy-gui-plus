@@ -87,13 +87,14 @@ export const th: DeepPartialTranslations = {
       stopped: 'หยุดแล้ว',
       error: 'ผิดพลาด',
     },
+    openWorkspace: 'เปิดจอใหญ่และควบคุม',
     screenPreview: 'ตัวอย่างหน้าจอ Android',
     startScreen: 'เริ่มส่งหน้าจอ',
     stopScreen: 'หยุดส่งหน้าจอ',
     screenPermissionHint:
       'กดเริ่มส่งหน้าจอ แล้วอนุญาตการบันทึกหน้าจอในหน้าต่างระบบ Android',
     screenViewerHint:
-      'หลังอนุญาตแล้ว ภาพสดจะแสดงตรงนี้ใน Connection Tools และแสดงใน Dashboard ของอุปกรณ์ที่เปิดอยู่ด้วย',
+      'ตรงนี้เป็นภาพตัวอย่างขนาดเล็ก ถ้าต้องการควบคุมมือถือ กด "เปิดจอใหญ่และควบคุม" (หรือคลิกที่ภาพ) เพื่อเปิด workspace ของ Companion ใน Dashboard',
     controlBack: 'ย้อนกลับ',
     controlHome: 'หน้าหลัก',
     controlRecents: 'แอปล่าสุด',

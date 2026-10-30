@@ -153,13 +153,14 @@ export const en = {
       stopped: 'Stopped',
       error: 'Error',
     },
+    openWorkspace: 'Open full screen & control',
     screenPreview: 'Android screen preview',
     startScreen: 'Start screen',
     stopScreen: 'Stop screen',
     screenPermissionHint:
       'Click Start screen, then approve screen capture in the Android system dialog.',
     screenViewerHint:
-      'The live preview appears here in Connection Tools after you approve Android. It also appears in an open device Dashboard.',
+      'This is a small preview. To control the phone, click "Open full screen & control" (or the preview) to open its Companion workspace on the Dashboard.',
     controlBack: 'Back',
     controlHome: 'Home',
     controlRecents: 'Recent apps',
