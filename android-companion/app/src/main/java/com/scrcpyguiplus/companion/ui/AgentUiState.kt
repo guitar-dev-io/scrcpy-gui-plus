@@ -68,6 +68,9 @@ class AgentUiState {
 
     var logs = mutableStateOf<List<String>>(emptyList())
 
+    /** True when the user switched DeviceControlService on in Accessibility settings. */
+    var deviceControlEnabled = mutableStateOf(false)
+
     var remoteControlAvailable = mutableStateOf(false)
     var remoteControlStatus = mutableStateOf("Waiting for the desktop to approve a target")
 }

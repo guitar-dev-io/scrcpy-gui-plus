@@ -32,6 +32,10 @@ object ProtocolJson {
         "stop_screen_share",
         "start_remote_control",
         "stop_remote_control",
+        "control_status",
+        "control_gesture",
+        "control_action",
+        "control_text",
     )
 
     private val UTF_8 = StandardCharsets.UTF_8

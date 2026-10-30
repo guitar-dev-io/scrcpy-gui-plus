@@ -160,14 +160,29 @@ export const en = {
       'Click Start screen, then approve screen capture in the Android system dialog.',
     screenViewerHint:
       'The live preview appears here in Connection Tools after you approve Android. It also appears in an open device Dashboard.',
+    controlBack: 'Back',
+    controlHome: 'Home',
+    controlRecents: 'Recent apps',
+    controlNotifications: 'Notifications',
+    controlEnter: 'Enter',
+    controlSend: 'Type',
+    controlTextPlaceholder: 'Type into the focused field on the phone',
+    controlNotAllowed:
+      'Control is not allowed yet. On the phone open Mobile Studio Agent, tap "Allow device control" and switch on "Mobile Studio device control".',
+    controlCheckAgain: 'Check again',
+    controlActiveTitle: 'Controlling over Companion',
+    controlActiveBody:
+      'Click to tap, drag to swipe, hold to long-press. Input goes through the phone’s Accessibility permission, no cable or adb needed.',
+    controlHowTo:
+      'To control this phone without adb, allow "Mobile Studio device control" in the phone’s Accessibility settings, then start the screen.',
     screenLockNote:
       'Switching apps is supported. Locking the phone may stop Android screen capture; unlock it and start sharing again.',
     screenSecurityNote:
-      'JPEG streaming uses the trusted private LAN pairing session and is view-only.',
+      'JPEG streaming uses the trusted private LAN pairing session. Control needs the phone’s Accessibility permission.',
     screenUnsupported:
       'Update the Android Companion app to enable QR / LAN screen streaming.',
     lanScreenMode:
-      'QR / LAN Companion can share the screen after Android permission. This path is view-only.',
+      'QR / LAN Companion can share the screen after Android permission, and control it once device control is allowed on the phone.',
     usbScreenMode:
       'USB Companion handles device actions. Use ADB + scrcpy for the interactive mirror.',
     adbFallbackMode:

@@ -130,6 +130,25 @@ const ALLOWED_METHODS: &[&str] = &[
     "stop_screen_share",
     "start_remote_control",
     "stop_remote_control",
+    // Phone-side input through the companion's AccessibilityService (no adb).
+    "control_status",
+    "control_gesture",
+    "control_action",
+    "control_text",
+];
+
+const MAX_CONTROL_GESTURE_POINTS: usize = 256;
+const MAX_CONTROL_GESTURE_DURATION_MS: u64 = 10_000;
+const MAX_CONTROL_TEXT_BYTES: usize = 4_096;
+const CONTROL_ACTIONS: &[&str] = &[
+    "back",
+    "home",
+    "recents",
+    "notifications",
+    "quick_settings",
+    "power_dialog",
+    "lock_screen",
+    "enter",
 ];
 
 // A v1 client that omits capabilities predates remote control. Keep its
@@ -3628,7 +3647,66 @@ fn validate_method(method: &str, params: &Value) -> CompanionResult<()> {
         "stop_screen_share" => {}
         "start_remote_control" => validate_remote_control_params(params)?,
         "stop_remote_control" => {}
+        "control_status" => {}
+        "control_gesture" => validate_control_gesture(params)?,
+        "control_action" => {
+            let action = params
+                .get("action")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if !CONTROL_ACTIONS.contains(&action) {
+                return Err(CompanionError::new(
+                    CompanionErrorKind::Validation,
+                    "control_action requires a supported params.action",
+                ));
+            }
+        }
+        "control_text" => {
+            let text = params
+                .get("text")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if text.is_empty() || text.len() > MAX_CONTROL_TEXT_BYTES {
+                return Err(CompanionError::new(
+                    CompanionErrorKind::Validation,
+                    "control_text requires params.text of 1 to 4096 bytes",
+                ));
+            }
+        }
         _ => {}
+    }
+    Ok(())
+}
+
+/// `points` are `[x, y]` pairs normalized to the phone's display (0..=1), so the
+/// desktop never needs the phone's pixel size or orientation.
+fn validate_control_gesture(params: &Value) -> CompanionResult<()> {
+    let invalid = |message: &str| CompanionError::new(CompanionErrorKind::Validation, message);
+    let points = params
+        .get("points")
+        .and_then(Value::as_array)
+        .ok_or_else(|| invalid("control_gesture requires params.points"))?;
+    if points.is_empty() || points.len() > MAX_CONTROL_GESTURE_POINTS {
+        return Err(invalid("control_gesture needs 1 to 256 points"));
+    }
+    for point in points {
+        let pair = point.as_array().filter(|pair| pair.len() == 2);
+        let in_range = pair.is_some_and(|pair| {
+            pair.iter()
+                .all(|value| value.as_f64().is_some_and(|v| (0.0..=1.0).contains(&v)))
+        });
+        if !in_range {
+            return Err(invalid(
+                "control_gesture points must be [x, y] between 0 and 1",
+            ));
+        }
+    }
+    let duration = params
+        .get("durationMs")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    if duration == 0 || duration > MAX_CONTROL_GESTURE_DURATION_MS {
+        return Err(invalid("control_gesture durationMs must be 1 to 10000"));
     }
     Ok(())
 }
@@ -5438,5 +5516,33 @@ mod tests {
         let error = decode_response(&serde_json::to_vec(&response).unwrap(), 4).unwrap_err();
         assert_eq!(error.kind, CompanionErrorKind::Protocol);
         assert!(error.loses_session());
+    }
+
+    #[test]
+    fn validates_control_methods() {
+        assert!(validate_method(
+            "control_gesture",
+            &json!({ "points": [[0.5, 0.5]], "durationMs": 60 })
+        )
+        .is_ok());
+        assert!(validate_method(
+            "control_gesture",
+            &json!({ "points": [[0.0, 1.0], [1.0, 0.0]], "durationMs": 300 })
+        )
+        .is_ok());
+        for bad in [
+            json!({ "points": [], "durationMs": 60 }),
+            json!({ "points": [[1.2, 0.5]], "durationMs": 60 }),
+            json!({ "points": [[0.5]], "durationMs": 60 }),
+            json!({ "points": [[0.5, 0.5]], "durationMs": 0 }),
+            json!({ "points": [[0.5, 0.5]], "durationMs": 20_000 }),
+        ] {
+            assert!(validate_method("control_gesture", &bad).is_err(), "{bad}");
+        }
+        assert!(validate_method("control_action", &json!({ "action": "home" })).is_ok());
+        assert!(validate_method("control_action", &json!({ "action": "reboot" })).is_err());
+        assert!(validate_method("control_text", &json!({ "text": "hello" })).is_ok());
+        assert!(validate_method("control_text", &json!({ "text": "" })).is_err());
+        assert!(validate_method("control_status", &json!({})).is_ok());
     }
 }

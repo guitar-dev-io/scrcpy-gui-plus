@@ -1,6 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react'
 import {
+  ArrowLeft,
+  Bell,
+  CornerDownLeft,
   Eye,
+  Hand,
+  Home,
+  LayoutGrid,
   Loader2,
   Maximize2,
   Minimize2,
@@ -13,9 +19,17 @@ import {
 import { useI18n } from '../../i18n'
 import type {
   CompanionDevice,
+  CompanionMethod,
+  CompanionParams,
+  CompanionRequest,
   CompanionScreenState,
   CompanionScreenStatusEvent,
 } from '../../types/companion'
+import {
+  buildControlGesture,
+  pointInContainedImage,
+  type ControlSample,
+} from '../../utils/companionControl'
 
 interface CompanionWorkspaceStageProps {
   device: CompanionDevice
@@ -24,8 +38,17 @@ interface CompanionWorkspaceStageProps {
   screenStatus: CompanionScreenStatusEvent | null
   startScreen: () => Promise<void>
   stopScreen: () => Promise<void>
+  /** Sends companion requests; enables phone control when the app supports it. */
+  request?: CompanionRequest
   compact?: boolean
 }
+
+const CONTROL_BUTTONS = [
+  { action: 'back', label: 'companion.controlBack', icon: ArrowLeft },
+  { action: 'home', label: 'companion.controlHome', icon: Home },
+  { action: 'recents', label: 'companion.controlRecents', icon: LayoutGrid },
+  { action: 'notifications', label: 'companion.controlNotifications', icon: Bell },
+] as const
 
 const focusRing =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]'
@@ -41,6 +64,7 @@ export default function CompanionWorkspaceStage({
   screenStatus,
   startScreen,
   stopScreen,
+  request,
   compact = false,
 }: CompanionWorkspaceStageProps) {
   const { t } = useI18n()
@@ -57,6 +81,88 @@ export default function CompanionWorkspaceStage({
     stage === 'connecting' ||
     stage === 'waiting_permission' ||
     stage === 'reconnecting'
+  // null = not asked yet; the phone answers control_status with whether the user
+  // switched the Accessibility service on.
+  const [controlEnabled, setControlEnabled] = useState<boolean | null>(null)
+  const [controlText, setControlText] = useState('')
+  const samplesRef = useRef<ControlSample[]>([])
+  const imageRef = useRef<HTMLImageElement>(null)
+  const controlSupported =
+    Boolean(request) && device.capabilities.includes('control_gesture')
+  const canControl = controlSupported && controlEnabled === true && connected
+
+  const checkControl = useCallback(async () => {
+    if (!controlSupported || !request) return
+    try {
+      const status = await request<{ enabled?: boolean; ready?: boolean }>(
+        'control_status',
+      )
+      setControlEnabled(Boolean(status?.enabled && status?.ready !== false))
+    } catch (error) {
+      setLocalError(errorMessage(error))
+    }
+  }, [controlSupported, request])
+
+  useEffect(() => {
+    if (connected) void checkControl()
+  }, [connected, checkControl])
+
+  const sendControl = async (method: CompanionMethod, params: CompanionParams) => {
+    if (!request) return
+    try {
+      await request(method, params)
+      setLocalError(null)
+    } catch (error) {
+      const message = errorMessage(error)
+      setLocalError(message)
+      if (message.includes('Device control is off')) setControlEnabled(false)
+    }
+  }
+
+  const samplePoint = (event: PointerEvent<HTMLImageElement>) => {
+    const image = imageRef.current
+    if (!image) return null
+    const point = pointInContainedImage(
+      event.clientX,
+      event.clientY,
+      image.getBoundingClientRect(),
+      image.naturalWidth,
+      image.naturalHeight,
+    )
+    return point ? { ...point, t: event.timeStamp } : null
+  }
+
+  const handlePointerDown = (event: PointerEvent<HTMLImageElement>) => {
+    if (!canControl || event.button !== 0) return
+    const point = samplePoint(event)
+    if (!point) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    samplesRef.current = [point]
+  }
+
+  const handlePointerMove = (event: PointerEvent<HTMLImageElement>) => {
+    if (samplesRef.current.length === 0) return
+    const point = samplePoint(event)
+    if (point) samplesRef.current.push(point)
+  }
+
+  const handlePointerUp = (event: PointerEvent<HTMLImageElement>) => {
+    if (samplesRef.current.length === 0) return
+    const point = samplePoint(event)
+    if (point) samplesRef.current.push(point)
+    const gesture = buildControlGesture(samplesRef.current)
+    samplesRef.current = []
+    if (gesture) void sendControl('control_gesture', { ...gesture })
+  }
+
+  const submitText = async () => {
+    const text = controlText
+    if (!text) return
+    await sendControl('control_text', { text })
+    setControlText('')
+  }
+
   const statusMessage =
     localError ||
     screenStatus?.message ||
@@ -175,16 +281,24 @@ export default function CompanionWorkspaceStage({
       </header>
 
       <div className="flex min-h-0 flex-1 overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
-        <main className="relative flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-auto bg-black/35 p-3">
+        <main className="relative flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-2 overflow-auto bg-black/35 p-3">
           <div
             className={`relative flex max-h-full max-w-full items-center justify-center overflow-hidden rounded-[28px] border-[3px] border-[#3b414d] bg-[#05070b] p-[3px] shadow-[0_18px_42px_rgba(0,0,0,.42)] ${compact ? 'h-[320px]' : 'h-[min(68vh,720px)]'} aspect-[9/19.5]`}
           >
             {frame ? (
               <img
+                ref={imageRef}
                 src={frame}
                 alt={`${device.name} Companion screen`}
                 draggable={false}
-                className="h-full w-full rounded-[23px] object-contain"
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={() => {
+                  samplesRef.current = []
+                }}
+                onContextMenu={(event) => canControl && event.preventDefault()}
+                className={`h-full w-full touch-none select-none rounded-[23px] object-contain ${canControl ? 'cursor-pointer' : ''}`}
               />
             ) : (
               <div className="flex flex-col items-center gap-3 px-6 text-center">
@@ -210,15 +324,94 @@ export default function CompanionWorkspaceStage({
             )}
             <div className="pointer-events-none absolute left-1/2 top-2 h-2 w-16 -translate-x-1/2 rounded-full bg-black/80" />
           </div>
+          {controlSupported && connected && (
+            <div className="flex w-full max-w-md shrink-0 flex-col gap-1.5">
+              {controlEnabled === false ? (
+                <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[9px] text-amber-200">
+                  <Hand size={12} className="shrink-0" />
+                  <span className="flex-1">{t('companion.controlNotAllowed')}</span>
+                  <button
+                    type="button"
+                    onClick={() => void checkControl()}
+                    className={`shrink-0 rounded-md border border-amber-400/40 px-2 py-1 font-semibold hover:bg-amber-500/15 ${focusRing}`}
+                  >
+                    {t('companion.controlCheckAgain')}
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-center gap-1">
+                    {CONTROL_BUTTONS.map(({ action, label, icon: Icon }) => (
+                      <button
+                        key={action}
+                        type="button"
+                        disabled={!canControl}
+                        onClick={() => void sendControl('control_action', { action })}
+                        title={t(label)}
+                        aria-label={t(label)}
+                        className={`flex h-8 w-10 items-center justify-center rounded-md border border-[var(--border-base)] text-[var(--text-muted)] hover:border-primary/50 hover:text-primary disabled:opacity-40 ${focusRing}`}
+                      >
+                        <Icon size={13} />
+                      </button>
+                    ))}
+                  </div>
+                  <form
+                    className="flex items-center gap-1"
+                    onSubmit={(event) => {
+                      event.preventDefault()
+                      void submitText()
+                    }}
+                  >
+                    <input
+                      value={controlText}
+                      onChange={(event) => setControlText(event.target.value)}
+                      disabled={!canControl}
+                      placeholder={t('companion.controlTextPlaceholder')}
+                      className="h-8 min-w-0 flex-1 rounded-md border border-[var(--border-base)] bg-black/20 px-2.5 text-[10px] text-[var(--text-base)] outline-none focus:border-primary/50 disabled:opacity-40"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!canControl || !controlText}
+                      className={`h-8 rounded-md bg-primary px-3 text-[9px] font-semibold text-on-primary disabled:opacity-40 ${focusRing}`}
+                    >
+                      {t('companion.controlSend')}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!canControl}
+                      onClick={() => void sendControl('control_action', { action: 'enter' })}
+                      title={t('companion.controlEnter')}
+                      aria-label={t('companion.controlEnter')}
+                      className={`flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border-base)] text-[var(--text-muted)] hover:text-primary disabled:opacity-40 ${focusRing}`}
+                    >
+                      <CornerDownLeft size={12} />
+                    </button>
+                  </form>
+                </>
+              )}
+            </div>
+          )}
         </main>
 
         {!compact && (
           <aside className="w-64 shrink-0 border-l border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4">
             <div className="flex items-center gap-2 text-[10px] font-semibold text-[var(--text-base)]">
-              <Eye size={13} className="text-primary" /> View-only Companion
+              {canControl ? (
+                <>
+                  <Hand size={13} className="text-primary" /> {t('companion.controlActiveTitle')}
+                </>
+              ) : (
+                <>
+                  <Eye size={13} className="text-primary" /> View-only Companion
+                </>
+              )}
             </div>
             <p className="mt-3 text-[9px] leading-relaxed text-[var(--text-subtle)]">
-              This workspace displays the authenticated JPEG stream from Android Companion. ADB-only controls are intentionally unavailable.
+              {canControl
+                ? t('companion.controlActiveBody')
+                : controlSupported
+                  ? t('companion.controlHowTo')
+                  : 'This workspace displays the authenticated JPEG stream from Android Companion. Update the Android Companion app to control the phone without adb.'}
             </p>
             <p className="mt-3 text-[9px] leading-relaxed text-amber-300/80">
               {t('companion.screenLockNote')}

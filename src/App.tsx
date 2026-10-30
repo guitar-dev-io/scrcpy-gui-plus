@@ -2174,6 +2174,7 @@ function AppContent() {
                       screenStatus={companion.screenStatus}
                       startScreen={companion.startScreen}
                       stopScreen={companion.stopScreen}
+                      request={companion.request}
                       compact={compactMultiDevice}
                     />
                   ) : iosDevice ? (

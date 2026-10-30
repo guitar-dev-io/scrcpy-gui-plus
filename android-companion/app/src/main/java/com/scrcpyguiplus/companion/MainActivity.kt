@@ -29,6 +29,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
+import android.provider.Settings
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.SurfaceView
@@ -132,6 +133,7 @@ class MainActivity : ComponentActivity() {
                     onCheckUsbAccessory = ::discoverAccessory,
                     onForgetStudio = ::forgetTrustedStudio,
                     onDisconnect = { disconnectConnection("Cancelled from the scan screen") },
+                    onOpenDeviceControlSettings = ::openDeviceControlSettings,
                 ),
             )
         }
@@ -160,6 +162,8 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         activityStarted = true
+        // Returning from Accessibility settings lands here, so this keeps the card current.
+        uiState.deviceControlEnabled.value = DeviceControlService.isEnabled(this)
         if (ScreenCaptureService.isRunning()) {
             screenCaptureServiceStarted = true
         } else if (screenCaptureServiceStarted) {
@@ -727,7 +731,42 @@ class MainActivity : ComponentActivity() {
         "stop_screen_share" -> stopScreenShare()
         "start_remote_control" -> startRemoteControlRequest(request.params)
         "stop_remote_control" -> stopRemoteControlRequest()
+        "control_status" -> ProtocolHandlerResult(controlStatus())
+        "control_gesture" -> ProtocolHandlerResult(
+            controlResult(requireControlService().performGesture(DeviceControlProtocol.parseGesture(request.params))),
+        )
+        "control_action" -> ProtocolHandlerResult(
+            controlResult(requireControlService().performAction(DeviceControlProtocol.parseAction(request.params))),
+        )
+        "control_text" -> ProtocolHandlerResult(
+            controlResult(requireControlService().inputText(DeviceControlProtocol.parseText(request.params))),
+        )
         else -> throw IllegalArgumentException("unknown method: ${request.method}")
+    }
+
+    private fun controlStatus(): JSONObject {
+        val enabled = DeviceControlService.isEnabled(this)
+        postToUi { uiState.deviceControlEnabled.value = enabled }
+        return JSONObjectFactory.objectWith(
+            "enabled" to enabled,
+            "ready" to (DeviceControlService.instance != null),
+        )
+    }
+
+    /** The service object only exists while the user has it switched on in Accessibility. */
+    private fun requireControlService(): DeviceControlService =
+        DeviceControlService.instance ?: throw IllegalStateException(
+            "Device control is off. On the phone open Mobile Studio Agent and tap Allow device control",
+        )
+
+    private fun controlResult(dispatched: Boolean): JSONObject {
+        if (!dispatched) throw IllegalStateException("Android rejected the input")
+        return JSONObjectFactory.objectWith("dispatched" to true)
+    }
+
+    private fun openDeviceControlSettings() {
+        appendLog("Opening Accessibility settings for device control")
+        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
     private fun startRemoteControlRequest(params: JSONObject): ProtocolHandlerResult {

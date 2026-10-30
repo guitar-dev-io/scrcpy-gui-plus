@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.sp
 import com.scrcpyguiplus.companion.ui.AgentDeviceInfo
 import com.scrcpyguiplus.companion.ui.components.AgentCard
 import com.scrcpyguiplus.companion.ui.components.AgentPrimaryButton
+import com.scrcpyguiplus.companion.ui.components.AgentSecondaryButton
 import com.scrcpyguiplus.companion.ui.components.AgentTopBar
 import com.scrcpyguiplus.companion.ui.components.InfoRow
 import com.scrcpyguiplus.companion.ui.components.StatusPill
@@ -38,6 +39,8 @@ fun AgentStatusScreen(
     deviceInfo: AgentDeviceInfo?,
     wirelessDebuggingEnabled: Boolean,
     adbConnected: Boolean,
+    deviceControlEnabled: Boolean,
+    onAllowDeviceControl: () -> Unit,
     onOpenSettings: () -> Unit,
     onSetupWirelessDebugging: () -> Unit,
 ) {
@@ -66,6 +69,53 @@ fun AgentStatusScreen(
                         color = AgentTextSecondary,
                         fontSize = 13.sp,
                     )
+                }
+            }
+
+            item {
+                AgentCard(modifier = Modifier.padding(bottom = 16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "Device Control",
+                            color = AgentTextPrimary,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        StatusPill(
+                            text = if (deviceControlEnabled) "Allowed" else "Not allowed",
+                            tone = if (deviceControlEnabled) StatusTone.Success else StatusTone.Warning,
+                        )
+                    }
+                    Text(
+                        text = if (deviceControlEnabled) {
+                            "Mobile Studio can tap, swipe and type on this phone while you share " +
+                                "its screen. Turn it off in Accessibility settings at any time."
+                        } else {
+                            "To control this phone from your computer without a cable or adb, " +
+                                "open Accessibility settings, choose \"Mobile Studio device control\" " +
+                                "and switch it on."
+                        },
+                        modifier = Modifier.padding(top = 8.dp),
+                        color = AgentTextSecondary,
+                        fontSize = 13.sp,
+                    )
+                    if (!deviceControlEnabled) {
+                        AgentPrimaryButton(
+                            text = "Allow device control",
+                            onClick = onAllowDeviceControl,
+                            modifier = Modifier.padding(top = 12.dp),
+                        )
+                    } else {
+                        AgentSecondaryButton(
+                            text = "Accessibility settings",
+                            onClick = onAllowDeviceControl,
+                            modifier = Modifier.padding(top = 12.dp),
+                        )
+                    }
                 }
             }
 

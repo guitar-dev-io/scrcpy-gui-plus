@@ -28,6 +28,10 @@ export type CompanionMethod =
   | 'open_url'
   | 'start_screen_share'
   | 'stop_screen_share'
+  | 'control_status'
+  | 'control_gesture'
+  | 'control_action'
+  | 'control_text'
 
 export type CompanionParams = Record<string, unknown>
 

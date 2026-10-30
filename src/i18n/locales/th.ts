@@ -94,14 +94,29 @@ export const th: DeepPartialTranslations = {
       'กดเริ่มส่งหน้าจอ แล้วอนุญาตการบันทึกหน้าจอในหน้าต่างระบบ Android',
     screenViewerHint:
       'หลังอนุญาตแล้ว ภาพสดจะแสดงตรงนี้ใน Connection Tools และแสดงใน Dashboard ของอุปกรณ์ที่เปิดอยู่ด้วย',
+    controlBack: 'ย้อนกลับ',
+    controlHome: 'หน้าหลัก',
+    controlRecents: 'แอปล่าสุด',
+    controlNotifications: 'การแจ้งเตือน',
+    controlEnter: 'Enter',
+    controlSend: 'พิมพ์',
+    controlTextPlaceholder: 'พิมพ์ลงช่องข้อความที่เลือกอยู่บนมือถือ',
+    controlNotAllowed:
+      'ยังไม่ได้อนุญาตให้ควบคุม บนมือถือเปิดแอป Mobile Studio Agent กด "Allow device control" แล้วเปิด "Mobile Studio device control"',
+    controlCheckAgain: 'ตรวจอีกครั้ง',
+    controlActiveTitle: 'กำลังควบคุมผ่าน Companion',
+    controlActiveBody:
+      'คลิกเพื่อแตะ ลากเพื่อปัด กดค้างเพื่อกดค้าง สั่งงานผ่านสิทธิ์การช่วยเหลือพิเศษของมือถือ ไม่ต้องใช้สายหรือ adb',
+    controlHowTo:
+      'ถ้าต้องการควบคุมมือถือโดยไม่ใช้ adb ให้อนุญาต "Mobile Studio device control" ในการตั้งค่าการช่วยเหลือพิเศษของมือถือ แล้วเริ่มส่งหน้าจอ',
     screenLockNote:
       'สลับแอปได้ตามปกติ แต่การล็อกโทรศัพท์อาจทำให้ Android หยุดจับภาพ ให้ปลดล็อกแล้วเริ่มแชร์ใหม่',
     screenSecurityNote:
-      'ส่งภาพ JPEG ผ่าน LAN ส่วนตัวที่จับคู่แล้ว และโหมดนี้ดูได้อย่างเดียว',
+      'ส่งภาพ JPEG ผ่าน LAN ส่วนตัวที่จับคู่แล้ว การควบคุมต้องได้รับสิทธิ์การช่วยเหลือพิเศษบนมือถือ',
     screenUnsupported:
       'อัปเดตแอป Android Companion เพื่อเปิดใช้การส่งหน้าจอผ่าน QR / LAN',
     lanScreenMode:
-      'Companion แบบ QR / LAN แชร์หน้าจอได้หลังอนุญาตจาก Android และเป็นโหมดดูอย่างเดียว',
+      'Companion แบบ QR / LAN แชร์หน้าจอได้หลังอนุญาตจาก Android และควบคุมได้เมื่ออนุญาตการควบคุมบนมือถือแล้ว',
     usbScreenMode:
       'Companion แบบ USB ใช้สั่งงานอุปกรณ์ ส่วนการมิเรอร์แบบควบคุมได้ใช้ ADB + scrcpy',
     adbFallbackMode:
