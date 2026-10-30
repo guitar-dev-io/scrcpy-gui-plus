@@ -2314,6 +2314,8 @@ function AppContent() {
                       onStop={() => void stopScrcpy(serial)}
                       isRunning={runningDevices.includes(serial)}
                       onScreenshot={() => handleScreenshotCapture(serial)}
+                      onEnableWireless={(target) => enableWirelessDevice(target)}
+                      onDisconnectWireless={(target) => disconnectDevice(target)}
                       onScreenshotSecondary={(serial) =>
                         handleScreenshotCapture(serial)
                       }
