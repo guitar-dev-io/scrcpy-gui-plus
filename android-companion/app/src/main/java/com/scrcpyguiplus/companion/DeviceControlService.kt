@@ -33,7 +33,38 @@ class DeviceControlService : AccessibilityService() {
         return super.onUnbind(intent)
     }
 
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var keepAwakeView: android.view.View? = null
+
+    /**
+     * Keeps the display on while the desktop is watching, with a 1x1 invisible overlay
+     * that only carries FLAG_KEEP_SCREEN_ON. The power button still locks the phone.
+     */
+    fun setKeepScreenOn(enabled: Boolean) {
+        mainHandler.post {
+            val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            if (enabled && keepAwakeView == null) {
+                val view = android.view.View(this)
+                val params = WindowManager.LayoutParams(
+                    1,
+                    1,
+                    WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                        WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
+                    android.graphics.PixelFormat.TRANSLUCENT,
+                )
+                runCatching { windowManager.addView(view, params) }
+                    .onSuccess { keepAwakeView = view }
+            } else if (!enabled) {
+                keepAwakeView?.let { view -> runCatching { windowManager.removeView(view) } }
+                keepAwakeView = null
+            }
+        }
+    }
+
     override fun onDestroy() {
+        setKeepScreenOn(false)
         if (instance === this) instance = null
         super.onDestroy()
     }

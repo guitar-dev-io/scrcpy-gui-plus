@@ -65,6 +65,7 @@ class ScreenCaptureService : Service() {
                 startForeground(NOTIFICATION_ID, notification)
             }
             serviceRunning = true
+            DeviceControlService.instance?.setKeepScreenOn(true)
 
             val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, Activity.RESULT_CANCELED)
             val projectionData = intent.parcelableExtra<Intent>(EXTRA_PROJECTION_DATA)
@@ -133,6 +134,7 @@ class ScreenCaptureService : Service() {
         )
 
     private fun stopCapture(reason: String) {
+        DeviceControlService.instance?.setKeepScreenOn(false)
         val session = captureSession ?: return
         captureSession = null
         stoppingSession = true
