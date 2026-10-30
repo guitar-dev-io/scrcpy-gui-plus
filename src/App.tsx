@@ -112,6 +112,7 @@ import {
   readWorkspaceRestoreState,
   writeWorkspaceRestoreState,
 } from './types/workspaceRestore'
+import { isWirelessSerial } from './utils/adbSerial'
 
 const OtherPages = lazy(() => import('./components/pages/OtherPages'))
 const DevicesPage = lazy(() => import('./components/pages/DevicesPage'))
@@ -198,6 +199,8 @@ function AppContent() {
     downloadProgress,
     pairDevice,
     connectDevice,
+    disconnectDevice,
+    enableWirelessDevice,
     discoverConnectAddress,
     listScrcpyOptions,
     runTerminalCommand,
@@ -2224,7 +2227,7 @@ function AppContent() {
                         }
                         connection={
                           registeredDevice?.connectionType.toUpperCase() ||
-                          (serial.includes(':') ? 'WIFI' : 'USB')
+                          (isWirelessSerial(serial) ? 'WIFI' : 'USB')
                         }
                         batteryLevel={registeredDevice?.health?.batteryLevel}
                         customPath={config.scrcpyPath}
@@ -2311,6 +2314,8 @@ function AppContent() {
                       onStop={() => void stopScrcpy(serial)}
                       isRunning={runningDevices.includes(serial)}
                       onScreenshot={() => handleScreenshotCapture(serial)}
+                      onEnableWireless={(target) => enableWirelessDevice(target)}
+                      onDisconnectWireless={(target) => disconnectDevice(target)}
                       onScreenshotSecondary={(serial) =>
                         handleScreenshotCapture(serial)
                       }
@@ -2488,6 +2493,8 @@ function AppContent() {
                     customPath={config.scrcpyPath}
                     pairDevice={pairDevice}
                     connectDevice={connectDevice}
+                    disconnectDevice={disconnectDevice}
+                    enableWirelessDevice={enableWirelessDevice}
                     discoverConnectAddress={discoverConnectAddress}
                     devices={devices}
                     historyDevices={historyDevices}
