@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -48,7 +49,10 @@ class ScreenCaptureService : Service() {
         stopCapture("Replacing the previous screen capture")
         val generation = intent.getLongExtra(EXTRA_GENERATION, 0L)
         activeGeneration = generation
-        val notification = buildNotification()
+        val notification = buildNotification(
+            studioLabel = intent.getStringExtra(EXTRA_STUDIO_LABEL),
+            controlEnabled = intent.getBooleanExtra(EXTRA_CONTROL_ENABLED, false),
+        )
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 startForeground(
@@ -163,17 +167,45 @@ class ScreenCaptureService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun buildNotification(): Notification {
+    /**
+     * Stays up for as long as the desktop can see (and, with device control on, operate)
+     * this phone, so the owner always knows who is connected and can cut it off.
+     */
+    private fun buildNotification(studioLabel: String?, controlEnabled: Boolean): Notification {
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
         }
+        val studio = studioLabel?.takeIf { it.isNotBlank() } ?: "Mobile Studio"
+        val title = if (controlEnabled) {
+            "$studio can see and control this phone"
+        } else {
+            "$studio can see this phone's screen"
+        }
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val openApp = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            flags,
+        )
+        val disconnect = PendingIntent.getActivity(
+            this,
+            1,
+            Intent(this, MainActivity::class.java)
+                .setAction(MainActivity.ACTION_DISCONNECT_STUDIO)
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            flags,
+        )
+        @Suppress("DEPRECATION")
         return builder
             .setSmallIcon(android.R.drawable.ic_menu_view)
-            .setContentTitle("Scrcpy GUI Plus Companion")
-            .setContentText("Sharing the Android screen with the desktop")
+            .setContentTitle(title)
+            .setContentText("Tap Disconnect to stop sharing and remote control.")
+            .setContentIntent(openApp)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Disconnect", disconnect)
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_SERVICE)
             .build()
@@ -223,6 +255,8 @@ class ScreenCaptureService : Service() {
         const val EXTRA_MAX_HEIGHT = "maxHeight"
         const val EXTRA_MAX_FPS = "maxFps"
         const val EXTRA_JPEG_QUALITY = "jpegQuality"
+        const val EXTRA_STUDIO_LABEL = "studioLabel"
+        const val EXTRA_CONTROL_ENABLED = "controlEnabled"
         private const val CHANNEL_ID = "companion_screen_share"
         private const val NOTIFICATION_ID = 4107
         private const val TAG = "CompanionScreen"

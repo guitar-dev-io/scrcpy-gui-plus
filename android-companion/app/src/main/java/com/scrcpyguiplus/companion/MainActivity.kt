@@ -134,6 +134,7 @@ class MainActivity : ComponentActivity() {
                     onForgetStudio = ::forgetTrustedStudio,
                     onDisconnect = { disconnectConnection("Cancelled from the scan screen") },
                     onOpenDeviceControlSettings = ::openDeviceControlSettings,
+                    onDisconnectStudio = { disconnectFromStudio("Disconnected on this phone") },
                 ),
             )
         }
@@ -155,7 +156,11 @@ class MainActivity : ComponentActivity() {
         }
         configureRemoteVideoView()
         registerUsbReceiver()
-        handleAccessoryIntent(intent)
+        if (intent?.action == ACTION_DISCONNECT_STUDIO) {
+            disconnectFromStudio("Disconnected from the notification")
+        } else {
+            handleAccessoryIntent(intent)
+        }
         appendLog("Activity ready; choose QR / LAN or USB accessory")
     }
 
@@ -192,7 +197,8 @@ class MainActivity : ComponentActivity() {
             // Returning from the camera scanner also lands here. Probing for USB then
             // would overwrite the pairing screen's status with an AOA message and leave
             // the user reading about a cable they are not using.
-            uiState.connectionPhase.value == AgentConnectionPhase.Idle -> discoverAccessory()
+            uiState.connectionPhase.value == AgentConnectionPhase.Idle ->
+                if (!autoConnectToTrustedStudio()) discoverAccessory()
             else -> Unit
         }
     }
@@ -245,7 +251,30 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (intent.action == ACTION_DISCONNECT_STUDIO) {
+            disconnectFromStudio("Disconnected from the notification")
+            return
+        }
         handleAccessoryIntent(intent)
+    }
+
+    /**
+     * The phone owner's off switch: stops screen sharing (and with it remote control),
+     * closes the session and forgets the saved offer so nothing reconnects on its own.
+     */
+    /** Set when the owner disconnects or the studio is busy, until they connect again. */
+    private var autoConnectSuppressed = false
+
+    private fun disconnectFromStudio(reason: String) {
+        // The owner chose to leave; do not walk straight back in on the next onStart.
+        autoConnectSuppressed = true
+        appendLog(reason)
+        stopRemoteControlLocal(reason)
+        stopScreenCapture(reason)
+        clearSavedLanOffer()
+        disconnectConnection(reason)
+        uiState.connectionPhase.value = AgentConnectionPhase.Idle
+        updateStatus("Disconnected. Scan the QR code or find the studio to connect again.")
     }
 
     /**
@@ -312,6 +341,7 @@ class MainActivity : ComponentActivity() {
 
     private fun connectToLanPayload(payload: String) {
         if (!activityStarted) return
+        autoConnectSuppressed = false
         val offer = try {
             LanPairing.parse(payload)
         } catch (error: IllegalArgumentException) {
@@ -472,8 +502,37 @@ class MainActivity : ComponentActivity() {
         }, "companion-lan-discovery").apply { isDaemon = true }.start()
     }
 
+    /**
+     * On launch, look for a studio this phone already trusts and reconnect to it, so the
+     * owner does not have to scan a QR code again. Returns false when there is nothing to try.
+     */
+    private fun autoConnectToTrustedStudio(): Boolean {
+        val trusted = TrustedStudios.list(this)
+        if (autoConnectSuppressed || discoveryInFlight || trusted.isEmpty()) return false
+        discoveryInFlight = true
+        updateStatus("Looking for ${trusted.first().studioName}…")
+        Thread({
+            val studios = LanDiscovery.probe(log = { message -> postToUi { appendLog(message) } })
+            postToUi {
+                discoveryInFlight = false
+                if (!activityStarted || connection != null || autoConnectSuppressed) return@postToUi
+                val match = TrustedStudios.pickAutoConnect(studios, trusted)
+                if (match == null) {
+                    uiState.discoveredStudios.value = studios
+                    updateStatus("No paired studio found nearby. Scan a QR code or find one on this network.")
+                    return@postToUi
+                }
+                appendLog("Auto-connecting to ${match.label()}")
+                updateStatus("Reconnecting to ${match.label()}…")
+                connectToDiscoveredStudio(match)
+            }
+        }, "companion-auto-connect").apply { isDaemon = true }.start()
+        return true
+    }
+
     private fun connectToDiscoveredStudio(studio: DiscoveredStudio) {
         if (!activityStarted) return
+        autoConnectSuppressed = false
         val offer = try {
             LanPairing.discoveredOffer(studio)
         } catch (error: IllegalArgumentException) {
@@ -731,6 +790,7 @@ class MainActivity : ComponentActivity() {
         "stop_screen_share" -> stopScreenShare()
         "start_remote_control" -> startRemoteControlRequest(request.params)
         "stop_remote_control" -> stopRemoteControlRequest()
+        "studio_busy" -> studioBusy(request.params)
         "control_status" -> ProtocolHandlerResult(controlStatus())
         "control_gesture" -> ProtocolHandlerResult(
             controlResult(requireControlService().performGesture(DeviceControlProtocol.parseGesture(request.params))),
@@ -742,6 +802,24 @@ class MainActivity : ComponentActivity() {
             controlResult(requireControlService().inputText(DeviceControlProtocol.parseText(request.params))),
         )
         else -> throw IllegalArgumentException("unknown method: ${request.method}")
+    }
+
+    /** The studio already serves another phone; stop dialing it and say why. */
+    private fun studioBusy(params: JSONObject): ProtocolHandlerResult {
+        val inUseBy = LanDiscovery.optionalString(params, "inUseBy") ?: "another phone"
+        val message = "This computer is already connected to $inUseBy. " +
+            "Disconnect that phone first, then try again."
+        return ProtocolHandlerResult(
+            result = JSONObjectFactory.objectWith("acknowledged" to true),
+            afterResponse = {
+                postToUi {
+                    autoConnectSuppressed = true
+                    disconnectConnection("Studio is in use by $inUseBy")
+                    uiState.connectionPhase.value = AgentConnectionPhase.Idle
+                    updateStatus(message)
+                }
+            },
+        )
     }
 
     private fun controlStatus(): JSONObject {
@@ -1184,6 +1262,8 @@ class MainActivity : ComponentActivity() {
             putExtra(ScreenCaptureService.EXTRA_MAX_HEIGHT, offer.maxHeight)
             putExtra(ScreenCaptureService.EXTRA_MAX_FPS, offer.maxFps)
             putExtra(ScreenCaptureService.EXTRA_JPEG_QUALITY, offer.jpegQuality)
+            putExtra(ScreenCaptureService.EXTRA_STUDIO_LABEL, uiState.studioLabel.value)
+            putExtra(ScreenCaptureService.EXTRA_CONTROL_ENABLED, DeviceControlService.isEnabled(this@MainActivity))
         }
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -1535,22 +1615,23 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private companion object {
-        const val AOA_MANUFACTURER = "Scrcpy GUI Plus"
-        const val AOA_MODEL = "Companion"
-        const val AOA_VERSION = "1"
-        const val EXPECTED_METADATA = "$AOA_MANUFACTURER / $AOA_MODEL / v$AOA_VERSION"
-        const val MAX_LOG_LINES = 12
-        const val MAX_LOG_MESSAGE_CHARS = 400
-        const val REMOTE_MOVE_INTERVAL_MS = 16L
-        const val SCREEN_CAPTURE_REQUEST_CODE = 4
-        const val PAIRING_PREFERENCES = "lan_pairing"
-        const val PAIRING_HOST = "host"
-        const val PAIRING_PORT = "port"
-        const val PAIRING_TOKEN = "token"
-        const val PAIRING_HOSTS = "hosts"
-        const val STATE_PROCESS_INSTANCE_ID = "process_instance_id"
-        val PROCESS_INSTANCE_ID: String = java.util.UUID.randomUUID().toString()
+    companion object {
+        private const val AOA_MANUFACTURER = "Scrcpy GUI Plus"
+        private const val AOA_MODEL = "Companion"
+        private const val AOA_VERSION = "1"
+        private const val EXPECTED_METADATA = "$AOA_MANUFACTURER / $AOA_MODEL / v$AOA_VERSION"
+        private const val MAX_LOG_LINES = 12
+        private const val MAX_LOG_MESSAGE_CHARS = 400
+        private const val REMOTE_MOVE_INTERVAL_MS = 16L
+        private const val SCREEN_CAPTURE_REQUEST_CODE = 4
+        private const val PAIRING_PREFERENCES = "lan_pairing"
+        private const val PAIRING_HOST = "host"
+        private const val PAIRING_PORT = "port"
+        private const val PAIRING_TOKEN = "token"
+        private const val PAIRING_HOSTS = "hosts"
+        const val ACTION_DISCONNECT_STUDIO = "com.scrcpyguiplus.companion.DISCONNECT_STUDIO"
+        private const val STATE_PROCESS_INSTANCE_ID = "process_instance_id"
+        private val PROCESS_INSTANCE_ID: String = java.util.UUID.randomUUID().toString()
     }
 }
 

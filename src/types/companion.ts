@@ -42,6 +42,12 @@ export interface CompanionScanResponse {
   errorCode?: string
 }
 
+export interface CompanionTrustedAgent {
+  agentDeviceId: string
+  name: string
+  approvedAt: number
+}
+
 export interface CompanionLanOffer {
   generation: number
   host: string

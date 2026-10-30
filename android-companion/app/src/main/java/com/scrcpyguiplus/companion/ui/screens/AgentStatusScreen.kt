@@ -41,6 +41,7 @@ fun AgentStatusScreen(
     adbConnected: Boolean,
     deviceControlEnabled: Boolean,
     onAllowDeviceControl: () -> Unit,
+    onDisconnectStudio: () -> Unit,
     onOpenSettings: () -> Unit,
     onSetupWirelessDebugging: () -> Unit,
 ) {
@@ -69,6 +70,24 @@ fun AgentStatusScreen(
                         color = AgentTextSecondary,
                         fontSize = 13.sp,
                     )
+                    if (agentConnected) {
+                        Text(
+                            text = if (deviceControlEnabled) {
+                                "This computer can see your screen while sharing is on, and " +
+                                    "control the phone. A notification stays up the whole time."
+                            } else {
+                                "This computer can see your screen while sharing is on."
+                            },
+                            modifier = Modifier.padding(top = 6.dp),
+                            color = AgentTextSecondary,
+                            fontSize = 12.sp,
+                        )
+                        AgentSecondaryButton(
+                            text = "Disconnect",
+                            onClick = onDisconnectStudio,
+                            modifier = Modifier.padding(top = 12.dp),
+                        )
+                    }
                 }
             }
 

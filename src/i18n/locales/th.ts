@@ -88,6 +88,12 @@ export const th: DeepPartialTranslations = {
       error: 'ผิดพลาด',
     },
     openWorkspace: 'เปิดจอใหญ่และควบคุม',
+    autoConnect: 'เชื่อมต่ออัตโนมัติกับมือถือที่เคยอนุมัติ',
+    autoConnectKnown:
+      'จำไว้แล้ว: {names} เมื่อเปิดแอปบนเครื่องเหล่านี้ใน Wi-Fi เดียวกัน จะเชื่อมต่อเองโดยไม่ต้องสแกน QR หรือกดอนุมัติ',
+    autoConnectNone:
+      'อนุมัติมือถือครั้งเดียว (ผ่าน QR หรือ "Find on this network") ครั้งต่อไปจะเชื่อมต่อเองอัตโนมัติ',
+    forgetPhones: 'ลืมมือถือที่จำไว้',
     screenPreview: 'ตัวอย่างหน้าจอ Android',
     startScreen: 'เริ่มส่งหน้าจอ',
     stopScreen: 'หยุดส่งหน้าจอ',

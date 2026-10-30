@@ -163,6 +163,8 @@ pub fn run() {
             companion::companion_remote_start,
             companion::companion_remote_stop,
             companion::companion_disconnect,
+            companion::companion_trusted_agents,
+            companion::companion_forget_trusted_agents,
             commands::check_scrcpy,
             commands::get_devices,
             device_tracker::start_device_tracker,

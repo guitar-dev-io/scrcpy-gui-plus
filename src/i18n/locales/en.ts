@@ -154,6 +154,12 @@ export const en = {
       error: 'Error',
     },
     openWorkspace: 'Open full screen & control',
+    autoConnect: 'Auto-connect phones I approved before',
+    autoConnectKnown:
+      'Remembered: {names}. When the app on one of them opens on this Wi-Fi, it connects without a QR scan or approval.',
+    autoConnectNone:
+      'Approve a phone once (QR or "Find on this network") and it will reconnect on its own next time.',
+    forgetPhones: 'Forget remembered phones',
     screenPreview: 'Android screen preview',
     startScreen: 'Start screen',
     stopScreen: 'Stop screen',

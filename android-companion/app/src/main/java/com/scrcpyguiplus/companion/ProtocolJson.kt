@@ -36,6 +36,7 @@ object ProtocolJson {
         "control_gesture",
         "control_action",
         "control_text",
+        "studio_busy",
     )
 
     private val UTF_8 = StandardCharsets.UTF_8

@@ -2487,6 +2487,7 @@ fn run_lan_pairing_listener(
     next_approval_id: Arc<AtomicU64>,
     cancellation: CancellationToken,
     window: Window,
+    auto_approve_trusted: bool,
 ) {
     let deadline = OperationDeadline::after(LAN_PAIRING_TIMEOUT, "LAN pairing");
     let mut rejected_clients = 0usize;
@@ -2538,6 +2539,32 @@ fn run_lan_pairing_listener(
                         Ok((candidate, device, auth))
                     })();
 
+                    // One phone at a time: a different Agent must not silently take over the
+                    // session another phone is using. Only the same Agent may replace its own
+                    // (possibly stale) socket, which is how Wi-Fi reconnects work.
+                    let attempt = match attempt {
+                        Ok((mut candidate, device, auth)) => {
+                            if let Some(holder) = busy_holder(&connection, &device) {
+                                notify_studio_busy(
+                                    &mut candidate,
+                                    &holder,
+                                    deadline.capped(LAN_HELLO_TIMEOUT, "LAN busy notice"),
+                                    &cancellation,
+                                );
+                                let _ = window.emit(
+                                    "scrcpy-log",
+                                    format!(
+                                        "[COMPANION] Turned away {} because {} is already connected",
+                                        device.name, holder
+                                    ),
+                                );
+                                continue;
+                            }
+                            Ok((candidate, device, auth))
+                        }
+                        Err(error) => Err(error),
+                    };
+
                     // A discovered Agent has no token, so hold its socket until the
                     // user answers the prompt. Dropping it here is a plain rejection:
                     // the Agent sees a closed socket and reports it.
@@ -2551,7 +2578,14 @@ fn run_lan_pairing_listener(
                                 .agent_device_id
                                 .clone()
                                 .unwrap_or_else(|| peer.ip().to_string());
-                            let outcome = if approved_agents.contains(&agent_key) {
+                            // With auto-connect on, a phone the user approved in an earlier
+                            // session skips the prompt (keyed by the Agent's own stable id).
+                            let remembered = auto_approve_trusted
+                                && device
+                                    .agent_device_id
+                                    .as_deref()
+                                    .is_some_and(|id| is_trusted_agent(&window, id));
+                            let outcome = if approved_agents.contains(&agent_key) || remembered {
                                 ApprovalOutcome::Approved
                             } else {
                                 await_pairing_approval(
@@ -2576,6 +2610,9 @@ fn run_lan_pairing_listener(
                             match outcome {
                                 ApprovalOutcome::Approved => {
                                     approved_agents.insert(agent_key);
+                                    if let Some(id) = device.agent_device_id.as_deref() {
+                                        remember_trusted_agent(&window, id, &device.name);
+                                    }
                                     Ok((candidate, device))
                                 }
                                 ApprovalOutcome::Rejected => {
@@ -3791,6 +3828,53 @@ fn perform_request(
     decode_response(&response, request_id)
 }
 
+fn agent_key(device: &CompanionDevice) -> Option<&str> {
+    device
+        .agent_device_id
+        .as_deref()
+        .or(device.peer_ip.as_deref())
+}
+
+/// Name of the phone holding the session when it is a different phone than `incoming`.
+fn busy_holder(
+    connection: &Arc<Mutex<Option<CompanionConnection>>>,
+    incoming: &CompanionDevice,
+) -> Option<String> {
+    let guard = connection.lock().ok()?;
+    let current = guard.as_ref()?;
+    if agent_key(&current.device) == agent_key(incoming) {
+        return None;
+    }
+    Some(current.device.name.clone())
+}
+
+/// Tells a turned-away phone why, so it stops retrying and shows the reason. Best
+/// effort: an Agent that predates `studio_busy` just sees the socket close.
+fn notify_studio_busy(
+    candidate: &mut CompanionConnection,
+    holder: &str,
+    deadline: OperationDeadline,
+    cancellation: &CancellationToken,
+) {
+    let notice = json!({
+        "type": "request",
+        "id": 0,
+        "method": "studio_busy",
+        "params": {
+            "inUseBy": holder,
+            "message": format!("This computer is already connected to {holder}. Disconnect it there first."),
+        },
+    });
+    if let Ok(payload) = serde_json::to_vec(&notice) {
+        if candidate
+            .write_frame(&payload, deadline, cancellation)
+            .is_ok()
+        {
+            let _ = candidate.read_frame(deadline, cancellation);
+        }
+    }
+}
+
 fn lock_connection(
     connection: &Arc<Mutex<Option<CompanionConnection>>>,
 ) -> CompanionResult<std::sync::MutexGuard<'_, Option<CompanionConnection>>> {
@@ -3803,6 +3887,87 @@ fn lock_connection(
 /// listener keeps the token valid for the session window and accepts repeated
 /// authenticated control connections, so Android can retry after a broken
 /// pipe or temporary Wi-Fi loss without scanning a new QR code.
+const TRUSTED_AGENTS_FILE: &str = "companion_trusted_agents.json";
+const MAX_TRUSTED_AGENTS: usize = 20;
+
+/// A phone the desktop user approved once; with auto-connect on it reconnects
+/// without another prompt.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrustedAgent {
+    pub agent_device_id: String,
+    pub name: String,
+    pub approved_at: u64,
+}
+
+fn trusted_agents_path(app: &AppHandle) -> Option<std::path::PathBuf> {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|dir| dir.join(TRUSTED_AGENTS_FILE))
+}
+
+fn load_trusted_agents(app: &AppHandle) -> Vec<TrustedAgent> {
+    trusted_agents_path(app)
+        .and_then(|path| std::fs::read(path).ok())
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+fn save_trusted_agents(app: &AppHandle, agents: &[TrustedAgent]) {
+    let Some(path) = trusted_agents_path(app) else {
+        return;
+    };
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Ok(bytes) = serde_json::to_vec_pretty(agents) {
+        let _ = std::fs::write(path, bytes);
+    }
+}
+
+fn upsert_trusted_agent(agents: &mut Vec<TrustedAgent>, agent: TrustedAgent) {
+    agents.retain(|existing| existing.agent_device_id != agent.agent_device_id);
+    agents.insert(0, agent);
+    agents.truncate(MAX_TRUSTED_AGENTS);
+}
+
+fn is_trusted_agent(window: &Window, agent_device_id: &str) -> bool {
+    load_trusted_agents(window.app_handle())
+        .iter()
+        .any(|agent| agent.agent_device_id == agent_device_id)
+}
+
+fn remember_trusted_agent(window: &Window, agent_device_id: &str, name: &str) {
+    let app = window.app_handle();
+    let mut agents = load_trusted_agents(app);
+    let approved_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    upsert_trusted_agent(
+        &mut agents,
+        TrustedAgent {
+            agent_device_id: agent_device_id.to_string(),
+            name: name.to_string(),
+            approved_at,
+        },
+    );
+    save_trusted_agents(app, &agents);
+}
+
+/// Phones that may reconnect without a prompt while auto-connect is on.
+#[tauri::command]
+pub fn companion_trusted_agents(app: AppHandle) -> Vec<TrustedAgent> {
+    load_trusted_agents(&app)
+}
+
+/// Forgets every remembered phone; each must be approved again next time.
+#[tauri::command]
+pub fn companion_forget_trusted_agents(app: AppHandle) {
+    save_trusted_agents(&app, &[]);
+}
+
 /// The name people know this computer by ("Anuwat's MacBook Pro"), used as the
 /// studio name phones show while pairing.
 fn local_computer_name() -> Option<String> {
@@ -3831,6 +3996,7 @@ pub async fn companion_lan_start(
     state: tauri::State<'_, CompanionState>,
     studio_id: Option<String>,
     studio_name: Option<String>,
+    auto_approve_trusted: Option<bool>,
 ) -> Result<CompanionLanOffer, String> {
     // Without a name the phone has nothing to show but "null"/an IP, so fall
     // back to this computer's own name.
@@ -3979,6 +4145,7 @@ pub async fn companion_lan_start(
             next_approval_id,
             cancellation,
             window,
+            auto_approve_trusted.unwrap_or(false),
         );
     });
 
@@ -5571,5 +5738,47 @@ mod tests {
         assert!(validate_method("control_text", &json!({ "text": "hello" })).is_ok());
         assert!(validate_method("control_text", &json!({ "text": "" })).is_err());
         assert!(validate_method("control_status", &json!({})).is_ok());
+    }
+
+    #[test]
+    fn agent_key_prefers_stable_agent_id() {
+        let mut device = CompanionDevice {
+            id: "lan-1-192.168.1.20".to_string(),
+            name: "Pixel".to_string(),
+            package_name: EXPECTED_PACKAGE.to_string(),
+            app_version: "1".to_string(),
+            protocol: 1,
+            transport: "lan-tcp".to_string(),
+            capabilities: vec![],
+            agent_device_id: Some("agent-a".to_string()),
+            peer_ip: Some("192.168.1.20".to_string()),
+        };
+        assert_eq!(agent_key(&device), Some("agent-a"));
+        device.agent_device_id = None;
+        assert_eq!(agent_key(&device), Some("192.168.1.20"));
+    }
+
+    #[test]
+    fn trusted_agents_dedupe_newest_first_and_cap() {
+        let agent = |id: &str, at: u64| TrustedAgent {
+            agent_device_id: id.to_string(),
+            name: id.to_uppercase(),
+            approved_at: at,
+        };
+        let mut agents = vec![agent("a", 1), agent("b", 2)];
+        upsert_trusted_agent(&mut agents, agent("a", 3));
+        assert_eq!(
+            agents
+                .iter()
+                .map(|a| a.agent_device_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["a", "b"]
+        );
+        assert_eq!(agents[0].approved_at, 3);
+        for i in 0..30 {
+            upsert_trusted_agent(&mut agents, agent(&format!("x{i}"), 10 + i));
+        }
+        assert_eq!(agents.len(), MAX_TRUSTED_AGENTS);
+        assert_eq!(agents[0].agent_device_id, "x29");
     }
 }

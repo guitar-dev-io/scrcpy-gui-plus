@@ -1,6 +1,7 @@
 import { invoke, Channel } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type {
+  CompanionTrustedAgent,
   CompanionApprovalEvent,
   CompanionLanOffer,
   CompanionMethod,
@@ -22,11 +23,22 @@ export function scanCompanionDevices(): Promise<CompanionScanResponse> {
 export function startCompanionLanPairing(
   studioId?: string,
   studioName?: string,
+  autoApproveTrusted?: boolean,
 ): Promise<CompanionLanOffer> {
   return invoke<CompanionLanOffer>('companion_lan_start', {
     studioId,
     studioName,
+    autoApproveTrusted,
   })
+}
+
+/** Phones the desktop user approved before; they may skip the prompt with auto-connect on. */
+export function getCompanionTrustedAgents(): Promise<CompanionTrustedAgent[]> {
+  return invoke<CompanionTrustedAgent[]>('companion_trusted_agents')
+}
+
+export function forgetCompanionTrustedAgents(): Promise<void> {
+  return invoke<void>('companion_forget_trusted_agents')
 }
 
 /** Answer the prompt raised by an Agent that arrived through LAN discovery. */

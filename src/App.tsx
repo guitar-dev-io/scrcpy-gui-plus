@@ -1329,6 +1329,10 @@ function AppContent() {
       onDisconnect={companion.disconnect}
       onRequest={companion.request}
       onOpenWorkspace={openCompanionWorkspace}
+      autoConnect={companion.autoConnect}
+      onAutoConnectChange={companion.setAutoConnect}
+      trustedAgents={companion.trustedAgents}
+      onForgetTrustedAgents={companion.forgetTrustedAgents}
       androidTargets={devices}
       embeddedConnections={embeddedConnections}
       selectedAndroidTarget={activeDevice}
