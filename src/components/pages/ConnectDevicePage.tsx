@@ -9,6 +9,7 @@ import {
   Radar,
   RefreshCw,
   Smartphone,
+  Unplug,
   Usb,
   Wifi,
   Zap,
@@ -21,6 +22,7 @@ import { looksLikeIpPort, type PairingOutcome } from '../../types/pairingWizard'
 import type { ToolbarNotifier } from '../device-control-toolbar'
 import { useI18n } from '../../i18n'
 import PageTitle, { PAGE_HEADER_CLASS } from '../ui/PageTitle'
+import { isWirelessSerial } from '../../utils/adbSerial'
 
 export type ConnectTabId = 'qr' | 'wireless' | 'usb'
 
@@ -28,6 +30,10 @@ interface ConnectDevicePageProps {
   customPath?: string
   pairDevice: (ip: string, code: string, customPath?: string) => Promise<any>
   connectDevice: (ip: string, customPath?: string) => Promise<any>
+  /** `adb disconnect` for a wireless serial. */
+  disconnectDevice?: (serial: string) => Promise<any>
+  /** `adb tcpip` + connect, so a USB device keeps working once unplugged. */
+  enableWirelessDevice?: (serial: string) => Promise<any>
   discoverConnectAddress: (
     ip: string,
     customPath?: string,
@@ -152,6 +158,8 @@ export default function ConnectDevicePage({
   customPath,
   pairDevice,
   connectDevice,
+  disconnectDevice,
+  enableWirelessDevice,
   discoverConnectAddress,
   devices,
   historyDevices,
@@ -178,6 +186,7 @@ export default function ConnectDevicePage({
   const [pairCode, setPairCode] = useState('')
   const [host, setHost] = useState('')
   const [port, setPort] = useState('5555')
+  const [busySerial, setBusySerial] = useState<string | null>(null)
 
   // Discovery is the fastest path for a device that is already paired, so it runs
   // once on open instead of waiting for the user to find and press a scan button.
@@ -208,6 +217,40 @@ export default function ConnectDevicePage({
     if (!target) return
     const res = await wizard.connect(target)
     report(res, t('pages.connectDevice.connectedTo', { address: target }))
+  }
+
+  const handleDisconnect = async (serial: string) => {
+    if (!disconnectDevice) return
+    setBusySerial(serial)
+    try {
+      const res = await disconnectDevice(serial)
+      if (res?.success) {
+        notify(t('pages.connectDevice.disconnected'), t('pages.connectDevice.disconnectedFrom', { address: serial }), 'success')
+      } else {
+        notify(t('pages.connectDevice.disconnectFailed'), String(res?.message || t('pages.connectDevice.unknownError')), 'error')
+      }
+    } finally {
+      setBusySerial(null)
+    }
+  }
+
+  const handleEnableWireless = async (serial: string) => {
+    if (!enableWirelessDevice) return
+    setBusySerial(serial)
+    try {
+      const res = await enableWirelessDevice(serial)
+      if (res?.success) {
+        notify(
+          t('pages.connectDevice.deviceConnected'),
+          t('pages.connectDevice.wifiEnabled', { address: String(res.address || '') }),
+          'success',
+        )
+      } else {
+        notify(t('pages.connectDevice.statusFailed'), String(res?.message || t('pages.connectDevice.unknownError')), 'error')
+      }
+    } finally {
+      setBusySerial(null)
+    }
   }
 
   const manualTarget = `${host.trim()}:${port.trim()}`
@@ -561,6 +604,72 @@ export default function ConnectDevicePage({
               </p>
             </div>
           )}
+
+          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]/55 p-5">
+            <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-[var(--text-subtle)]">
+              <Smartphone size={13} /> {t('pages.connectDevice.connectedDevices')}
+            </p>
+            <div className="mt-3 space-y-2">
+              {devices.length === 0 ? (
+                <p className="py-4 text-center text-[10px] text-[var(--text-subtle)]">
+                  {t('pages.connectDevice.noConnectedDevices')}
+                </p>
+              ) : (
+                devices.map((serial) => {
+                  const wireless = isWirelessSerial(serial)
+                  const busy = busySerial === serial
+                  const action = wireless ? disconnectDevice : enableWirelessDevice
+                  return (
+                    <div
+                      key={serial}
+                      className="flex items-center gap-2 rounded-lg border border-[var(--border-subtle)] px-3 py-2"
+                    >
+                      {wireless ? (
+                        <Wifi size={12} className="shrink-0 text-emerald-400" />
+                      ) : (
+                        <Usb size={12} className="shrink-0 text-primary" />
+                      )}
+                      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--text-base)]" title={serial}>
+                        {serial}
+                      </span>
+                      {action && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void (wireless ? handleDisconnect(serial) : handleEnableWireless(serial))
+                          }
+                          disabled={busySerial !== null}
+                          title={t(
+                            wireless
+                              ? 'pages.connectDevice.disconnectHint'
+                              : 'pages.connectDevice.switchToWifiHint',
+                          )}
+                          className={`flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[9px] font-semibold uppercase disabled:opacity-40 ${
+                            wireless
+                              ? 'border-red-500/30 text-red-300 hover:bg-red-500/10'
+                              : 'border-primary/30 text-primary hover:bg-primary/10'
+                          }`}
+                        >
+                          {busy ? (
+                            <Loader2 size={10} className="animate-spin" />
+                          ) : wireless ? (
+                            <Unplug size={10} />
+                          ) : (
+                            <Wifi size={10} />
+                          )}
+                          {t(
+                            wireless
+                              ? 'pages.connectDevice.disconnect'
+                              : 'pages.connectDevice.switchToWifi',
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </div>
 
           <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]/55 p-5">
             <button

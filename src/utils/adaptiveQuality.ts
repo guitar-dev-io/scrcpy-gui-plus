@@ -1,4 +1,5 @@
 import type { ScrcpyConfig } from '../hooks/useScrcpy'
+import { isWirelessSerial } from './adbSerial'
 
 export type QualityMode =
   | 'manual'
@@ -19,9 +20,7 @@ const PROFILES: Record<Exclude<QualityMode, 'manual' | 'adaptive'>, QualityProfi
   'low-latency': { bitrate: 4, fps: 30, res: '1280' },
 }
 
-export function isWirelessSerial(serial: string): boolean {
-  return serial.includes(':')
-}
+export { isWirelessSerial }
 
 export function resolveQualityProfile(
   mode: QualityMode,

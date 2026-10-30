@@ -431,16 +431,54 @@ struct DiscoveredAdbDevice {
     detail: Option<String>,
 }
 
+/// True for serials adb gives network transports: `host:port` for `adb connect`
+/// / `adb tcpip`, and `adb-<id>._adb-tls-connect._tcp` when adb auto-connects an
+/// Android 11+ Wireless Debugging device it found over mDNS.
+pub(crate) fn is_network_serial(serial: &str) -> bool {
+    serial.contains(':') || serial.contains("._tcp")
+}
+
 fn adb_connection_type(serial: &str) -> &'static str {
-    if serial.contains(':') {
+    if is_network_serial(serial) {
         "wifi"
     } else {
         "usb"
     }
 }
 
+/// `adb devices -l` appends `product:` / `model:` / `device:` / `transport_id:`
+/// fields. They identify the hardware but are noise in user-facing diagnostics.
+fn is_device_listing_field(token: &str) -> bool {
+    ["product:", "model:", "device:", "transport_id:"]
+        .iter()
+        .any(|prefix| token.starts_with(prefix))
+}
+
+fn device_identity(fields: &[&str]) -> Option<String> {
+    let pick = |prefix: &str| {
+        fields
+            .iter()
+            .find_map(|token| token.strip_prefix(prefix))
+            .map(str::to_string)
+    };
+    match (pick("model:"), pick("device:")) {
+        (None, None) => None,
+        (model, device) => Some(format!(
+            "{}|{}",
+            model.unwrap_or_default(),
+            device.unwrap_or_default()
+        )),
+    }
+}
+
 fn parse_adb_devices_output(output: &str) -> Vec<DiscoveredAdbDevice> {
     let mut records = Vec::new();
+    // mDNS transports (`adb-xxx._adb-tls-connect._tcp`) are kept only when no
+    // other transport reports the same hardware: after an explicit
+    // `adb connect ip:port` adb often lists the phone a second time under its
+    // mDNS name, but a phone adb auto-connected over mDNS has no other entry.
+    let mut mdns_records: Vec<(DiscoveredAdbDevice, Option<String>)> = Vec::new();
+    let mut identities = std::collections::HashSet::new();
     let mut seen = std::collections::HashSet::new();
 
     for line in output.lines().skip(1) {
@@ -450,25 +488,48 @@ fn parse_adb_devices_output(output: &str) -> Vec<DiscoveredAdbDevice> {
         }
 
         let serial = parts[0].trim();
-        if serial.is_empty()
-            || serial.contains("._tcp")
-            || serial.contains("._udp")
-            || !seen.insert(serial.to_string())
-        {
+        if serial.is_empty() || serial.contains("._udp") || !seen.insert(serial.to_string()) {
             continue;
         }
 
-        let detail = if parts.len() > 2 {
-            Some(parts[2..].join(" "))
-        } else {
+        let fields = &parts[2..];
+        let detail_tokens: Vec<&str> = fields
+            .iter()
+            .copied()
+            .filter(|token| !is_device_listing_field(token))
+            .collect();
+        let detail = if detail_tokens.is_empty() {
             None
+        } else {
+            Some(detail_tokens.join(" "))
         };
-        records.push(DiscoveredAdbDevice {
+        let record = DiscoveredAdbDevice {
             serial: serial.to_string(),
             adb_state: parts[1].to_string(),
             connection_type: adb_connection_type(serial).to_string(),
             detail,
-        });
+        };
+        let identity = device_identity(fields);
+        if serial.contains("._tcp") {
+            mdns_records.push((record, identity));
+        } else {
+            if let Some(identity) = identity {
+                identities.insert(identity);
+            }
+            records.push(record);
+        }
+    }
+
+    for (record, identity) in mdns_records {
+        // Without `-l` fields there is no way to tell duplicates apart, so the
+        // mDNS entry is only shown when it is the sole way to reach a device.
+        let duplicate = match identity {
+            Some(identity) => identities.contains(&identity),
+            None => records.iter().any(|r| r.connection_type == "wifi"),
+        };
+        if !duplicate {
+            records.push(record);
+        }
     }
 
     records
@@ -478,7 +539,11 @@ fn parse_adb_devices_output(output: &str) -> Vec<DiscoveredAdbDevice> {
 pub async fn get_devices(custom_path: Option<String>) -> serde_json::Value {
     let adb_path = get_binary_path("adb", custom_path);
 
-    let output = create_command(&adb_path).arg("devices").output().await;
+    let output = create_command(&adb_path)
+        .arg("devices")
+        .arg("-l")
+        .output()
+        .await;
 
     match output {
         Ok(o) => {
@@ -733,6 +798,171 @@ pub async fn adb_pair(
     )
 }
 
+/// Runs a one-shot adb command with a timeout and returns (success, stdout, stderr).
+async fn run_adb_with_timeout(
+    adb_path: &str,
+    args: &[&str],
+    secs: u64,
+) -> Result<(bool, String, String), String> {
+    let child = create_command(adb_path)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to start adb {}: {}", args.join(" "), e))?;
+    match timeout(Duration::from_secs(secs), child.wait_with_output()).await {
+        Ok(Ok(output)) => Ok((
+            output.status.success(),
+            String::from_utf8_lossy(&output.stdout).trim().to_string(),
+            String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        )),
+        Ok(Err(e)) => Err(e.to_string()),
+        Err(_) => Err(format!("adb {} timed out after {}s", args.join(" "), secs)),
+    }
+}
+
+/// Drops a network transport (`host:port` or an mDNS serial). USB devices are
+/// left alone — `adb disconnect` only ever applies to network transports.
+#[tauri::command]
+pub async fn adb_disconnect(
+    window: Window,
+    serial: String,
+    custom_path: Option<String>,
+) -> Result<serde_json::Value, String> {
+    if !is_network_serial(&serial) {
+        return Ok(json!({
+            "success": false,
+            "message": format!("{} is not a wireless connection", serial)
+        }));
+    }
+    let adb_path = get_binary_path("adb", custom_path);
+    let _ = window.emit(
+        "scrcpy-log",
+        format!("[SYSTEM] Disconnecting {}...", serial),
+    );
+    let (ok, out_text, err_text) =
+        run_adb_with_timeout(&adb_path, &["disconnect", &serial], 5).await?;
+    let message = if out_text.is_empty() {
+        err_text
+    } else {
+        out_text
+    };
+    if !message.is_empty() {
+        let _ = window.emit("scrcpy-log", format!("[ADB] {}", message));
+    }
+    let success = ok && !message.contains("error") && !message.contains("no such device");
+    Ok(json!({ "success": success, "message": message }))
+}
+
+/// Pulls the device's Wi-Fi IPv4 out of `ip -f inet addr show wlan0`
+/// (`inet 192.168.1.23/24 brd ...`) or `ip route` (`... src 192.168.1.23 ...`).
+fn parse_device_wifi_ipv4(output: &str) -> Option<String> {
+    let is_usable = |candidate: &str| {
+        candidate
+            .parse::<std::net::Ipv4Addr>()
+            .map(|ip| !ip.is_loopback() && !ip.is_unspecified() && !ip.is_link_local())
+            .unwrap_or(false)
+    };
+    let tokens: Vec<&str> = output.split_whitespace().collect();
+    for window in tokens.windows(2) {
+        let candidate = match window[0] {
+            "inet" => window[1].split('/').next().unwrap_or_default(),
+            "src" => window[1],
+            _ => continue,
+        };
+        if is_usable(candidate) {
+            return Some(candidate.to_string());
+        }
+    }
+    None
+}
+
+/// Switches a USB-attached device to wireless adb: reads its Wi-Fi IP, runs
+/// `adb tcpip <port>`, then `adb connect ip:port`. Once this succeeds the
+/// cable can be unplugged and the device keeps working over the network
+/// (until it reboots or Wi-Fi changes).
+#[tauri::command]
+pub async fn adb_enable_wireless(
+    window: Window,
+    serial: String,
+    port: Option<u16>,
+    custom_path: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let port = port.unwrap_or(5555);
+    let adb_path = get_binary_path("adb", custom_path);
+    let log = |line: String| {
+        let _ = window.emit("scrcpy-log", line);
+    };
+    log(format!(
+        "[SYSTEM] Switching {} to wireless adb on port {}...",
+        serial, port
+    ));
+
+    let mut ip = None;
+    for probe in ["ip -f inet addr show wlan0", "ip route"] {
+        if let Ok((_, out, _)) =
+            run_adb_with_timeout(&adb_path, &["-s", &serial, "shell", probe], 5).await
+        {
+            ip = parse_device_wifi_ipv4(&out);
+            if ip.is_some() {
+                break;
+            }
+        }
+    }
+    let Some(ip) = ip else {
+        let message = "Could not read the device's Wi-Fi IP address. Make sure Wi-Fi is on and the phone is on the same network as this computer.".to_string();
+        log(format!("[ADB ERROR] {}", message));
+        return Ok(json!({ "success": false, "message": message }));
+    };
+
+    let port_arg = port.to_string();
+    let (ok, out_text, err_text) =
+        run_adb_with_timeout(&adb_path, &["-s", &serial, "tcpip", &port_arg], 10).await?;
+    let tcpip_message = if out_text.is_empty() {
+        err_text
+    } else {
+        out_text
+    };
+    if !tcpip_message.is_empty() {
+        log(format!("[ADB] {}", tcpip_message));
+    }
+    if !ok || tcpip_message.contains("error") {
+        return Ok(json!({ "success": false, "message": tcpip_message }));
+    }
+
+    // adbd restarts in TCP mode, which takes a moment before it accepts connections.
+    let address = format!("{}:{}", ip, port);
+    let mut last_message = String::new();
+    for attempt in 0..5 {
+        tokio::time::sleep(Duration::from_millis(if attempt == 0 {
+            1500
+        } else {
+            1000
+        }))
+        .await;
+        match run_adb_with_timeout(&adb_path, &["connect", &address], 5).await {
+            Ok((ok, out, err)) => {
+                last_message = if out.is_empty() { err } else { out };
+                if ok
+                    && !last_message.contains("cannot connect")
+                    && !last_message.contains("failed")
+                {
+                    log(format!("[ADB] {}", last_message));
+                    return Ok(json!({
+                        "success": true,
+                        "address": address,
+                        "message": last_message
+                    }));
+                }
+            }
+            Err(e) => last_message = e,
+        }
+    }
+    log(format!("[ADB ERROR] {}", last_message));
+    Ok(json!({ "success": false, "address": address, "message": last_message }))
+}
+
 #[tauri::command]
 pub async fn adb_shell(
     device: String,
@@ -793,7 +1023,10 @@ pub async fn run_terminal_command(
                 // For ADB, don't inject for certain global commands
                 let is_global_adb = binary_name == "adb"
                     && !parts.is_empty()
-                    && (parts[0] == "devices" || parts[0] == "connect" || parts[0] == "pair");
+                    && (parts[0] == "devices"
+                        || parts[0] == "connect"
+                        || parts[0] == "disconnect"
+                        || parts[0] == "pair");
 
                 if !is_global_adb {
                     args.push("-s".to_string());
@@ -2665,6 +2898,52 @@ USB123\tdevice product:duplicate\n";
         assert_eq!(records[1].adb_state, "offline");
         assert_eq!(records[2].adb_state, "unauthorized");
         assert_eq!(records[2].detail.as_deref(), Some("usb:1-1"));
+    }
+
+    #[test]
+    fn keeps_mdns_transport_unless_it_duplicates_another_entry() {
+        let output = "List of devices attached\n\
+192.168.1.4:41235\tdevice product:panther model:Pixel_7 device:panther transport_id:4\n\
+adb-AAA._adb-tls-connect._tcp\tdevice product:panther model:Pixel_7 device:panther transport_id:5\n\
+adb-BBB._adb-tls-connect._tcp\tdevice product:a54 model:SM_A546 device:a54x transport_id:6\n\
+adb-CCC._adb-tls-pairing._udp\tdevice\n";
+        let records = parse_adb_devices_output(output);
+        let serials: Vec<&str> = records.iter().map(|r| r.serial.as_str()).collect();
+        assert_eq!(
+            serials,
+            vec!["192.168.1.4:41235", "adb-BBB._adb-tls-connect._tcp"]
+        );
+        assert_eq!(records[1].connection_type, "wifi");
+        assert_eq!(records[0].detail, None);
+    }
+
+    #[test]
+    fn network_serial_detection() {
+        assert!(is_network_serial("192.168.1.4:5555"));
+        assert!(is_network_serial("adb-XYZ._adb-tls-connect._tcp"));
+        assert!(!is_network_serial("R58M123ABC"));
+    }
+
+    #[test]
+    fn parses_device_wifi_ip_from_ip_tools() {
+        let addr = "30: wlan0: <BROADCAST,MULTICAST,UP> mtu 1500\n    inet 192.168.1.23/24 brd 192.168.1.255 scope global wlan0\n";
+        assert_eq!(
+            parse_device_wifi_ipv4(addr).as_deref(),
+            Some("192.168.1.23")
+        );
+        let route = "192.168.1.0/24 dev wlan0 proto kernel scope link src 192.168.1.23\n";
+        assert_eq!(
+            parse_device_wifi_ipv4(route).as_deref(),
+            Some("192.168.1.23")
+        );
+        assert_eq!(
+            parse_device_wifi_ipv4("Device \"wlan0\" does not exist."),
+            None
+        );
+        assert_eq!(
+            parse_device_wifi_ipv4("inet 127.0.0.1/8 scope host lo"),
+            None
+        );
     }
 }
 
