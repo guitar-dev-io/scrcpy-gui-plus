@@ -52,3 +52,25 @@ describe('buildControlGesture', () => {
     expect(buildControlGesture([])).toBeNull()
   })
 })
+
+describe('wheel gestures', () => {
+  it('scrolls by swiping against the wheel direction', async () => {
+    const { buildScrollGesture } = await import('./companionControl')
+    const down = buildScrollGesture({ x: 0.5, y: 0.5 }, 400)!
+    expect(down.points[0]).toEqual([0.5, 0.5])
+    expect(down.points[1][1]).toBeCloseTo(0, 1)
+    expect(down.points[1][1]).toBeGreaterThanOrEqual(0.02)
+    expect(buildScrollGesture({ x: 0.5, y: 0.5 }, 2)).toBeNull()
+  })
+
+  it('pinches outward to zoom in and inward to zoom out', async () => {
+    const { buildPinchGesture } = await import('./companionControl')
+    const zoomIn = buildPinchGesture({ x: 0.5, y: 0.5 }, -100)!
+    const [left, right] = zoomIn.strokes
+    expect(left[1][0]).toBeLessThan(left[0][0])
+    expect(right[1][0]).toBeGreaterThan(right[0][0])
+    const zoomOut = buildPinchGesture({ x: 0.5, y: 0.5 }, 100)!
+    expect(zoomOut.strokes[0][1][0]).toBeGreaterThan(zoomOut.strokes[0][0][0])
+    expect(buildPinchGesture({ x: 0.5, y: 0.5 }, 1)).toBeNull()
+  })
+})

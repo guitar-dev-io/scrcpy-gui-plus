@@ -1,5 +1,6 @@
 import { invoke, Channel } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { getCompanionQuality } from '../utils/companionControl'
 import type {
   CompanionTrustedAgent,
   CompanionApprovalEvent,
@@ -64,7 +65,27 @@ export function startCompanionScreen(
 ): Promise<CompanionRequestResponse> {
   return invoke<CompanionRequestResponse>('companion_screen_start', {
     onFrame,
+    quality: getCompanionQuality(),
   })
+}
+
+/** Sends a file from this computer into the phone's Downloads folder. */
+export function sendCompanionFile(path: string): Promise<{ saved?: string; bytes?: number }> {
+  return invoke('companion_send_file', { path })
+}
+
+export interface CompanionFileProgress {
+  name: string
+  sent: number
+  total: number
+}
+
+export function onCompanionFileProgress(
+  handler: (progress: CompanionFileProgress) => void,
+): Promise<UnlistenFn> {
+  return listen<CompanionFileProgress>('companion-file-progress', (event) =>
+    handler(event.payload),
+  )
 }
 
 export function stopCompanionScreen(): Promise<CompanionRequestResponse> {

@@ -262,6 +262,8 @@ class MainActivity : ComponentActivity() {
      * The phone owner's off switch: stops screen sharing (and with it remote control),
      * closes the session and forgets the saved offer so nothing reconnects on its own.
      */
+    private val incomingFiles by lazy { IncomingFiles(applicationContext) }
+
     /** Set when the owner disconnects or the studio is busy, until they connect again. */
     private var autoConnectSuppressed = false
 
@@ -791,6 +793,11 @@ class MainActivity : ComponentActivity() {
         "start_remote_control" -> startRemoteControlRequest(request.params)
         "stop_remote_control" -> stopRemoteControlRequest()
         "studio_busy" -> studioBusy(request.params)
+        "list_apps" -> ProtocolHandlerResult(PhoneApps.list(this))
+        "launch_app" -> ProtocolHandlerResult(PhoneApps.launch(this, PhoneApps.parsePackage(request.params)))
+        "file_begin" -> ProtocolHandlerResult(incomingFiles.begin(FileTransferProtocol.parseBegin(request.params)))
+        "file_chunk" -> ProtocolHandlerResult(incomingFiles.chunk(FileTransferProtocol.parseChunk(request.params)))
+        "file_end" -> ProtocolHandlerResult(incomingFiles.end(FileTransferProtocol.parseTransferId(request.params)))
         "control_status" -> ProtocolHandlerResult(controlStatus())
         "control_gesture" -> ProtocolHandlerResult(
             controlResult(requireControlService().performGesture(DeviceControlProtocol.parseGesture(request.params))),

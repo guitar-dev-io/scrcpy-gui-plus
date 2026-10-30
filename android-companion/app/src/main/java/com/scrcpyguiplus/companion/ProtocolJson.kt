@@ -37,6 +37,11 @@ object ProtocolJson {
         "control_action",
         "control_text",
         "studio_busy",
+        "list_apps",
+        "launch_app",
+        "file_begin",
+        "file_chunk",
+        "file_end",
     )
 
     private val UTF_8 = StandardCharsets.UTF_8

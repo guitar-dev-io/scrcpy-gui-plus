@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent,
+} from 'react'
 import {
   ArrowLeft,
   Bell,
@@ -27,10 +35,13 @@ import type {
   CompanionScreenState,
   CompanionScreenStatusEvent,
 } from '../../types/companion'
+import CompanionToolsPanel from './CompanionToolsPanel'
 import { useCanvasRecorder, type FinishedRecording } from '../../hooks/useCanvasRecorder'
 import { formatRecordingElapsed } from '../../utils/canvasRecorder'
 import {
   buildControlGesture,
+  buildPinchGesture,
+  buildScrollGesture,
   pointInContainedImage,
   type ControlSample,
 } from '../../utils/companionControl'
@@ -176,6 +187,102 @@ export default function CompanionWorkspaceStage({
     }
   }
 
+  // Keyboard, paste and wheel input are queued so the phone sees them in order
+  // (typed text before the Backspace that follows it).
+  const controlQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const queueControl = (method: CompanionMethod, params: CompanionParams) => {
+    controlQueueRef.current = controlQueueRef.current.then(() =>
+      sendControl(method, params),
+    )
+  }
+
+  const phoneRef = useRef<HTMLDivElement>(null)
+  const textBufferRef = useRef('')
+  const textTimerRef = useRef<number | null>(null)
+
+  const flushTypedText = () => {
+    if (textTimerRef.current !== null) window.clearTimeout(textTimerRef.current)
+    textTimerRef.current = null
+    const text = textBufferRef.current
+    textBufferRef.current = ''
+    if (text) queueControl('control_text', { text })
+  }
+
+  const KEY_ACTIONS: Record<string, string> = {
+    Backspace: 'backspace',
+    Enter: 'enter',
+    Escape: 'back',
+  }
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (!canControl || event.metaKey || event.ctrlKey || event.altKey) return
+    const action = KEY_ACTIONS[event.key]
+    if (action) {
+      event.preventDefault()
+      flushTypedText()
+      queueControl('control_action', { action })
+      return
+    }
+    if (event.key.length === 1) {
+      event.preventDefault()
+      textBufferRef.current += event.key
+      if (textTimerRef.current !== null) window.clearTimeout(textTimerRef.current)
+      // Batch fast typing into one request.
+      textTimerRef.current = window.setTimeout(flushTypedText, 120)
+    }
+  }
+
+  const handlePaste = (event: ClipboardEvent<HTMLDivElement>) => {
+    if (!canControl) return
+    const text = event.clipboardData.getData('text/plain')
+    if (!text) return
+    event.preventDefault()
+    flushTypedText()
+    queueControl('control_text', { text: text.slice(0, 2000) })
+  }
+
+  // Wheel needs a non-passive listener to stop the page itself from scrolling.
+  const wheelRef = useRef({ deltaY: 0, pinch: false, x: 0.5, y: 0.5, timer: 0 })
+  useEffect(() => {
+    const element = phoneRef.current
+    if (!element || !canControl) return
+    const onWheel = (event: WheelEvent) => {
+      const image = imageRef.current
+      if (!image) return
+      const point = pointInContainedImage(
+        event.clientX,
+        event.clientY,
+        image.getBoundingClientRect(),
+        image.naturalWidth,
+        image.naturalHeight,
+      )
+      if (!point) return
+      event.preventDefault()
+      const wheel = wheelRef.current
+      if (wheel.deltaY === 0) {
+        wheel.x = point.x
+        wheel.y = point.y
+        wheel.pinch = event.ctrlKey
+      }
+      wheel.deltaY += event.deltaY
+      window.clearTimeout(wheel.timer)
+      wheel.timer = window.setTimeout(() => {
+        const { deltaY, pinch, x, y } = wheel
+        wheel.deltaY = 0
+        if (pinch) {
+          const gesture = buildPinchGesture({ x, y }, deltaY)
+          if (gesture) queueControl('control_gesture', { ...gesture })
+        } else {
+          const gesture = buildScrollGesture({ x, y }, deltaY)
+          if (gesture) queueControl('control_gesture', { ...gesture })
+        }
+      }, 140)
+    }
+    element.addEventListener('wheel', onWheel, { passive: false })
+    return () => element.removeEventListener('wheel', onWheel)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canControl])
+
   const samplePoint = (event: PointerEvent<HTMLImageElement>) => {
     const image = imageRef.current
     if (!image) return null
@@ -194,6 +301,7 @@ export default function CompanionWorkspaceStage({
     const point = samplePoint(event)
     if (!point) return
     event.preventDefault()
+    phoneRef.current?.focus({ preventScroll: true })
     event.currentTarget.setPointerCapture(event.pointerId)
     samplesRef.current = [point]
   }
@@ -378,7 +486,12 @@ export default function CompanionWorkspaceStage({
       <div className="flex min-h-0 flex-1 overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
         <main className="relative flex min-h-0 min-w-0 flex-1 flex-col items-center justify-center gap-2 overflow-auto bg-black/35 p-3">
           <div
-            className={`relative flex max-h-full max-w-full items-center justify-center overflow-hidden rounded-[28px] border-[3px] border-[#3b414d] bg-[#05070b] p-[3px] shadow-[0_18px_42px_rgba(0,0,0,.42)] ${compact ? 'h-[320px]' : 'h-[min(68vh,720px)]'} aspect-[9/19.5]`}
+            ref={phoneRef}
+            tabIndex={canControl ? 0 : -1}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+            aria-label={canControl ? t('companion.keyboardHint') : undefined}
+            className={`relative flex max-h-full max-w-full items-center justify-center overflow-hidden rounded-[28px] border-[3px] outline-none focus-visible:border-primary focus:border-primary/70 border-[#3b414d] bg-[#05070b] p-[3px] shadow-[0_18px_42px_rgba(0,0,0,.42)] ${compact ? 'h-[320px]' : 'h-[min(68vh,720px)]'} aspect-[9/19.5]`}
           >
             {frame ? (
               <img
@@ -489,7 +602,7 @@ export default function CompanionWorkspaceStage({
         </main>
 
         {!compact && (
-          <aside className="w-64 shrink-0 border-l border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4">
+          <aside className="w-64 shrink-0 overflow-y-auto border-l border-[var(--border-subtle)] bg-[var(--bg-elevated)] p-4">
             <div className="flex items-center gap-2 text-[10px] font-semibold text-[var(--text-base)]">
               {canControl ? (
                 <>
@@ -503,7 +616,7 @@ export default function CompanionWorkspaceStage({
             </div>
             <p className="mt-3 text-[9px] leading-relaxed text-[var(--text-subtle)]">
               {canControl
-                ? t('companion.controlActiveBody')
+                ? `${t('companion.controlActiveBody')} ${t('companion.keyboardHint')}`
                 : controlSupported
                   ? t('companion.controlHowTo')
                   : 'This workspace displays the authenticated JPEG stream from Android Companion. Update the Android Companion app to control the phone without adb.'}
@@ -511,6 +624,16 @@ export default function CompanionWorkspaceStage({
             <p className="mt-3 text-[9px] leading-relaxed text-amber-300/80">
               {t('companion.screenLockNote')}
             </p>
+            {request && (
+              <CompanionToolsPanel
+                request={request}
+                capabilities={device.capabilities}
+                screenActive={screenActive}
+                startScreen={startScreen}
+                stopScreen={stopScreen}
+                onError={setLocalError}
+              />
+            )}
             <dl className="mt-5 space-y-3 border-t border-[var(--border-subtle)] pt-4 text-[9px]">
               <div>
                 <dt className="text-[var(--text-subtle)]">Package</dt>

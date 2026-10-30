@@ -40,21 +40,38 @@ class DeviceControlService : AccessibilityService() {
 
     fun performGesture(request: GestureRequest): Boolean {
         val (width, height) = displaySize()
-        val path = Path()
-        request.points.forEachIndexed { index, point ->
-            val x = (point.x * (width - 1)).coerceIn(0f, (width - 1).toFloat())
-            val y = (point.y * (height - 1)).coerceIn(0f, (height - 1).toFloat())
-            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-        }
         val duration = request.durationMs.coerceAtMost(GestureDescription.getMaxGestureDuration())
-        val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, duration))
-            .build()
-        return dispatchGesture(gesture, null, null)
+        val builder = GestureDescription.Builder()
+        request.strokes.forEach { stroke ->
+            val path = Path()
+            stroke.forEachIndexed { index, point ->
+                val x = (point.x * (width - 1)).coerceIn(0f, (width - 1).toFloat())
+                val y = (point.y * (height - 1)).coerceIn(0f, (height - 1).toFloat())
+                if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            builder.addStroke(GestureDescription.StrokeDescription(path, 0, duration))
+        }
+        return dispatchGesture(builder.build(), null, null)
     }
 
     fun performAction(action: String): Boolean {
-        if (action == "enter") return pressImeEnter()
+        when (action) {
+            "enter" -> return pressImeEnter()
+            "backspace" -> return deleteLastCharacter()
+            "volume_up", "volume_down" -> {
+                val audio = getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+                audio.adjustStreamVolume(
+                    android.media.AudioManager.STREAM_MUSIC,
+                    if (action == "volume_up") {
+                        android.media.AudioManager.ADJUST_RAISE
+                    } else {
+                        android.media.AudioManager.ADJUST_LOWER
+                    },
+                    android.media.AudioManager.FLAG_SHOW_UI,
+                )
+                return true
+            }
+        }
         val globalAction = when (action) {
             "back" -> GLOBAL_ACTION_BACK
             "home" -> GLOBAL_ACTION_HOME
@@ -86,6 +103,36 @@ class DeviceControlService : AccessibilityService() {
             val cursor = Bundle().apply {
                 putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, updated.length)
                 putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, updated.length)
+            }
+            node.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, cursor)
+        }
+        return ok
+    }
+
+    /** Removes the selection, or the character before the cursor, in the focused field. */
+    private fun deleteLastCharacter(): Boolean {
+        val node = focusedEditable()
+            ?: throw IllegalStateException("Tap a text field on the phone first")
+        val current = if (node.isShowingHintText) "" else node.text?.toString().orEmpty()
+        if (current.isEmpty()) return true
+        val start = node.textSelectionStart.takeIf { it >= 0 } ?: current.length
+        val end = node.textSelectionEnd.takeIf { it >= 0 } ?: current.length
+        val (from, to) = if (start != end) {
+            minOf(start, end) to maxOf(start, end)
+        } else {
+            val cursor = start.coerceIn(0, current.length)
+            if (cursor == 0) return true
+            current.offsetByCodePoints(cursor, -1) to cursor
+        }
+        val updated = current.removeRange(from, to)
+        val arguments = Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, updated)
+        }
+        val ok = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
+        if (ok) {
+            val cursor = Bundle().apply {
+                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, from)
+                putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, from)
             }
             node.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, cursor)
         }

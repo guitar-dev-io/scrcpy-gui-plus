@@ -32,6 +32,8 @@ export type CompanionMethod =
   | 'control_gesture'
   | 'control_action'
   | 'control_text'
+  | 'list_apps'
+  | 'launch_app'
 
 export type CompanionParams = Record<string, unknown>
 

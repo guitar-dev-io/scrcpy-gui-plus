@@ -75,3 +75,86 @@ export function buildControlGesture(samples: ControlSample[]): ControlGesture | 
     durationMs: Math.min(MAX_SWIPE_MS, Math.max(MIN_SWIPE_MS, Math.round(elapsed))),
   }
 }
+
+export type CompanionQuality = 'low' | 'balanced' | 'smooth' | 'sharp'
+
+export const COMPANION_QUALITIES: CompanionQuality[] = ['low', 'balanced', 'smooth', 'sharp']
+const QUALITY_KEY = 'scrcpy_companion_quality_v1'
+
+export function getCompanionQuality(): CompanionQuality {
+  try {
+    const stored = localStorage.getItem(QUALITY_KEY)
+    return COMPANION_QUALITIES.includes(stored as CompanionQuality)
+      ? (stored as CompanionQuality)
+      : 'balanced'
+  } catch {
+    return 'balanced'
+  }
+}
+
+export function setCompanionQuality(quality: CompanionQuality): void {
+  try {
+    localStorage.setItem(QUALITY_KEY, quality)
+  } catch {
+    // The stream just uses the default next time.
+  }
+}
+
+const clampEdge = (value: number) => Math.min(0.98, Math.max(0.02, value))
+
+/**
+ * Mouse wheel → a swipe through the pointer, opposite to the wheel like a trackpad:
+ * wheel down moves the finger up so the content scrolls down.
+ */
+export function buildScrollGesture(
+  point: { x: number; y: number },
+  deltaY: number,
+): ControlGesture | null {
+  const distance = Math.max(-0.6, Math.min(0.6, deltaY / 800))
+  if (Math.abs(distance) < 0.01) return null
+  const round = (value: number) => Math.round(clampEdge(value) * 10_000) / 10_000
+  const startY = round(point.y)
+  const endY = round(point.y - distance)
+  if (startY === endY) return null
+  return {
+    points: [
+      [round(point.x), startY],
+      [round(point.x), endY],
+    ],
+    durationMs: 250,
+  }
+}
+
+export interface ControlPinch {
+  strokes: Array<Array<[number, number]>>
+  durationMs: number
+}
+
+/**
+ * Trackpad pinch (a ctrl+wheel event in the webview) → two fingers moving apart or
+ * together around the pointer. Negative deltaY zooms in.
+ */
+export function buildPinchGesture(
+  point: { x: number; y: number },
+  deltaY: number,
+): ControlPinch | null {
+  const scale = Math.exp(-deltaY / 150)
+  if (Math.abs(scale - 1) < 0.05) return null
+  const start = 0.08
+  const end = Math.min(0.4, Math.max(0.02, start * scale))
+  const round = (value: number) => Math.round(clampEdge(value) * 10_000) / 10_000
+  const y = round(point.y)
+  return {
+    strokes: [
+      [
+        [round(point.x - start), y],
+        [round(point.x - end), y],
+      ],
+      [
+        [round(point.x + start), y],
+        [round(point.x + end), y],
+      ],
+    ],
+    durationMs: 300,
+  }
+}

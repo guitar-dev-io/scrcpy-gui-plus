@@ -135,7 +135,18 @@ const ALLOWED_METHODS: &[&str] = &[
     "control_gesture",
     "control_action",
     "control_text",
+    "list_apps",
+    "launch_app",
+    // Sent only by companion_send_file, which chunks the file itself.
+    "file_begin",
+    "file_chunk",
+    "file_end",
 ];
+
+const FILE_TRANSFER_METHODS: &[&str] = &["file_begin", "file_chunk", "file_end"];
+const FILE_CHUNK_BYTES: usize = 384 * 1024;
+const MAX_SEND_FILE_BYTES: u64 = 1024 * 1024 * 1024;
+const MAX_CONTROL_GESTURE_STROKES: usize = 2;
 
 const MAX_CONTROL_GESTURE_POINTS: usize = 256;
 const MAX_CONTROL_GESTURE_DURATION_MS: u64 = 10_000;
@@ -149,6 +160,9 @@ const CONTROL_ACTIONS: &[&str] = &[
     "power_dialog",
     "lock_screen",
     "enter",
+    "backspace",
+    "volume_up",
+    "volume_down",
 ];
 
 // A v1 client that omits capabilities predates remote control. Keep its
@@ -3684,7 +3698,30 @@ fn validate_method(method: &str, params: &Value) -> CompanionResult<()> {
         "stop_screen_share" => {}
         "start_remote_control" => validate_remote_control_params(params)?,
         "stop_remote_control" => {}
-        "control_status" => {}
+        "control_status" | "list_apps" => {}
+        "launch_app" => {
+            let package = params
+                .get("package")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if package.is_empty()
+                || package.len() > 255
+                || !package
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_')
+            {
+                return Err(CompanionError::new(
+                    CompanionErrorKind::Validation,
+                    "launch_app requires a valid params.package",
+                ));
+            }
+        }
+        method if FILE_TRANSFER_METHODS.contains(&method) => {
+            return Err(CompanionError::new(
+                CompanionErrorKind::Validation,
+                "Use companion_send_file to send files",
+            ));
+        }
         "control_gesture" => validate_control_gesture(params)?,
         "control_action" => {
             let action = params
@@ -3719,23 +3756,44 @@ fn validate_method(method: &str, params: &Value) -> CompanionResult<()> {
 /// desktop never needs the phone's pixel size or orientation.
 fn validate_control_gesture(params: &Value) -> CompanionResult<()> {
     let invalid = |message: &str| CompanionError::new(CompanionErrorKind::Validation, message);
-    let points = params
-        .get("points")
-        .and_then(Value::as_array)
-        .ok_or_else(|| invalid("control_gesture requires params.points"))?;
-    if points.is_empty() || points.len() > MAX_CONTROL_GESTURE_POINTS {
-        return Err(invalid("control_gesture needs 1 to 256 points"));
-    }
-    for point in points {
-        let pair = point.as_array().filter(|pair| pair.len() == 2);
-        let in_range = pair.is_some_and(|pair| {
-            pair.iter()
-                .all(|value| value.as_f64().is_some_and(|v| (0.0..=1.0).contains(&v)))
-        });
-        if !in_range {
-            return Err(invalid(
-                "control_gesture points must be [x, y] between 0 and 1",
-            ));
+    // One finger as `points`, or up to two (a pinch) as `strokes`.
+    let strokes: Vec<&Vec<Value>> = match params.get("strokes") {
+        Some(strokes) => {
+            let strokes = strokes
+                .as_array()
+                .ok_or_else(|| invalid("control_gesture strokes must be an array"))?;
+            if strokes.is_empty() || strokes.len() > MAX_CONTROL_GESTURE_STROKES {
+                return Err(invalid("control_gesture needs 1 or 2 strokes"));
+            }
+            strokes
+                .iter()
+                .map(|stroke| {
+                    stroke
+                        .as_array()
+                        .ok_or_else(|| invalid("control_gesture stroke must be an array"))
+                })
+                .collect::<CompanionResult<_>>()?
+        }
+        None => vec![params
+            .get("points")
+            .and_then(Value::as_array)
+            .ok_or_else(|| invalid("control_gesture requires params.points"))?],
+    };
+    for points in strokes {
+        if points.is_empty() || points.len() > MAX_CONTROL_GESTURE_POINTS {
+            return Err(invalid("control_gesture needs 1 to 256 points"));
+        }
+        for point in points {
+            let pair = point.as_array().filter(|pair| pair.len() == 2);
+            let in_range = pair.is_some_and(|pair| {
+                pair.iter()
+                    .all(|value| value.as_f64().is_some_and(|v| (0.0..=1.0).contains(&v)))
+            });
+            if !in_range {
+                return Err(invalid(
+                    "control_gesture points must be [x, y] between 0 and 1",
+                ));
+            }
         }
     }
     let duration = params
@@ -3887,6 +3945,82 @@ fn lock_connection(
 /// listener keeps the token valid for the session window and accepts repeated
 /// authenticated control connections, so Android can retry after a broken
 /// pipe or temporary Wi-Fi loss without scanning a new QR code.
+/// Sends a file from this computer into the phone's Downloads, in chunks small enough
+/// for one request frame each. Emits `companion-file-progress` after every chunk.
+#[tauri::command]
+pub async fn companion_send_file(
+    window: Window,
+    state: tauri::State<'_, CompanionState>,
+    path: String,
+) -> Result<Value, String> {
+    use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+
+    let file_path = std::path::PathBuf::from(&path);
+    let metadata = std::fs::metadata(&file_path).map_err(|error| error.to_string())?;
+    if !metadata.is_file() {
+        return Err("Choose a file, not a folder".to_string());
+    }
+    if metadata.len() > MAX_SEND_FILE_BYTES {
+        return Err("Files up to 1 GB can be sent".to_string());
+    }
+    let name = file_path
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| "file".to_string());
+    let total = metadata.len();
+    let connection = state.connection.clone();
+    let cancellation = state.cancellation_token();
+    // Reserve request ids for every frame of this transfer up front.
+    let frames = total.div_ceil(FILE_CHUNK_BYTES as u64) + 2;
+    let first_request_id = state.next_request_id.fetch_add(frames, Ordering::Relaxed);
+    let request_counter = AtomicU64::new(first_request_id);
+
+    task::spawn_blocking(move || {
+        let request = |method: &str, params: Value| -> Result<Value, String> {
+            let deadline = OperationDeadline::after(REQUEST_TIMEOUT, "File transfer");
+            let mut guard = lock_connection(&connection).map_err(|error| error.message)?;
+            let active = guard
+                .as_mut()
+                .ok_or_else(|| "No companion is connected".to_string())?;
+            let id = request_counter.fetch_add(1, Ordering::Relaxed);
+            perform_request(active, id, method, params, deadline, &cancellation)
+                .map_err(|error| error.message)
+        };
+
+        let begin = request("file_begin", json!({ "name": name, "size": total }))?;
+        let transfer_id = begin
+            .get("transferId")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "The phone did not start the transfer".to_string())?
+            .to_string();
+        let mut file = std::fs::File::open(&file_path).map_err(|error| error.to_string())?;
+        let mut buffer = vec![0u8; FILE_CHUNK_BYTES];
+        let mut offset: u64 = 0;
+        loop {
+            let read = file.read(&mut buffer).map_err(|error| error.to_string())?;
+            if read == 0 {
+                break;
+            }
+            request(
+                "file_chunk",
+                json!({
+                    "transferId": transfer_id,
+                    "offset": offset,
+                    "data": BASE64.encode(&buffer[..read]),
+                }),
+            )?;
+            offset += read as u64;
+            let _ = window.emit(
+                "companion-file-progress",
+                json!({ "name": name, "sent": offset, "total": total }),
+            );
+        }
+        request("file_end", json!({ "transferId": transfer_id }))
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
 const TRUSTED_AGENTS_FILE: &str = "companion_trusted_agents.json";
 const MAX_TRUSTED_AGENTS: usize = 20;
 
@@ -4183,6 +4317,17 @@ pub async fn companion_pairing_approve(
     }
 }
 
+/// (max edge px, fps, JPEG quality) for a stream preset, inside the bounds the
+/// Android app accepts (320..=1920 px, 1..=30 fps, 35..=85 quality).
+fn screen_quality_params(preset: Option<&str>) -> (u32, u32, u32) {
+    match preset {
+        Some("low") => (960, 10, 45),
+        Some("smooth") => (1280, 24, 55),
+        Some("sharp") => (1920, 15, 75),
+        _ => (1280, 12, 60),
+    }
+}
+
 /// Start a separate authenticated LAN socket for JPEG screen frames, then ask the
 /// connected Android companion to request MediaProjection permission. The control
 /// socket remains strictly request/response; frame bytes use the Tauri channel.
@@ -4191,7 +4336,9 @@ pub async fn companion_screen_start(
     window: Window,
     state: tauri::State<'_, CompanionState>,
     on_frame: Channel<InvokeResponseBody>,
+    quality: Option<String>,
 ) -> Result<CompanionRequestResult, String> {
+    let (max_size, max_fps, jpeg_quality) = screen_quality_params(quality.as_deref());
     let peer_ip;
     {
         let guard = state
@@ -4250,10 +4397,10 @@ pub async fn companion_screen_start(
         "port": port,
         "token": token,
         "generation": generation,
-        "maxWidth": 1280,
-        "maxHeight": 1280,
-        "maxFps": 12,
-        "jpegQuality": 60,
+        "maxWidth": max_size,
+        "maxHeight": max_size,
+        "maxFps": max_fps,
+        "jpegQuality": jpeg_quality,
     });
     let request_id = state.next_request_id.fetch_add(1, Ordering::Relaxed);
     let connection = state.connection.clone();
@@ -5780,5 +5927,42 @@ mod tests {
         }
         assert_eq!(agents.len(), MAX_TRUSTED_AGENTS);
         assert_eq!(agents[0].agent_device_id, "x29");
+    }
+
+    #[test]
+    fn screen_quality_presets_stay_within_agent_bounds() {
+        for preset in [
+            None,
+            Some("low"),
+            Some("balanced"),
+            Some("smooth"),
+            Some("sharp"),
+            Some("x"),
+        ] {
+            let (size, fps, quality) = screen_quality_params(preset);
+            assert!((320..=1920).contains(&size), "{preset:?}");
+            assert!((1..=30).contains(&fps), "{preset:?}");
+            assert!((35..=85).contains(&quality), "{preset:?}");
+        }
+        assert_eq!(screen_quality_params(None), (1280, 12, 60));
+    }
+
+    #[test]
+    fn validates_pinch_strokes_apps_and_blocks_raw_file_methods() {
+        assert!(validate_method(
+            "control_gesture",
+            &json!({ "strokes": [[[0.4, 0.5], [0.2, 0.5]], [[0.6, 0.5], [0.8, 0.5]]], "durationMs": 250 })
+        )
+        .is_ok());
+        assert!(validate_method(
+            "control_gesture",
+            &json!({ "strokes": [[[0.1, 0.1]], [[0.2, 0.2]], [[0.3, 0.3]]], "durationMs": 250 })
+        )
+        .is_err());
+        assert!(validate_method("control_action", &json!({ "action": "backspace" })).is_ok());
+        assert!(validate_method("list_apps", &json!({})).is_ok());
+        assert!(validate_method("launch_app", &json!({ "package": "com.android.chrome" })).is_ok());
+        assert!(validate_method("launch_app", &json!({ "package": "x; rm" })).is_err());
+        assert!(validate_method("file_begin", &json!({ "name": "a", "size": 1 })).is_err());
     }
 }

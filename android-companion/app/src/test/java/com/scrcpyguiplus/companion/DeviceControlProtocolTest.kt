@@ -63,4 +63,25 @@ class DeviceControlProtocolTest {
             DeviceControlProtocol.parseText(JSONObject().put("text", big))
         }
     }
+
+    @Test
+    fun parsesTwoFingerStrokesForPinch() {
+        val pinch = DeviceControlProtocol.parseGesture(
+            JSONObject("""{"strokes":[[[0.4,0.5],[0.2,0.5]],[[0.6,0.5],[0.8,0.5]]],"durationMs":250}"""),
+        )
+        assertEquals(2, pinch.strokes.size)
+        assertEquals(NormalizedPoint(0.8f, 0.5f), pinch.strokes[1].last())
+        assertThrows(IllegalArgumentException::class.java) {
+            DeviceControlProtocol.parseGesture(
+                JSONObject("""{"strokes":[[[0.1,0.1]],[[0.2,0.2]],[[0.3,0.3]]],"durationMs":250}"""),
+            )
+        }
+    }
+
+    @Test
+    fun acceptsEditingAndVolumeActions() {
+        listOf("backspace", "volume_up", "volume_down").forEach { action ->
+            assertEquals(action, DeviceControlProtocol.parseAction(JSONObject().put("action", action)))
+        }
+    }
 }
