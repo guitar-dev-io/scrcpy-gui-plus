@@ -154,6 +154,7 @@ export const en = {
       error: 'Error',
     },
     tools: {
+      inspect: 'Inspect screen elements (UI Inspector)',
       clipboard: 'Clipboard',
       sendClipboard: 'Send Mac clipboard to phone',
       getClipboard: 'Copy phone clipboard to Mac',

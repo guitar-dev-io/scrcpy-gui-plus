@@ -793,6 +793,14 @@ class MainActivity : ComponentActivity() {
         "start_remote_control" -> startRemoteControlRequest(request.params)
         "stop_remote_control" -> stopRemoteControlRequest()
         "studio_busy" -> studioBusy(request.params)
+        "ui_dump" -> ProtocolHandlerResult(
+            JSONObjectFactory.objectWith(
+                "xml" to requireControlService().dumpHierarchyXml(
+                    UiHierarchyLimits.parseTarget(request.params, "targetWidth"),
+                    UiHierarchyLimits.parseTarget(request.params, "targetHeight"),
+                ),
+            ),
+        )
         "list_apps" -> ProtocolHandlerResult(PhoneApps.list(this))
         "launch_app" -> ProtocolHandlerResult(PhoneApps.launch(this, PhoneApps.parsePackage(request.params)))
         "file_begin" -> ProtocolHandlerResult(incomingFiles.begin(FileTransferProtocol.parseBegin(request.params)))

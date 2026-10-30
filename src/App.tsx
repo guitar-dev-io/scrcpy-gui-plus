@@ -26,6 +26,10 @@ import DashboardEmbeddedStage from './components/dashboard/DashboardEmbeddedStag
 import { ActionRail } from './components/device-rail'
 import CompanionWorkspaceStage from './components/dashboard/CompanionWorkspaceStage'
 import CompanionApprovalDialog from './components/companion/CompanionApprovalDialog'
+import {
+  CompanionInspectorContext,
+  type CompanionInspectorSource,
+} from './contexts/CompanionInspectorContext'
 import IosWorkspaceStage from './components/dashboard/IosWorkspaceStage'
 import WorkspaceTabBar from './components/workspace-tabs'
 import WorkspaceToolSurface from './components/workspace-tabs/WorkspaceToolSurface'
@@ -730,6 +734,21 @@ function AppContent() {
       void companion.startScreen().catch(() => undefined)
     }
   }
+
+  const inspectableCompanion = companion.devices.find((device) =>
+    device.capabilities.includes('ui_dump'),
+  )
+  const companionInspectorSource = useMemo<CompanionInspectorSource | null>(
+    () =>
+      inspectableCompanion
+        ? {
+            name: inspectableCompanion.name,
+            request: companion.request,
+            getFrame: companion.getScreenFrameData,
+          }
+        : null,
+    [inspectableCompanion, companion.request, companion.getScreenFrameData],
+  )
 
   const handleCompanionScreenshot = async (device: CompanionDevice) => {
     const imageData = companion.getScreenFrameData()
@@ -2113,6 +2132,7 @@ function AppContent() {
 
   const shellChrome = shellChromeForRoute(activeRoute)
   return (
+    <CompanionInspectorContext.Provider value={companionInspectorSource}>
     <AppShell
       header={undefined}
       navigation={
@@ -2237,6 +2257,7 @@ function AppContent() {
                       onSaveRecording={(recording) =>
                         handleCompanionRecording(companionDevice, recording)
                       }
+                      onOpenInspector={() => setIsUiInspectorOpen(true)}
                       compact={compactMultiDevice}
                     />
                   ) : iosDevice ? (
@@ -3059,7 +3080,7 @@ function AppContent() {
       <UiInspector
         isOpen={isUiInspectorOpen}
         onClose={() => setIsUiInspectorOpen(false)}
-        activeDevice={activeDevice}
+        activeDevice={activeAndroidWorkspaceDevice}
         customPath={config.scrcpyPath}
       />
 
@@ -3177,6 +3198,7 @@ function AppContent() {
         notify={notify}
       />
     </AppShell>
+    </CompanionInspectorContext.Provider>
   )
 }
 

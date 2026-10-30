@@ -173,7 +173,7 @@ export default function UiInspector({
     customPath
 }: UiInspectorProps) {
     const { t } = useI18n();
-    const { root, screenshot, selected, setSelected, loading, error, refresh } = useUiInspector({
+    const { root, screenshot, selected, setSelected, loading, error, refresh, source, sourceName } = useUiInspector({
         activeDevice,
         customPath,
         enabled: isOpen
@@ -248,14 +248,16 @@ export default function UiInspector({
                                 {t('uiInspector.title')}
                             </h3>
                             <p className="text-[9px] text-zinc-500 tracking-wide">
-                                {activeDevice || t('uiInspector.noDevice')}
+                                {source === 'companion'
+                                    ? `${sourceName} · Companion`
+                                    : activeDevice || t('uiInspector.noDevice')}
                             </p>
                         </div>
                     </div>
                     <div className="flex items-center gap-1">
                         <button
                             onClick={() => void refresh()}
-                            disabled={!activeDevice || loading}
+                            disabled={(!activeDevice && source !== 'companion') || loading}
                             title={t('uiInspector.refresh')}
                             className="p-2 rounded-xl text-zinc-500 hover:text-primary hover:bg-white/5 transition-all disabled:opacity-30"
                         >
@@ -271,7 +273,7 @@ export default function UiInspector({
                 </div>
 
                 {/* Body */}
-                {!activeDevice ? (
+                {!activeDevice && source !== 'companion' ? (
                     <div className="flex flex-col items-center justify-center py-24 text-zinc-700">
                         <Smartphone size={22} />
                         <span className="text-[10px] uppercase tracking-widest mt-2">

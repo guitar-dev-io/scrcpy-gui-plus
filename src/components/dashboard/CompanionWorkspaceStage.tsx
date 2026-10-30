@@ -59,6 +59,7 @@ interface CompanionWorkspaceStageProps {
   onScreenshot?: () => Promise<void> | void
   /** Writes a finished recording to the Mac's recordings folder. */
   onSaveRecording?: (recording: FinishedRecording) => Promise<void> | void
+  onOpenInspector?: () => void
   compact?: boolean
 }
 
@@ -86,6 +87,7 @@ export default function CompanionWorkspaceStage({
   request,
   onScreenshot,
   onSaveRecording,
+  onOpenInspector,
   compact = false,
 }: CompanionWorkspaceStageProps) {
   const { t } = useI18n()
@@ -632,6 +634,7 @@ export default function CompanionWorkspaceStage({
                 startScreen={startScreen}
                 stopScreen={stopScreen}
                 onError={setLocalError}
+                onOpenInspector={onOpenInspector}
               />
             )}
             <dl className="mt-5 space-y-3 border-t border-[var(--border-subtle)] pt-4 text-[9px]">

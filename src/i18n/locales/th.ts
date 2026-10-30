@@ -88,6 +88,7 @@ export const th: DeepPartialTranslations = {
       error: 'ผิดพลาด',
     },
     tools: {
+      inspect: 'ตรวจองค์ประกอบหน้าจอ (UI Inspector)',
       clipboard: 'คลิปบอร์ด',
       sendClipboard: 'ส่งคลิปบอร์ด Mac ไปมือถือ',
       getClipboard: 'คัดลอกคลิปบอร์ดมือถือมา Mac',

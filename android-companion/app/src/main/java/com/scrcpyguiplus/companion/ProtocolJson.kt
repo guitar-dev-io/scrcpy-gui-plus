@@ -37,6 +37,7 @@ object ProtocolJson {
         "control_action",
         "control_text",
         "studio_busy",
+        "ui_dump",
         "list_apps",
         "launch_app",
         "file_begin",

@@ -148,6 +148,61 @@ class DeviceControlService : AccessibilityService() {
         return node.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
     }
 
+    /**
+     * The current screen as uiautomator-style XML, so the desktop's UI Inspector and
+     * Maestro builder can read it without adb. Bounds are scaled to [targetWidth] x
+     * [targetHeight] (the size of the frame the desktop is showing) when given.
+     */
+    fun dumpHierarchyXml(targetWidth: Int?, targetHeight: Int?): String {
+        val root = rootInActiveWindow
+            ?: throw IllegalStateException("No screen content is available right now")
+        val (width, height) = displaySize()
+        val scaleX = targetWidth?.toFloat()?.div(width) ?: 1f
+        val scaleY = targetHeight?.toFloat()?.div(height) ?: 1f
+        val writer = java.io.StringWriter()
+        val xml = android.util.Xml.newSerializer()
+        xml.setOutput(writer)
+        xml.startDocument("UTF-8", true)
+        xml.startTag(null, "hierarchy")
+        xml.attribute(null, "rotation", "0")
+        var budget = UiHierarchyLimits.MAX_NODES
+        fun write(node: AccessibilityNodeInfo, index: Int, depth: Int) {
+            if (budget-- <= 0 || depth > UiHierarchyLimits.MAX_DEPTH) return
+            val bounds = android.graphics.Rect()
+            node.getBoundsInScreen(bounds)
+            xml.startTag(null, "node")
+            xml.attribute(null, "index", index.toString())
+            xml.attribute(null, "text", UiHierarchyLimits.clean(node.text))
+            xml.attribute(null, "resource-id", node.viewIdResourceName.orEmpty())
+            xml.attribute(null, "class", node.className?.toString().orEmpty())
+            xml.attribute(null, "package", node.packageName?.toString().orEmpty())
+            xml.attribute(null, "content-desc", UiHierarchyLimits.clean(node.contentDescription))
+            xml.attribute(null, "checkable", node.isCheckable.toString())
+            xml.attribute(null, "checked", node.isChecked.toString())
+            xml.attribute(null, "clickable", node.isClickable.toString())
+            xml.attribute(null, "enabled", node.isEnabled.toString())
+            xml.attribute(null, "focusable", node.isFocusable.toString())
+            xml.attribute(null, "focused", node.isFocused.toString())
+            xml.attribute(null, "scrollable", node.isScrollable.toString())
+            xml.attribute(null, "long-clickable", node.isLongClickable.toString())
+            xml.attribute(null, "password", node.isPassword.toString())
+            xml.attribute(null, "selected", node.isSelected.toString())
+            xml.attribute(
+                null,
+                "bounds",
+                UiHierarchyLimits.bounds(bounds.left, bounds.top, bounds.right, bounds.bottom, scaleX, scaleY),
+            )
+            for (child in 0 until node.childCount) {
+                node.getChild(child)?.let { write(it, child, depth + 1) }
+            }
+            xml.endTag(null, "node")
+        }
+        write(root, 0, 0)
+        xml.endTag(null, "hierarchy")
+        xml.endDocument()
+        return writer.toString()
+    }
+
     private fun focusedEditable(): AccessibilityNodeInfo? =
         rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.takeIf { it.isEditable }
 

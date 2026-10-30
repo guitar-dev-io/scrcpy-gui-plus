@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { open } from '@tauri-apps/plugin-dialog'
 import {
   AppWindow,
+  ScanSearch,
   ClipboardCopy,
   ClipboardPaste,
   FileUp,
@@ -35,6 +36,8 @@ interface CompanionToolsPanelProps {
   startScreen: () => Promise<void>
   stopScreen: () => Promise<void>
   onError: (message: string) => void
+  /** Opens the UI Inspector on this phone's screen (needs device control). */
+  onOpenInspector?: () => void
 }
 
 const sectionTitle =
@@ -57,6 +60,7 @@ export default function CompanionToolsPanel({
   startScreen,
   stopScreen,
   onError,
+  onOpenInspector,
 }: CompanionToolsPanelProps) {
   const { t } = useI18n()
   const [busy, setBusy] = useState<string | null>(null)
@@ -165,6 +169,12 @@ export default function CompanionToolsPanel({
 
   return (
     <div className="mt-4 space-y-4 border-t border-[var(--border-subtle)] pt-4">
+      {onOpenInspector && can('ui_dump') && (
+        <button type="button" onClick={onOpenInspector} className={toolButton}>
+          <ScanSearch size={11} /> {t('companion.tools.inspect')}
+        </button>
+      )}
+
       {(can('clipboard_set') || can('clipboard_get')) && (
         <section className="space-y-1.5">
           <p className={sectionTitle}>{t('companion.tools.clipboard')}</p>

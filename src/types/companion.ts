@@ -32,6 +32,7 @@ export type CompanionMethod =
   | 'control_gesture'
   | 'control_action'
   | 'control_text'
+  | 'ui_dump'
   | 'list_apps'
   | 'launch_app'
 

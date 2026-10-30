@@ -135,6 +135,7 @@ const ALLOWED_METHODS: &[&str] = &[
     "control_gesture",
     "control_action",
     "control_text",
+    "ui_dump",
     "list_apps",
     "launch_app",
     // Sent only by companion_send_file, which chunks the file itself.
@@ -3699,6 +3700,21 @@ fn validate_method(method: &str, params: &Value) -> CompanionResult<()> {
         "start_remote_control" => validate_remote_control_params(params)?,
         "stop_remote_control" => {}
         "control_status" | "list_apps" => {}
+        "ui_dump" => {
+            for key in ["targetWidth", "targetHeight"] {
+                if let Some(value) = params.get(key) {
+                    if !value
+                        .as_u64()
+                        .is_some_and(|size| (1..=8192).contains(&size))
+                    {
+                        return Err(CompanionError::new(
+                            CompanionErrorKind::Validation,
+                            format!("ui_dump {key} must be 1 to 8192"),
+                        ));
+                    }
+                }
+            }
+        }
         "launch_app" => {
             let package = params
                 .get("package")
