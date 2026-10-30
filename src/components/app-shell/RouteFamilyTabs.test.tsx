@@ -27,16 +27,14 @@ describe('RouteFamilyTabs', () => {
     expect(screen.getByRole('tab', { name: 'Live wall' })).toHaveAttribute('aria-selected', 'true')
   })
 
-  it('offers Connect as a Devices tab and keeps Devices current on that page', async () => {
+  it('keeps Connect Device out of the Devices tab strip', () => {
+    // Connect has its own sidebar entry, so the page shows no family tabs.
     render(
       <ShellUiProvider initialRoute="pair-device" initialOpenWorkspaceTools={[]}>
         <Harness />
       </ShellUiProvider>,
     )
-
-    expect(screen.getByRole('tab', { name: 'Connect' })).toHaveAttribute('aria-selected', 'true')
-    fireEvent.click(screen.getByRole('tab', { name: 'Cards' }))
-    await waitFor(() => expect(screen.getByTestId('route')).toHaveTextContent('devices'))
+    expect(screen.queryByRole('tab', { name: 'Connect' })).not.toBeInTheDocument()
   })
 
   it('renders nothing outside a family', () => {

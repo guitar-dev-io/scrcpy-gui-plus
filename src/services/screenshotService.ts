@@ -125,3 +125,21 @@ export async function revealInFolder(path: string): Promise<void> {
 export async function copyImageToClipboard(path: string): Promise<void> {
   await invoke('copy_image_to_clipboard', { path })
 }
+
+/**
+ * Saves a video recorded in the webview (Companion stream). The bytes go as the
+ * raw IPC body; text metadata is URI-encoded into headers.
+ */
+export async function saveExternalRecording(args: {
+  bytes: Uint8Array
+  extension: 'mp4' | 'webm'
+  deviceName: string
+  outputDir?: string
+}): Promise<string> {
+  const headers: Record<string, string> = {
+    'x-recording-ext': args.extension,
+    'x-recording-device': encodeURIComponent(args.deviceName),
+  }
+  if (args.outputDir) headers['x-recording-dir'] = encodeURIComponent(args.outputDir)
+  return invoke<string>('save_external_recording', args.bytes, { headers })
+}

@@ -53,6 +53,7 @@ describe('app route registry', () => {
     expect(navigationEntries().map((entry) => `${entry.id}:${entry.label}`)).toEqual([
       'dashboard:Dashboard',
       'devices:Devices',
+      'pair-device:Connect Device',
       'screenshots:Media & History',
       'automation:Automation',
       'app-manager:App Manager',

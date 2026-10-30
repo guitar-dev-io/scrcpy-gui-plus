@@ -25,4 +25,6 @@
     <string name="trusted_studios_title">Trusted studios</string>
     <string name="no_trusted_studios">No studios paired yet</string>
     <string name="forget_studio">Forget</string>
+    <string name="device_control_service_label">Mobile Studio device control</string>
+    <string name="device_control_service_description">Lets Mobile Studio on your paired computer tap, swipe, type and press Back/Home on this phone while you share its screen. Turn it off here to stop all remote input.</string>
 </resources>
