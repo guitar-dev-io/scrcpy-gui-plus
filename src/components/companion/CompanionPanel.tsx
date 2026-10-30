@@ -399,6 +399,7 @@ export default function CompanionPanel({
             <div className="mx-auto w-[220px] max-w-full overflow-hidden rounded-md bg-zinc-950 p-1">
               <div
                 aria-label={t('companion.lanQrLabel')}
+                className="[&_svg]:block [&_svg]:h-auto [&_svg]:w-full"
                 dangerouslySetInnerHTML={{ __html: lanOffer.svg }}
               />
             </div>

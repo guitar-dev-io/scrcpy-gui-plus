@@ -25,6 +25,7 @@ import DashboardLayout from './components/dashboard/DashboardLayout'
 import DashboardEmbeddedStage from './components/dashboard/DashboardEmbeddedStage'
 import { ActionRail } from './components/device-rail'
 import CompanionWorkspaceStage from './components/dashboard/CompanionWorkspaceStage'
+import CompanionApprovalDialog from './components/companion/CompanionApprovalDialog'
 import IosWorkspaceStage from './components/dashboard/IosWorkspaceStage'
 import WorkspaceTabBar from './components/workspace-tabs'
 import WorkspaceToolSurface from './components/workspace-tabs/WorkspaceToolSurface'
@@ -2912,6 +2913,14 @@ function AppContent() {
           </section>
         </div>
       )}
+
+      <CompanionApprovalDialog
+        approval={companion.pendingApproval}
+        busy={companion.isApproving}
+        onRespond={(requestId, approve) =>
+          void companion.respondToApproval(requestId, approve)
+        }
+      />
 
       <OnboardingModal
         isOpen={isOnboardingOpen}

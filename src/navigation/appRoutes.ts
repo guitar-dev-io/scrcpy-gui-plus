@@ -104,7 +104,6 @@ export const APP_ROUTE_FAMILIES: readonly AppRouteFamily[] = [
     members: [
       { id: 'devices', tab: 'Cards' },
       { id: 'device-wall', tab: 'Live wall' },
-      { id: 'pair-device', tab: 'Connect' },
     ],
   },
   {

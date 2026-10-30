@@ -3803,6 +3803,28 @@ fn lock_connection(
 /// listener keeps the token valid for the session window and accepts repeated
 /// authenticated control connections, so Android can retry after a broken
 /// pipe or temporary Wi-Fi loss without scanning a new QR code.
+/// The name people know this computer by ("Anuwat's MacBook Pro"), used as the
+/// studio name phones show while pairing.
+fn local_computer_name() -> Option<String> {
+    let from_command = |program: &str, args: &[&str]| {
+        std::process::Command::new(program)
+            .args(args)
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+    };
+    let name = if cfg!(target_os = "macos") {
+        from_command("scutil", &["--get", "ComputerName"])
+    } else if cfg!(target_os = "windows") {
+        std::env::var("COMPUTERNAME").ok()
+    } else {
+        from_command("hostname", &[])
+    };
+    name.map(|value| value.chars().take(64).collect::<String>())
+        .filter(|value| !value.trim().is_empty())
+}
+
 #[tauri::command]
 pub async fn companion_lan_start(
     window: Window,
@@ -3810,6 +3832,11 @@ pub async fn companion_lan_start(
     studio_id: Option<String>,
     studio_name: Option<String>,
 ) -> Result<CompanionLanOffer, String> {
+    // Without a name the phone has nothing to show but "null"/an IP, so fall
+    // back to this computer's own name.
+    let studio_name = studio_name
+        .filter(|name| !name.trim().is_empty())
+        .or_else(local_computer_name);
     match state.connection.try_lock() {
         Ok(guard) if guard.is_some() => {
             return Err("Disconnect the current companion before starting LAN pairing".to_string())

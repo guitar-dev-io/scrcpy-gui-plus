@@ -134,14 +134,18 @@ object LanDiscovery {
         }.distinct().take(MAX_HOSTS_PER_STUDIO)
 
         return DiscoveredStudio(
-            studioId = json.optString("studioId").trim().takeIf { it.isNotEmpty() },
-            studioName = json.optString("studioName").trim().takeIf { it.isNotEmpty() },
+            studioId = optionalString(json, "studioId"),
+            studioName = optionalString(json, "studioName"),
             hosts = hosts,
             port = port,
             replyHost = replyHost,
             requiresApproval = json.optBoolean("requiresApproval", true),
         )
     }
+
+    /** org.json's optString turns a JSON null into the text "null"; treat it as absent. */
+    internal fun optionalString(json: JSONObject, key: String): String? =
+        if (json.isNull(key)) null else json.optString(key).trim().takeIf { it.isNotEmpty() }
 
     /**
      * This device's own IPv4 address on the network it is actually using. Shown on the
