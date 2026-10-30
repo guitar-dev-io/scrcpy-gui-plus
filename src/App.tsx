@@ -68,7 +68,12 @@ import {
 } from './hooks/useScreenshot'
 import { useCompareSessions } from './hooks/useCompareSessions'
 import { useAutoCapture } from './hooks/useAutoCapture'
-import { useRecordingLibrary } from './hooks/useRecordingLibrary'
+import {
+  RECORDING_COMPLETED_EVENT,
+  useRecordingLibrary,
+} from './hooks/useRecordingLibrary'
+import type { FinishedRecording } from './hooks/useCanvasRecorder'
+import { extensionForMimeType } from './utils/canvasRecorder'
 import { useDeviceStatus } from './hooks/useDeviceStatus'
 import { useWorkspaceShell } from './hooks/useWorkspaceShell'
 import { useEmbeddedMirror } from './hooks/useEmbeddedMirror'
@@ -83,6 +88,7 @@ import { createBugReport } from './services/bugReportService'
 import {
   capturePreviewFrame,
   type MacScreenshotTarget,
+  saveExternalRecording,
 } from './services/screenshotService'
 import { applyQualityMode } from './utils/adaptiveQuality'
 import { persistScrcpyLaunchConfig } from './utils/scrcpyLaunch'
@@ -722,6 +728,52 @@ function AppContent() {
       (companion.screenState === 'stopped' || companion.screenState === 'error')
     ) {
       void companion.startScreen().catch(() => undefined)
+    }
+  }
+
+  const handleCompanionScreenshot = async (device: CompanionDevice) => {
+    const imageData = companion.getScreenFrameData()
+    if (!imageData) return
+    const result = await screenshot.captureExternal({
+      imageData,
+      deviceSerial: companionWorkspaceId(device),
+      deviceName: device.name || 'Android Companion',
+      sourceKind: 'android-companion',
+      sourceId: companionWorkspaceId(device),
+      sourceName: device.name,
+      outputDir: screenshot.screenshotDir,
+    })
+    if (result.success) {
+      notify(t('screenshot.captureSuccessTitle'), result.path, 'success')
+    } else if (result.errorCode !== 'busy') {
+      notify(t('screenshot.captureFailedTitle'), result.error || 'Unknown error', 'error')
+    }
+  }
+
+  const handleCompanionRecording = async (
+    device: CompanionDevice,
+    recording: FinishedRecording,
+  ) => {
+    try {
+      const path = await saveExternalRecording({
+        bytes: new Uint8Array(await recording.blob.arrayBuffer()),
+        extension: extensionForMimeType(recording.mimeType),
+        deviceName: device.name || 'companion',
+        outputDir: config.recordPath || undefined,
+      })
+      window.dispatchEvent(
+        new CustomEvent(RECORDING_COMPLETED_EVENT, {
+          detail: {
+            deviceSerial: companionWorkspaceId(device),
+            path,
+            startedAt: recording.startedAt,
+            completedAt: recording.completedAt,
+          },
+        }),
+      )
+      notify(t('companion.recordingSaved'), path, 'success')
+    } catch (error) {
+      notify(t('companion.recordingFailed'), String(error), 'error')
     }
   }
 
@@ -2181,6 +2233,10 @@ function AppContent() {
                       startScreen={companion.startScreen}
                       stopScreen={companion.stopScreen}
                       request={companion.request}
+                      onScreenshot={() => handleCompanionScreenshot(companionDevice)}
+                      onSaveRecording={(recording) =>
+                        handleCompanionRecording(companionDevice, recording)
+                      }
                       compact={compactMultiDevice}
                     />
                   ) : iosDevice ? (

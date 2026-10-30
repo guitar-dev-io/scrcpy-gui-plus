@@ -59,3 +59,22 @@ describe('CompanionWorkspaceStage control', () => {
     expect(screen.queryByRole('button', { name: 'Home' })).toBeNull()
   })
 })
+
+describe('CompanionWorkspaceStage capture', () => {
+  it('saves a screenshot from the header button', async () => {
+    const onScreenshot = vi.fn()
+    render(
+      <CompanionWorkspaceStage
+        device={device}
+        frame="data:image/jpeg;base64,AAAA"
+        screenState="streaming"
+        screenStatus={null}
+        startScreen={vi.fn()}
+        stopScreen={vi.fn()}
+        onScreenshot={onScreenshot}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /Save screenshot/ }))
+    await waitFor(() => expect(onScreenshot).toHaveBeenCalled())
+  })
+})

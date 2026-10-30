@@ -154,6 +154,12 @@ export const en = {
       error: 'Error',
     },
     openWorkspace: 'Open full screen & control',
+    screenshot: 'Save screenshot to this computer',
+    record: 'Record',
+    stopRecording: 'Stop and save recording',
+    recordUnsupported: 'This computer cannot record video from the companion stream.',
+    recordingSaved: 'Recording saved',
+    recordingFailed: 'Could not save the recording',
     autoConnect: 'Auto-connect phones I approved before',
     autoConnectKnown:
       'Remembered: {names}. When the app on one of them opens on this Wi-Fi, it connects without a QR scan or approval.',

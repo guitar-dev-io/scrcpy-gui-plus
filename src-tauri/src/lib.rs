@@ -199,6 +199,7 @@ pub fn run() {
             screen_share::screen_share_extend,
             screen_share::screen_share_status,
             screenshot::save_external_screenshot,
+            screenshot::save_external_recording,
             macos_capture::capture_macos_screenshot,
             screenshot::get_default_screenshot_dir,
             screenshot::delete_screenshot_file,

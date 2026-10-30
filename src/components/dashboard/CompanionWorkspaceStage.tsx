@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'rea
 import {
   ArrowLeft,
   Bell,
+  Camera,
+  Circle,
   CornerDownLeft,
   Eye,
   Hand,
@@ -25,6 +27,8 @@ import type {
   CompanionScreenState,
   CompanionScreenStatusEvent,
 } from '../../types/companion'
+import { useCanvasRecorder, type FinishedRecording } from '../../hooks/useCanvasRecorder'
+import { formatRecordingElapsed } from '../../utils/canvasRecorder'
 import {
   buildControlGesture,
   pointInContainedImage,
@@ -40,6 +44,10 @@ interface CompanionWorkspaceStageProps {
   stopScreen: () => Promise<void>
   /** Sends companion requests; enables phone control when the app supports it. */
   request?: CompanionRequest
+  /** Saves the current frame to the Mac's screenshot folder. */
+  onScreenshot?: () => Promise<void> | void
+  /** Writes a finished recording to the Mac's recordings folder. */
+  onSaveRecording?: (recording: FinishedRecording) => Promise<void> | void
   compact?: boolean
 }
 
@@ -65,6 +73,8 @@ export default function CompanionWorkspaceStage({
   startScreen,
   stopScreen,
   request,
+  onScreenshot,
+  onSaveRecording,
   compact = false,
 }: CompanionWorkspaceStageProps) {
   const { t } = useI18n()
@@ -87,6 +97,53 @@ export default function CompanionWorkspaceStage({
   const [controlText, setControlText] = useState('')
   const samplesRef = useRef<ControlSample[]>([])
   const imageRef = useRef<HTMLImageElement>(null)
+  const recorder = useCanvasRecorder(imageRef)
+  const [now, setNow] = useState(() => Date.now())
+  const [captureBusy, setCaptureBusy] = useState(false)
+
+  useEffect(() => {
+    if (!recorder.recording) return
+    const timer = window.setInterval(() => setNow(Date.now()), 500)
+    return () => window.clearInterval(timer)
+  }, [recorder.recording])
+
+  // The stream ending (screen stopped, phone locked) ends the recording too.
+  useEffect(() => {
+    if (!frame && recorder.recording) void finishRecording()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [frame])
+
+  const finishRecording = async () => {
+    const finished = await recorder.stop()
+    if (!finished || !onSaveRecording) return
+    setCaptureBusy(true)
+    try {
+      await onSaveRecording(finished)
+    } catch (error) {
+      setLocalError(errorMessage(error))
+    } finally {
+      setCaptureBusy(false)
+    }
+  }
+
+  const toggleRecording = () => {
+    if (recorder.recording) {
+      void finishRecording()
+    } else if (!recorder.start()) {
+      setLocalError(t('companion.recordUnsupported'))
+    }
+  }
+
+  const takeScreenshot = async () => {
+    if (!onScreenshot) return
+    setCaptureBusy(true)
+    try {
+      await onScreenshot()
+    } finally {
+      setCaptureBusy(false)
+    }
+  }
+
   const controlSupported =
     Boolean(request) && device.capabilities.includes('control_gesture')
   const canControl = controlSupported && controlEnabled === true && connected
@@ -245,6 +302,44 @@ export default function CompanionWorkspaceStage({
           <span className="flex items-center gap-1.5">
             <Wifi size={11} /> {device.transport === 'lan-tcp' ? 'Private LAN' : device.transport}
           </span>
+          {onScreenshot && (
+            <button
+              type="button"
+              onClick={() => void takeScreenshot()}
+              disabled={!frame || captureBusy}
+              title={t('companion.screenshot')}
+              aria-label={t('companion.screenshot')}
+              className={`flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border-base)] text-[var(--text-muted)] hover:border-primary/50 hover:text-primary disabled:opacity-40 ${focusRing}`}
+            >
+              <Camera size={13} />
+            </button>
+          )}
+          {onSaveRecording && recorder.supported && (
+            <button
+              type="button"
+              onClick={toggleRecording}
+              disabled={(!frame && !recorder.recording) || captureBusy}
+              title={recorder.recording ? t('companion.stopRecording') : t('companion.record')}
+              aria-label={recorder.recording ? t('companion.stopRecording') : t('companion.record')}
+              className={`flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[9px] font-semibold tabular-nums disabled:opacity-40 ${focusRing} ${
+                recorder.recording
+                  ? 'border-red-500/50 bg-red-500/15 text-red-300'
+                  : 'border-[var(--border-base)] text-[var(--text-muted)] hover:border-red-400/50 hover:text-red-300'
+              }`}
+            >
+              {recorder.recording ? (
+                <>
+                  <Square size={10} className="fill-current" />
+                  {formatRecordingElapsed(now - (recorder.startedAt ?? now))}
+                </>
+              ) : (
+                <>
+                  <Circle size={10} className="fill-red-500 text-red-500" />
+                  {t('companion.record')}
+                </>
+              )}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => void toggleScreen()}

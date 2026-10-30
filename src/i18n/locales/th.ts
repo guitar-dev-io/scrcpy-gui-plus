@@ -88,6 +88,12 @@ export const th: DeepPartialTranslations = {
       error: 'ผิดพลาด',
     },
     openWorkspace: 'เปิดจอใหญ่และควบคุม',
+    screenshot: 'บันทึกภาพหน้าจอลงคอมพิวเตอร์',
+    record: 'อัดวิดีโอ',
+    stopRecording: 'หยุดและบันทึกวิดีโอ',
+    recordUnsupported: 'คอมพิวเตอร์นี้อัดวิดีโอจากภาพ Companion ไม่ได้',
+    recordingSaved: 'บันทึกวิดีโอแล้ว',
+    recordingFailed: 'บันทึกวิดีโอไม่สำเร็จ',
     autoConnect: 'เชื่อมต่ออัตโนมัติกับมือถือที่เคยอนุมัติ',
     autoConnectKnown:
       'จำไว้แล้ว: {names} เมื่อเปิดแอปบนเครื่องเหล่านี้ใน Wi-Fi เดียวกัน จะเชื่อมต่อเองโดยไม่ต้องสแกน QR หรือกดอนุมัติ',
