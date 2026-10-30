@@ -87,6 +87,18 @@ export const th: DeepPartialTranslations = {
       stopped: 'หยุดแล้ว',
       error: 'ผิดพลาด',
     },
+    macros: {
+      title: 'มาโคร',
+      record: 'อัดมาโคร',
+      recording: 'กำลังอัด… {count} ขั้นตอน ใช้งานจอมือถือได้ตามปกติ',
+      namePlaceholder: 'ชื่อมาโคร',
+      stopAndSave: 'หยุดและบันทึก',
+      speed: 'ความเร็วเล่นซ้ำ',
+      play: 'เล่น {name}',
+      stop: 'หยุด',
+      delete: 'ลบ {name}',
+      progress: 'ขั้นที่ {step} จาก {total}',
+    },
     tools: {
       inspect: 'ตรวจองค์ประกอบหน้าจอ (UI Inspector)',
       clipboard: 'คลิปบอร์ด',

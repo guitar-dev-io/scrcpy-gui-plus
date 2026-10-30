@@ -36,6 +36,8 @@ import type {
   CompanionScreenStatusEvent,
 } from '../../types/companion'
 import CompanionToolsPanel from './CompanionToolsPanel'
+import CompanionMacroPanel from './CompanionMacroPanel'
+import { useCompanionMacros } from '../../hooks/useCompanionMacros'
 import { useCanvasRecorder, type FinishedRecording } from '../../hooks/useCanvasRecorder'
 import { formatRecordingElapsed } from '../../utils/canvasRecorder'
 import {
@@ -111,6 +113,8 @@ export default function CompanionWorkspaceStage({
   const samplesRef = useRef<ControlSample[]>([])
   const imageRef = useRef<HTMLImageElement>(null)
   const recorder = useCanvasRecorder(imageRef)
+  // Every input goes through `track`, so a macro recording captures it.
+  const macros = useCompanionMacros(request)
   const [now, setNow] = useState(() => Date.now())
   const [captureBusy, setCaptureBusy] = useState(false)
 
@@ -180,7 +184,7 @@ export default function CompanionWorkspaceStage({
   const sendControl = async (method: CompanionMethod, params: CompanionParams) => {
     if (!request) return
     try {
-      await request(method, params)
+      await macros.track(method, params)
       setLocalError(null)
     } catch (error) {
       const message = errorMessage(error)
@@ -626,9 +630,16 @@ export default function CompanionWorkspaceStage({
             <p className="mt-3 text-[9px] leading-relaxed text-amber-300/80">
               {t('companion.screenLockNote')}
             </p>
+            {request && controlSupported && (
+              <CompanionMacroPanel
+                macros={macros}
+                canControl={canControl}
+                onError={setLocalError}
+              />
+            )}
             {request && (
               <CompanionToolsPanel
-                request={request}
+                request={macros.track}
                 capabilities={device.capabilities}
                 screenActive={screenActive}
                 startScreen={startScreen}

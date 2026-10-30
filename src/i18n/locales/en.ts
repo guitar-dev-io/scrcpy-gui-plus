@@ -153,6 +153,18 @@ export const en = {
       stopped: 'Stopped',
       error: 'Error',
     },
+    macros: {
+      title: 'Macros',
+      record: 'Record a macro',
+      recording: 'Recording… {count} steps. Use the phone screen as usual.',
+      namePlaceholder: 'Macro name',
+      stopAndSave: 'Stop and save',
+      speed: 'Replay speed',
+      play: 'Play {name}',
+      stop: 'Stop',
+      delete: 'Delete {name}',
+      progress: 'Step {step} of {total}',
+    },
     tools: {
       inspect: 'Inspect screen elements (UI Inspector)',
       clipboard: 'Clipboard',
