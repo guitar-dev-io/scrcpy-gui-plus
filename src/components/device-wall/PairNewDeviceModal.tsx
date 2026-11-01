@@ -5,7 +5,6 @@ import {
   Loader2,
   QrCode,
   RefreshCw,
-  ShieldCheck,
   Wifi,
   X,
 } from 'lucide-react'
@@ -73,7 +72,6 @@ export default function PairNewDeviceModal({
     ? Math.max(0, Math.ceil((offer.expiresAt - now) / 60_000))
     : 0
   const expired = Boolean(offer) && remainingMinutes <= 0
-  const approval = companion.pendingApproval
 
   const copyPayload = async () => {
     if (!offer) return
@@ -106,57 +104,13 @@ export default function PairNewDeviceModal({
         </div>
 
         <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-4">
-          {/* An Agent is waiting on an answer, which outranks everything else in
-              this modal: until it is answered that phone is stuck. */}
-          {approval && (
-            <div className="rounded-2xl border border-amber-500/40 bg-amber-500/5 p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <ShieldCheck size={15} className="text-amber-400" />
-                <span className="text-[11px] font-black uppercase tracking-widest text-amber-300">
-                  {t('pairDevice.approvalTitle')}
-                </span>
-              </div>
-              <p className="text-[10px] leading-relaxed text-zinc-300">
-                {t('pairDevice.approvalBody', {
-                  device: approval.deviceName,
-                  ip: approval.peerIp,
-                })}
-              </p>
-              <p className="text-center font-mono text-2xl font-bold tracking-[0.3em] text-amber-300">
-                {approval.code}
-              </p>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  disabled={companion.isApproving}
-                  onClick={() =>
-                    void companion.respondToApproval(approval.requestId, true)
-                  }
-                  className="flex-1 rounded-xl bg-primary py-2 text-[10px] font-black uppercase tracking-widest text-on-primary transition-all hover:brightness-110 disabled:opacity-40"
-                >
-                  {t('pairDevice.approve')}
-                </button>
-                <button
-                  type="button"
-                  disabled={companion.isApproving}
-                  onClick={() =>
-                    void companion.respondToApproval(approval.requestId, false)
-                  }
-                  className="flex-1 rounded-xl border border-zinc-700 py-2 text-[10px] font-black uppercase tracking-widest text-zinc-400 transition-all hover:border-red-500/50 hover:text-red-400 disabled:opacity-40"
-                >
-                  {t('pairDevice.reject')}
-                </button>
-              </div>
-            </div>
-          )}
-
           <p className="text-[10px] leading-relaxed text-zinc-400">
             {t('pairDevice.subtitle')}
           </p>
 
           <div className="mx-auto w-[220px] max-w-full overflow-hidden rounded-md bg-zinc-950 p-1 border border-zinc-800/60">
             {offer && !expired ? (
-              <div aria-label={t('pairDevice.qrLabel')} dangerouslySetInnerHTML={{ __html: offer.svg }} />
+              <div aria-label={t('pairDevice.qrLabel')} className="[&_svg]:block [&_svg]:h-auto [&_svg]:w-full" dangerouslySetInnerHTML={{ __html: offer.svg }} />
             ) : (
               <div className="flex h-[220px] items-center justify-center">
                 {companion.isPairing ? (

@@ -130,6 +130,40 @@ const ALLOWED_METHODS: &[&str] = &[
     "stop_screen_share",
     "start_remote_control",
     "stop_remote_control",
+    // Phone-side input through the companion's AccessibilityService (no adb).
+    "control_status",
+    "control_gesture",
+    "control_action",
+    "control_text",
+    "ui_dump",
+    "list_apps",
+    "launch_app",
+    // Sent only by companion_send_file, which chunks the file itself.
+    "file_begin",
+    "file_chunk",
+    "file_end",
+];
+
+const FILE_TRANSFER_METHODS: &[&str] = &["file_begin", "file_chunk", "file_end"];
+const FILE_CHUNK_BYTES: usize = 384 * 1024;
+const MAX_SEND_FILE_BYTES: u64 = 1024 * 1024 * 1024;
+const MAX_CONTROL_GESTURE_STROKES: usize = 2;
+
+const MAX_CONTROL_GESTURE_POINTS: usize = 256;
+const MAX_CONTROL_GESTURE_DURATION_MS: u64 = 10_000;
+const MAX_CONTROL_TEXT_BYTES: usize = 4_096;
+const CONTROL_ACTIONS: &[&str] = &[
+    "back",
+    "home",
+    "recents",
+    "notifications",
+    "quick_settings",
+    "power_dialog",
+    "lock_screen",
+    "enter",
+    "backspace",
+    "volume_up",
+    "volume_down",
 ];
 
 // A v1 client that omits capabilities predates remote control. Keep its
@@ -2468,6 +2502,7 @@ fn run_lan_pairing_listener(
     next_approval_id: Arc<AtomicU64>,
     cancellation: CancellationToken,
     window: Window,
+    auto_approve_trusted: bool,
 ) {
     let deadline = OperationDeadline::after(LAN_PAIRING_TIMEOUT, "LAN pairing");
     let mut rejected_clients = 0usize;
@@ -2519,6 +2554,32 @@ fn run_lan_pairing_listener(
                         Ok((candidate, device, auth))
                     })();
 
+                    // One phone at a time: a different Agent must not silently take over the
+                    // session another phone is using. Only the same Agent may replace its own
+                    // (possibly stale) socket, which is how Wi-Fi reconnects work.
+                    let attempt = match attempt {
+                        Ok((mut candidate, device, auth)) => {
+                            if let Some(holder) = busy_holder(&connection, &device) {
+                                notify_studio_busy(
+                                    &mut candidate,
+                                    &holder,
+                                    deadline.capped(LAN_HELLO_TIMEOUT, "LAN busy notice"),
+                                    &cancellation,
+                                );
+                                let _ = window.emit(
+                                    "scrcpy-log",
+                                    format!(
+                                        "[COMPANION] Turned away {} because {} is already connected",
+                                        device.name, holder
+                                    ),
+                                );
+                                continue;
+                            }
+                            Ok((candidate, device, auth))
+                        }
+                        Err(error) => Err(error),
+                    };
+
                     // A discovered Agent has no token, so hold its socket until the
                     // user answers the prompt. Dropping it here is a plain rejection:
                     // the Agent sees a closed socket and reports it.
@@ -2532,7 +2593,14 @@ fn run_lan_pairing_listener(
                                 .agent_device_id
                                 .clone()
                                 .unwrap_or_else(|| peer.ip().to_string());
-                            let outcome = if approved_agents.contains(&agent_key) {
+                            // With auto-connect on, a phone the user approved in an earlier
+                            // session skips the prompt (keyed by the Agent's own stable id).
+                            let remembered = auto_approve_trusted
+                                && device
+                                    .agent_device_id
+                                    .as_deref()
+                                    .is_some_and(|id| is_trusted_agent(&window, id));
+                            let outcome = if approved_agents.contains(&agent_key) || remembered {
                                 ApprovalOutcome::Approved
                             } else {
                                 await_pairing_approval(
@@ -2557,6 +2625,9 @@ fn run_lan_pairing_listener(
                             match outcome {
                                 ApprovalOutcome::Approved => {
                                     approved_agents.insert(agent_key);
+                                    if let Some(id) = device.agent_device_id.as_deref() {
+                                        remember_trusted_agent(&window, id, &device.name);
+                                    }
                                     Ok((candidate, device))
                                 }
                                 ApprovalOutcome::Rejected => {
@@ -3628,7 +3699,125 @@ fn validate_method(method: &str, params: &Value) -> CompanionResult<()> {
         "stop_screen_share" => {}
         "start_remote_control" => validate_remote_control_params(params)?,
         "stop_remote_control" => {}
+        "control_status" | "list_apps" => {}
+        "ui_dump" => {
+            for key in ["targetWidth", "targetHeight"] {
+                if let Some(value) = params.get(key) {
+                    if !value
+                        .as_u64()
+                        .is_some_and(|size| (1..=8192).contains(&size))
+                    {
+                        return Err(CompanionError::new(
+                            CompanionErrorKind::Validation,
+                            format!("ui_dump {key} must be 1 to 8192"),
+                        ));
+                    }
+                }
+            }
+        }
+        "launch_app" => {
+            let package = params
+                .get("package")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if package.is_empty()
+                || package.len() > 255
+                || !package
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_')
+            {
+                return Err(CompanionError::new(
+                    CompanionErrorKind::Validation,
+                    "launch_app requires a valid params.package",
+                ));
+            }
+        }
+        method if FILE_TRANSFER_METHODS.contains(&method) => {
+            return Err(CompanionError::new(
+                CompanionErrorKind::Validation,
+                "Use companion_send_file to send files",
+            ));
+        }
+        "control_gesture" => validate_control_gesture(params)?,
+        "control_action" => {
+            let action = params
+                .get("action")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if !CONTROL_ACTIONS.contains(&action) {
+                return Err(CompanionError::new(
+                    CompanionErrorKind::Validation,
+                    "control_action requires a supported params.action",
+                ));
+            }
+        }
+        "control_text" => {
+            let text = params
+                .get("text")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if text.is_empty() || text.len() > MAX_CONTROL_TEXT_BYTES {
+                return Err(CompanionError::new(
+                    CompanionErrorKind::Validation,
+                    "control_text requires params.text of 1 to 4096 bytes",
+                ));
+            }
+        }
         _ => {}
+    }
+    Ok(())
+}
+
+/// `points` are `[x, y]` pairs normalized to the phone's display (0..=1), so the
+/// desktop never needs the phone's pixel size or orientation.
+fn validate_control_gesture(params: &Value) -> CompanionResult<()> {
+    let invalid = |message: &str| CompanionError::new(CompanionErrorKind::Validation, message);
+    // One finger as `points`, or up to two (a pinch) as `strokes`.
+    let strokes: Vec<&Vec<Value>> = match params.get("strokes") {
+        Some(strokes) => {
+            let strokes = strokes
+                .as_array()
+                .ok_or_else(|| invalid("control_gesture strokes must be an array"))?;
+            if strokes.is_empty() || strokes.len() > MAX_CONTROL_GESTURE_STROKES {
+                return Err(invalid("control_gesture needs 1 or 2 strokes"));
+            }
+            strokes
+                .iter()
+                .map(|stroke| {
+                    stroke
+                        .as_array()
+                        .ok_or_else(|| invalid("control_gesture stroke must be an array"))
+                })
+                .collect::<CompanionResult<_>>()?
+        }
+        None => vec![params
+            .get("points")
+            .and_then(Value::as_array)
+            .ok_or_else(|| invalid("control_gesture requires params.points"))?],
+    };
+    for points in strokes {
+        if points.is_empty() || points.len() > MAX_CONTROL_GESTURE_POINTS {
+            return Err(invalid("control_gesture needs 1 to 256 points"));
+        }
+        for point in points {
+            let pair = point.as_array().filter(|pair| pair.len() == 2);
+            let in_range = pair.is_some_and(|pair| {
+                pair.iter()
+                    .all(|value| value.as_f64().is_some_and(|v| (0.0..=1.0).contains(&v)))
+            });
+            if !in_range {
+                return Err(invalid(
+                    "control_gesture points must be [x, y] between 0 and 1",
+                ));
+            }
+        }
+    }
+    let duration = params
+        .get("durationMs")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    if duration == 0 || duration > MAX_CONTROL_GESTURE_DURATION_MS {
+        return Err(invalid("control_gesture durationMs must be 1 to 10000"));
     }
     Ok(())
 }
@@ -3713,6 +3902,53 @@ fn perform_request(
     decode_response(&response, request_id)
 }
 
+fn agent_key(device: &CompanionDevice) -> Option<&str> {
+    device
+        .agent_device_id
+        .as_deref()
+        .or(device.peer_ip.as_deref())
+}
+
+/// Name of the phone holding the session when it is a different phone than `incoming`.
+fn busy_holder(
+    connection: &Arc<Mutex<Option<CompanionConnection>>>,
+    incoming: &CompanionDevice,
+) -> Option<String> {
+    let guard = connection.lock().ok()?;
+    let current = guard.as_ref()?;
+    if agent_key(&current.device) == agent_key(incoming) {
+        return None;
+    }
+    Some(current.device.name.clone())
+}
+
+/// Tells a turned-away phone why, so it stops retrying and shows the reason. Best
+/// effort: an Agent that predates `studio_busy` just sees the socket close.
+fn notify_studio_busy(
+    candidate: &mut CompanionConnection,
+    holder: &str,
+    deadline: OperationDeadline,
+    cancellation: &CancellationToken,
+) {
+    let notice = json!({
+        "type": "request",
+        "id": 0,
+        "method": "studio_busy",
+        "params": {
+            "inUseBy": holder,
+            "message": format!("This computer is already connected to {holder}. Disconnect it there first."),
+        },
+    });
+    if let Ok(payload) = serde_json::to_vec(&notice) {
+        if candidate
+            .write_frame(&payload, deadline, cancellation)
+            .is_ok()
+        {
+            let _ = candidate.read_frame(deadline, cancellation);
+        }
+    }
+}
+
 fn lock_connection(
     connection: &Arc<Mutex<Option<CompanionConnection>>>,
 ) -> CompanionResult<std::sync::MutexGuard<'_, Option<CompanionConnection>>> {
@@ -3725,13 +3961,198 @@ fn lock_connection(
 /// listener keeps the token valid for the session window and accepts repeated
 /// authenticated control connections, so Android can retry after a broken
 /// pipe or temporary Wi-Fi loss without scanning a new QR code.
+/// Sends a file from this computer into the phone's Downloads, in chunks small enough
+/// for one request frame each. Emits `companion-file-progress` after every chunk.
+#[tauri::command]
+pub async fn companion_send_file(
+    window: Window,
+    state: tauri::State<'_, CompanionState>,
+    path: String,
+) -> Result<Value, String> {
+    use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+
+    let file_path = std::path::PathBuf::from(&path);
+    let metadata = std::fs::metadata(&file_path).map_err(|error| error.to_string())?;
+    if !metadata.is_file() {
+        return Err("Choose a file, not a folder".to_string());
+    }
+    if metadata.len() > MAX_SEND_FILE_BYTES {
+        return Err("Files up to 1 GB can be sent".to_string());
+    }
+    let name = file_path
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| "file".to_string());
+    let total = metadata.len();
+    let connection = state.connection.clone();
+    let cancellation = state.cancellation_token();
+    // Reserve request ids for every frame of this transfer up front.
+    let frames = total.div_ceil(FILE_CHUNK_BYTES as u64) + 2;
+    let first_request_id = state.next_request_id.fetch_add(frames, Ordering::Relaxed);
+    let request_counter = AtomicU64::new(first_request_id);
+
+    task::spawn_blocking(move || {
+        let request = |method: &str, params: Value| -> Result<Value, String> {
+            let deadline = OperationDeadline::after(REQUEST_TIMEOUT, "File transfer");
+            let mut guard = lock_connection(&connection).map_err(|error| error.message)?;
+            let active = guard
+                .as_mut()
+                .ok_or_else(|| "No companion is connected".to_string())?;
+            let id = request_counter.fetch_add(1, Ordering::Relaxed);
+            perform_request(active, id, method, params, deadline, &cancellation)
+                .map_err(|error| error.message)
+        };
+
+        let begin = request("file_begin", json!({ "name": name, "size": total }))?;
+        let transfer_id = begin
+            .get("transferId")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "The phone did not start the transfer".to_string())?
+            .to_string();
+        let mut file = std::fs::File::open(&file_path).map_err(|error| error.to_string())?;
+        let mut buffer = vec![0u8; FILE_CHUNK_BYTES];
+        let mut offset: u64 = 0;
+        loop {
+            let read = file.read(&mut buffer).map_err(|error| error.to_string())?;
+            if read == 0 {
+                break;
+            }
+            request(
+                "file_chunk",
+                json!({
+                    "transferId": transfer_id,
+                    "offset": offset,
+                    "data": BASE64.encode(&buffer[..read]),
+                }),
+            )?;
+            offset += read as u64;
+            let _ = window.emit(
+                "companion-file-progress",
+                json!({ "name": name, "sent": offset, "total": total }),
+            );
+        }
+        request("file_end", json!({ "transferId": transfer_id }))
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+const TRUSTED_AGENTS_FILE: &str = "companion_trusted_agents.json";
+const MAX_TRUSTED_AGENTS: usize = 20;
+
+/// A phone the desktop user approved once; with auto-connect on it reconnects
+/// without another prompt.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrustedAgent {
+    pub agent_device_id: String,
+    pub name: String,
+    pub approved_at: u64,
+}
+
+fn trusted_agents_path(app: &AppHandle) -> Option<std::path::PathBuf> {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|dir| dir.join(TRUSTED_AGENTS_FILE))
+}
+
+fn load_trusted_agents(app: &AppHandle) -> Vec<TrustedAgent> {
+    trusted_agents_path(app)
+        .and_then(|path| std::fs::read(path).ok())
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+fn save_trusted_agents(app: &AppHandle, agents: &[TrustedAgent]) {
+    let Some(path) = trusted_agents_path(app) else {
+        return;
+    };
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    if let Ok(bytes) = serde_json::to_vec_pretty(agents) {
+        let _ = std::fs::write(path, bytes);
+    }
+}
+
+fn upsert_trusted_agent(agents: &mut Vec<TrustedAgent>, agent: TrustedAgent) {
+    agents.retain(|existing| existing.agent_device_id != agent.agent_device_id);
+    agents.insert(0, agent);
+    agents.truncate(MAX_TRUSTED_AGENTS);
+}
+
+fn is_trusted_agent(window: &Window, agent_device_id: &str) -> bool {
+    load_trusted_agents(window.app_handle())
+        .iter()
+        .any(|agent| agent.agent_device_id == agent_device_id)
+}
+
+fn remember_trusted_agent(window: &Window, agent_device_id: &str, name: &str) {
+    let app = window.app_handle();
+    let mut agents = load_trusted_agents(app);
+    let approved_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    upsert_trusted_agent(
+        &mut agents,
+        TrustedAgent {
+            agent_device_id: agent_device_id.to_string(),
+            name: name.to_string(),
+            approved_at,
+        },
+    );
+    save_trusted_agents(app, &agents);
+}
+
+/// Phones that may reconnect without a prompt while auto-connect is on.
+#[tauri::command]
+pub fn companion_trusted_agents(app: AppHandle) -> Vec<TrustedAgent> {
+    load_trusted_agents(&app)
+}
+
+/// Forgets every remembered phone; each must be approved again next time.
+#[tauri::command]
+pub fn companion_forget_trusted_agents(app: AppHandle) {
+    save_trusted_agents(&app, &[]);
+}
+
+/// The name people know this computer by ("Anuwat's MacBook Pro"), used as the
+/// studio name phones show while pairing.
+fn local_computer_name() -> Option<String> {
+    let from_command = |program: &str, args: &[&str]| {
+        std::process::Command::new(program)
+            .args(args)
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+    };
+    let name = if cfg!(target_os = "macos") {
+        from_command("scutil", &["--get", "ComputerName"])
+    } else if cfg!(target_os = "windows") {
+        std::env::var("COMPUTERNAME").ok()
+    } else {
+        from_command("hostname", &[])
+    };
+    name.map(|value| value.chars().take(64).collect::<String>())
+        .filter(|value| !value.trim().is_empty())
+}
+
 #[tauri::command]
 pub async fn companion_lan_start(
     window: Window,
     state: tauri::State<'_, CompanionState>,
     studio_id: Option<String>,
     studio_name: Option<String>,
+    auto_approve_trusted: Option<bool>,
 ) -> Result<CompanionLanOffer, String> {
+    // Without a name the phone has nothing to show but "null"/an IP, so fall
+    // back to this computer's own name.
+    let studio_name = studio_name
+        .filter(|name| !name.trim().is_empty())
+        .or_else(local_computer_name);
     match state.connection.try_lock() {
         Ok(guard) if guard.is_some() => {
             return Err("Disconnect the current companion before starting LAN pairing".to_string())
@@ -3874,6 +4295,7 @@ pub async fn companion_lan_start(
             next_approval_id,
             cancellation,
             window,
+            auto_approve_trusted.unwrap_or(false),
         );
     });
 
@@ -3911,6 +4333,17 @@ pub async fn companion_pairing_approve(
     }
 }
 
+/// (max edge px, fps, JPEG quality) for a stream preset, inside the bounds the
+/// Android app accepts (320..=1920 px, 1..=30 fps, 35..=85 quality).
+fn screen_quality_params(preset: Option<&str>) -> (u32, u32, u32) {
+    match preset {
+        Some("low") => (960, 10, 45),
+        Some("smooth") => (1280, 24, 55),
+        Some("sharp") => (1920, 15, 75),
+        _ => (1280, 12, 60),
+    }
+}
+
 /// Start a separate authenticated LAN socket for JPEG screen frames, then ask the
 /// connected Android companion to request MediaProjection permission. The control
 /// socket remains strictly request/response; frame bytes use the Tauri channel.
@@ -3919,7 +4352,9 @@ pub async fn companion_screen_start(
     window: Window,
     state: tauri::State<'_, CompanionState>,
     on_frame: Channel<InvokeResponseBody>,
+    quality: Option<String>,
 ) -> Result<CompanionRequestResult, String> {
+    let (max_size, max_fps, jpeg_quality) = screen_quality_params(quality.as_deref());
     let peer_ip;
     {
         let guard = state
@@ -3978,10 +4413,10 @@ pub async fn companion_screen_start(
         "port": port,
         "token": token,
         "generation": generation,
-        "maxWidth": 1280,
-        "maxHeight": 1280,
-        "maxFps": 12,
-        "jpegQuality": 60,
+        "maxWidth": max_size,
+        "maxHeight": max_size,
+        "maxFps": max_fps,
+        "jpegQuality": jpeg_quality,
     });
     let request_id = state.next_request_id.fetch_add(1, Ordering::Relaxed);
     let connection = state.connection.clone();
@@ -5438,5 +5873,112 @@ mod tests {
         let error = decode_response(&serde_json::to_vec(&response).unwrap(), 4).unwrap_err();
         assert_eq!(error.kind, CompanionErrorKind::Protocol);
         assert!(error.loses_session());
+    }
+
+    #[test]
+    fn validates_control_methods() {
+        assert!(validate_method(
+            "control_gesture",
+            &json!({ "points": [[0.5, 0.5]], "durationMs": 60 })
+        )
+        .is_ok());
+        assert!(validate_method(
+            "control_gesture",
+            &json!({ "points": [[0.0, 1.0], [1.0, 0.0]], "durationMs": 300 })
+        )
+        .is_ok());
+        for bad in [
+            json!({ "points": [], "durationMs": 60 }),
+            json!({ "points": [[1.2, 0.5]], "durationMs": 60 }),
+            json!({ "points": [[0.5]], "durationMs": 60 }),
+            json!({ "points": [[0.5, 0.5]], "durationMs": 0 }),
+            json!({ "points": [[0.5, 0.5]], "durationMs": 20_000 }),
+        ] {
+            assert!(validate_method("control_gesture", &bad).is_err(), "{bad}");
+        }
+        assert!(validate_method("control_action", &json!({ "action": "home" })).is_ok());
+        assert!(validate_method("control_action", &json!({ "action": "reboot" })).is_err());
+        assert!(validate_method("control_text", &json!({ "text": "hello" })).is_ok());
+        assert!(validate_method("control_text", &json!({ "text": "" })).is_err());
+        assert!(validate_method("control_status", &json!({})).is_ok());
+    }
+
+    #[test]
+    fn agent_key_prefers_stable_agent_id() {
+        let mut device = CompanionDevice {
+            id: "lan-1-192.168.1.20".to_string(),
+            name: "Pixel".to_string(),
+            package_name: EXPECTED_PACKAGE.to_string(),
+            app_version: "1".to_string(),
+            protocol: 1,
+            transport: "lan-tcp".to_string(),
+            capabilities: vec![],
+            agent_device_id: Some("agent-a".to_string()),
+            peer_ip: Some("192.168.1.20".to_string()),
+        };
+        assert_eq!(agent_key(&device), Some("agent-a"));
+        device.agent_device_id = None;
+        assert_eq!(agent_key(&device), Some("192.168.1.20"));
+    }
+
+    #[test]
+    fn trusted_agents_dedupe_newest_first_and_cap() {
+        let agent = |id: &str, at: u64| TrustedAgent {
+            agent_device_id: id.to_string(),
+            name: id.to_uppercase(),
+            approved_at: at,
+        };
+        let mut agents = vec![agent("a", 1), agent("b", 2)];
+        upsert_trusted_agent(&mut agents, agent("a", 3));
+        assert_eq!(
+            agents
+                .iter()
+                .map(|a| a.agent_device_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["a", "b"]
+        );
+        assert_eq!(agents[0].approved_at, 3);
+        for i in 0..30 {
+            upsert_trusted_agent(&mut agents, agent(&format!("x{i}"), 10 + i));
+        }
+        assert_eq!(agents.len(), MAX_TRUSTED_AGENTS);
+        assert_eq!(agents[0].agent_device_id, "x29");
+    }
+
+    #[test]
+    fn screen_quality_presets_stay_within_agent_bounds() {
+        for preset in [
+            None,
+            Some("low"),
+            Some("balanced"),
+            Some("smooth"),
+            Some("sharp"),
+            Some("x"),
+        ] {
+            let (size, fps, quality) = screen_quality_params(preset);
+            assert!((320..=1920).contains(&size), "{preset:?}");
+            assert!((1..=30).contains(&fps), "{preset:?}");
+            assert!((35..=85).contains(&quality), "{preset:?}");
+        }
+        assert_eq!(screen_quality_params(None), (1280, 12, 60));
+    }
+
+    #[test]
+    fn validates_pinch_strokes_apps_and_blocks_raw_file_methods() {
+        assert!(validate_method(
+            "control_gesture",
+            &json!({ "strokes": [[[0.4, 0.5], [0.2, 0.5]], [[0.6, 0.5], [0.8, 0.5]]], "durationMs": 250 })
+        )
+        .is_ok());
+        assert!(validate_method(
+            "control_gesture",
+            &json!({ "strokes": [[[0.1, 0.1]], [[0.2, 0.2]], [[0.3, 0.3]]], "durationMs": 250 })
+        )
+        .is_err());
+        assert!(validate_method("control_action", &json!({ "action": "backspace" })).is_ok());
+        assert!(validate_method("list_apps", &json!({})).is_ok());
+        assert!(validate_method("launch_app", &json!({ "package": "com.android.chrome" })).is_ok());
+        assert!(validate_method("launch_app", &json!({ "package": "x; rm" })).is_err());
+        assert!(validate_method("file_begin", &json!({ "name": "a", "size": 1 })).is_err());
     }
 }

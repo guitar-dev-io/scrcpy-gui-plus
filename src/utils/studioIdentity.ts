@@ -1,5 +1,6 @@
 const STUDIO_ID_STORAGE_KEY = 'scrcpy_studio_identity_v1'
 const STUDIO_NAME_STORAGE_KEY = 'scrcpy_studio_name_v1'
+const COMPANION_AUTO_CONNECT_KEY = 'scrcpy_companion_auto_connect_v1'
 
 function randomId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -39,5 +40,25 @@ export function setStudioName(name: string): void {
     localStorage.setItem(STUDIO_NAME_STORAGE_KEY, name)
   } catch {
     // Not persisted this session; the pairing QR still works without a name.
+  }
+}
+
+/**
+ * Whether phones approved before reconnect on their own: the desktop keeps a LAN
+ * listener up and skips the approval prompt for them. On unless turned off.
+ */
+export function getCompanionAutoConnect(): boolean {
+  try {
+    return localStorage.getItem(COMPANION_AUTO_CONNECT_KEY) !== 'false'
+  } catch {
+    return true
+  }
+}
+
+export function setCompanionAutoConnect(enabled: boolean): void {
+  try {
+    localStorage.setItem(COMPANION_AUTO_CONNECT_KEY, String(enabled))
+  } catch {
+    // Falls back to the default next launch.
   }
 }

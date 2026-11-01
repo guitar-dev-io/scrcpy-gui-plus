@@ -25,6 +25,11 @@ import DashboardLayout from './components/dashboard/DashboardLayout'
 import DashboardEmbeddedStage from './components/dashboard/DashboardEmbeddedStage'
 import { ActionRail } from './components/device-rail'
 import CompanionWorkspaceStage from './components/dashboard/CompanionWorkspaceStage'
+import CompanionApprovalDialog from './components/companion/CompanionApprovalDialog'
+import {
+  CompanionInspectorContext,
+  type CompanionInspectorSource,
+} from './contexts/CompanionInspectorContext'
 import IosWorkspaceStage from './components/dashboard/IosWorkspaceStage'
 import WorkspaceTabBar from './components/workspace-tabs'
 import WorkspaceToolSurface from './components/workspace-tabs/WorkspaceToolSurface'
@@ -67,7 +72,12 @@ import {
 } from './hooks/useScreenshot'
 import { useCompareSessions } from './hooks/useCompareSessions'
 import { useAutoCapture } from './hooks/useAutoCapture'
-import { useRecordingLibrary } from './hooks/useRecordingLibrary'
+import {
+  RECORDING_COMPLETED_EVENT,
+  useRecordingLibrary,
+} from './hooks/useRecordingLibrary'
+import type { FinishedRecording } from './hooks/useCanvasRecorder'
+import { extensionForMimeType } from './utils/canvasRecorder'
 import { useDeviceStatus } from './hooks/useDeviceStatus'
 import { useWorkspaceShell } from './hooks/useWorkspaceShell'
 import { useEmbeddedMirror } from './hooks/useEmbeddedMirror'
@@ -82,6 +92,7 @@ import { createBugReport } from './services/bugReportService'
 import {
   capturePreviewFrame,
   type MacScreenshotTarget,
+  saveExternalRecording,
 } from './services/screenshotService'
 import { applyQualityMode } from './utils/adaptiveQuality'
 import { persistScrcpyLaunchConfig } from './utils/scrcpyLaunch'
@@ -724,6 +735,67 @@ function AppContent() {
     }
   }
 
+  const inspectableCompanion = companion.devices.find((device) =>
+    device.capabilities.includes('ui_dump'),
+  )
+  const companionInspectorSource = useMemo<CompanionInspectorSource | null>(
+    () =>
+      inspectableCompanion
+        ? {
+            name: inspectableCompanion.name,
+            request: companion.request,
+            getFrame: companion.getScreenFrameData,
+          }
+        : null,
+    [inspectableCompanion, companion.request, companion.getScreenFrameData],
+  )
+
+  const handleCompanionScreenshot = async (device: CompanionDevice) => {
+    const imageData = companion.getScreenFrameData()
+    if (!imageData) return
+    const result = await screenshot.captureExternal({
+      imageData,
+      deviceSerial: companionWorkspaceId(device),
+      deviceName: device.name || 'Android Companion',
+      sourceKind: 'android-companion',
+      sourceId: companionWorkspaceId(device),
+      sourceName: device.name,
+      outputDir: screenshot.screenshotDir,
+    })
+    if (result.success) {
+      notify(t('screenshot.captureSuccessTitle'), result.path, 'success')
+    } else if (result.errorCode !== 'busy') {
+      notify(t('screenshot.captureFailedTitle'), result.error || 'Unknown error', 'error')
+    }
+  }
+
+  const handleCompanionRecording = async (
+    device: CompanionDevice,
+    recording: FinishedRecording,
+  ) => {
+    try {
+      const path = await saveExternalRecording({
+        bytes: new Uint8Array(await recording.blob.arrayBuffer()),
+        extension: extensionForMimeType(recording.mimeType),
+        deviceName: device.name || 'companion',
+        outputDir: config.recordPath || undefined,
+      })
+      window.dispatchEvent(
+        new CustomEvent(RECORDING_COMPLETED_EVENT, {
+          detail: {
+            deviceSerial: companionWorkspaceId(device),
+            path,
+            startedAt: recording.startedAt,
+            completedAt: recording.completedAt,
+          },
+        }),
+      )
+      notify(t('companion.recordingSaved'), path, 'success')
+    } catch (error) {
+      notify(t('companion.recordingFailed'), String(error), 'error')
+    }
+  }
+
   const closeCompanionWorkspace = (workspaceId: string) => {
     setOpenCompanionWorkspaceId((current) =>
       current === workspaceId ? null : current,
@@ -1327,6 +1399,11 @@ function AppContent() {
       onStopScreen={companion.stopScreen}
       onDisconnect={companion.disconnect}
       onRequest={companion.request}
+      onOpenWorkspace={openCompanionWorkspace}
+      autoConnect={companion.autoConnect}
+      onAutoConnectChange={companion.setAutoConnect}
+      trustedAgents={companion.trustedAgents}
+      onForgetTrustedAgents={companion.forgetTrustedAgents}
       androidTargets={devices}
       embeddedConnections={embeddedConnections}
       selectedAndroidTarget={activeDevice}
@@ -2055,6 +2132,7 @@ function AppContent() {
 
   const shellChrome = shellChromeForRoute(activeRoute)
   return (
+    <CompanionInspectorContext.Provider value={companionInspectorSource}>
     <AppShell
       header={undefined}
       navigation={
@@ -2174,6 +2252,12 @@ function AppContent() {
                       screenStatus={companion.screenStatus}
                       startScreen={companion.startScreen}
                       stopScreen={companion.stopScreen}
+                      request={companion.request}
+                      onScreenshot={() => handleCompanionScreenshot(companionDevice)}
+                      onSaveRecording={(recording) =>
+                        handleCompanionRecording(companionDevice, recording)
+                      }
+                      onOpenInspector={() => setIsUiInspectorOpen(true)}
                       compact={compactMultiDevice}
                     />
                   ) : iosDevice ? (
@@ -2912,6 +2996,14 @@ function AppContent() {
         </div>
       )}
 
+      <CompanionApprovalDialog
+        approval={companion.pendingApproval}
+        busy={companion.isApproving}
+        onRespond={(requestId, approve) =>
+          void companion.respondToApproval(requestId, approve)
+        }
+      />
+
       <OnboardingModal
         isOpen={isOnboardingOpen}
         onClose={() => setIsOnboardingOpen(false)}
@@ -2988,7 +3080,7 @@ function AppContent() {
       <UiInspector
         isOpen={isUiInspectorOpen}
         onClose={() => setIsUiInspectorOpen(false)}
-        activeDevice={activeDevice}
+        activeDevice={activeAndroidWorkspaceDevice}
         customPath={config.scrcpyPath}
       />
 
@@ -3106,6 +3198,7 @@ function AppContent() {
         notify={notify}
       />
     </AppShell>
+    </CompanionInspectorContext.Provider>
   )
 }
 

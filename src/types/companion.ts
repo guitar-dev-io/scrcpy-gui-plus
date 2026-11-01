@@ -28,6 +28,13 @@ export type CompanionMethod =
   | 'open_url'
   | 'start_screen_share'
   | 'stop_screen_share'
+  | 'control_status'
+  | 'control_gesture'
+  | 'control_action'
+  | 'control_text'
+  | 'ui_dump'
+  | 'list_apps'
+  | 'launch_app'
 
 export type CompanionParams = Record<string, unknown>
 
@@ -36,6 +43,12 @@ export interface CompanionScanResponse {
   devices: CompanionDevice[]
   error?: string
   errorCode?: string
+}
+
+export interface CompanionTrustedAgent {
+  agentDeviceId: string
+  name: string
+  approvedAt: number
 }
 
 export interface CompanionLanOffer {

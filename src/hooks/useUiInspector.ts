@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { CompanionInspectorContext } from '../contexts/CompanionInspectorContext';
 import { captureScreenBase64, dumpUiHierarchy } from '../services/uiInspectorService';
 import { parseUiHierarchy, type UiNode } from '../types/uiInspector';
 
@@ -28,9 +29,53 @@ export function useUiInspector({ activeDevice, customPath, enabled }: UseUiInspe
     const [error, setError] = useState<InspectorError | null>(null);
     const inFlight = useRef(false);
     const serial = (activeDevice || '').trim();
+    const companion = useContext(CompanionInspectorContext);
+    // Without an adb device, a connected Companion phone is the source.
+    const companionSource = serial ? null : companion;
+    const sourceKey = serial || (companionSource ? `companion:${companionSource.name}` : '');
+
+    const refreshFromCompanion = useCallback(async () => {
+        if (!companionSource) return;
+        const frame = companionSource.getFrame();
+        if (!frame) {
+            setScreenshot(null);
+            setRoot(null);
+            setError({ message: 'Start the Companion screen first', code: 'no_frame' });
+            return;
+        }
+        const size = await imageSize(frame);
+        const dump = await companionSource.request<{ xml?: string }>('ui_dump', {
+            targetWidth: size.width,
+            targetHeight: size.height
+        });
+        setScreenshot(frame);
+        const tree = dump?.xml ? parseUiHierarchy(dump.xml) : null;
+        if (tree) {
+            setRoot(tree);
+            setSelected(null);
+        } else {
+            setRoot(null);
+            setError({ message: 'parse_failed', code: 'parse_failed' });
+        }
+    }, [companionSource]);
 
     const refresh = useCallback(async () => {
-        if (!serial || inFlight.current) return;
+        if (inFlight.current) return;
+        if (!serial) {
+            if (!companionSource) return;
+            inFlight.current = true;
+            setLoading(true);
+            setError(null);
+            try {
+                await refreshFromCompanion();
+            } catch (e) {
+                setError({ message: e instanceof Error ? e.message : String(e), code: 'companion_failed' });
+            } finally {
+                inFlight.current = false;
+                setLoading(false);
+            }
+            return;
+        }
         inFlight.current = true;
         setLoading(true);
         setError(null);
@@ -68,7 +113,7 @@ export function useUiInspector({ activeDevice, customPath, enabled }: UseUiInspe
             inFlight.current = false;
             setLoading(false);
         }
-    }, [serial, customPath]);
+    }, [serial, customPath, companionSource, refreshFromCompanion]);
 
     // Reset when the device changes.
     useEffect(() => {
@@ -76,14 +121,33 @@ export function useUiInspector({ activeDevice, customPath, enabled }: UseUiInspe
         setScreenshot(null);
         setSelected(null);
         setError(null);
-    }, [serial]);
+    }, [sourceKey]);
 
     // Fetch once when the panel opens for a device.
     useEffect(() => {
-        if (!enabled || !serial) return;
+        if (!enabled || !sourceKey) return;
         void refresh();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [enabled, serial]);
+    }, [enabled, sourceKey]);
 
-    return { root, screenshot, selected, setSelected, loading, error, refresh };
+    return {
+        root,
+        screenshot,
+        selected,
+        setSelected,
+        loading,
+        error,
+        refresh,
+        source: companionSource ? ('companion' as const) : ('adb' as const),
+        sourceName: companionSource?.name ?? serial
+    };
+}
+
+function imageSize(src: string): Promise<{ width: number; height: number }> {
+    return new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
+        image.onerror = () => reject(new Error('Could not read the Companion frame'));
+        image.src = src;
+    });
 }

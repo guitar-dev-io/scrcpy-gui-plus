@@ -51,6 +51,8 @@ export interface MaestroDevicePreviewPanelProps {
   onRotate?: PreviewActionHandler
   /** Optional parent-owned capture action; the typed screenshot service is used by default. */
   onCaptureScreenshot?: PreviewActionHandler
+  /** Names a non-adb source (a Companion phone) that can still be refreshed and inspected. */
+  sourceLabel?: string
   /** Set when the displayed bitmap is intentionally visually rotated relative to source coordinates. */
   rotation?: PreviewRotation
 }
@@ -77,6 +79,7 @@ export default function MaestroDevicePreviewPanel(
     onRecordNode,
     onRotate,
     onCaptureScreenshot,
+    sourceLabel,
     rotation = 0,
   } = props
   const viewportRef = useRef<HTMLDivElement | null>(null)
@@ -284,7 +287,8 @@ export default function MaestroDevicePreviewPanel(
     hovered && layout.transform.renderedWidth > 0
       ? deviceBoundsToPreviewRect(hovered.bounds, layout.transform)
       : null
-  const identityLabel = [activeDevice, deviceModel].filter(Boolean).join(' · ')
+  const identityLabel =
+    [activeDevice, deviceModel].filter(Boolean).join(' · ') || sourceLabel || ''
   const resolutionSize =
     naturalSize.width > 0 && naturalSize.height > 0
       ? naturalSize
@@ -350,7 +354,7 @@ export default function MaestroDevicePreviewPanel(
         <button
           type="button"
           onClick={onRefresh}
-          disabled={!activeDevice || loading}
+          disabled={(!activeDevice && !sourceLabel) || loading}
           title="Refresh"
           aria-label="Refresh device preview"
           className="rounded p-1 text-[var(--text-subtle)] hover:text-primary disabled:opacity-30"

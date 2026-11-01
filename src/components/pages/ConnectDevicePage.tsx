@@ -24,7 +24,7 @@ import { useI18n } from '../../i18n'
 import PageTitle, { PAGE_HEADER_CLASS } from '../ui/PageTitle'
 import { isWirelessSerial } from '../../utils/adbSerial'
 
-export type ConnectTabId = 'qr' | 'wireless' | 'usb'
+export type ConnectTabId = 'qr' | 'wireless' | 'usb' | 'companion'
 
 interface ConnectDevicePageProps {
   customPath?: string
@@ -73,6 +73,12 @@ const TABS: Array<{
     label: 'pages.connectDevice.tabUsb',
     hint: 'pages.connectDevice.tabUsbHint',
     icon: Usb,
+  },
+  {
+    id: 'companion',
+    label: 'pages.connectDevice.tabCompanion',
+    hint: 'pages.connectDevice.tabCompanionHint',
+    icon: Smartphone,
   },
 ]
 
@@ -126,6 +132,13 @@ const QR_STEPS: Array<[string, string]> = [
     'pages.connectDevice.qr4t',
     'pages.connectDevice.qr4d',
   ],
+]
+
+const COMPANION_STEPS: Array<[string, string]> = [
+  ['pages.connectDevice.comp1t', 'pages.connectDevice.comp1d'],
+  ['pages.connectDevice.comp2t', 'pages.connectDevice.comp2d'],
+  ['pages.connectDevice.comp3t', 'pages.connectDevice.comp3d'],
+  ['pages.connectDevice.comp4t', 'pages.connectDevice.comp4d'],
 ]
 
 const USB_STEPS: Array<[string, string]> = [
@@ -302,7 +315,7 @@ export default function ConnectDevicePage({
         aria-label={t('pages.connectDevice.method')}
         className="mt-5 flex flex-wrap gap-2"
       >
-        {TABS.map(({ id, label, hint, icon: Icon }) => {
+        {TABS.filter(({ id }) => id !== 'companion' || companionPanel).map(({ id, label, hint, icon: Icon }) => {
           const active = tab === id
           const foundCount = id === 'wireless' ? wizard.lanDevices.length : 0
           return (
@@ -571,6 +584,11 @@ export default function ConnectDevicePage({
                 </h2>
                 <div className="mt-4">{renderSteps(USB_STEPS)}</div>
               </div>
+            </>
+          )}
+
+          {tab === 'companion' && (
+            <>
               {companionPanel && (
                 <div className={sectionCls}>
                   <h2 className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-widest text-[var(--text-subtle)]">
@@ -582,6 +600,12 @@ export default function ConnectDevicePage({
                   <div className="mt-4">{companionPanel}</div>
                 </div>
               )}
+              <div className={sectionCls}>
+                <h2 className="flex items-center gap-2 text-[13px] font-semibold uppercase tracking-widest text-[var(--text-subtle)]">
+                  <Smartphone size={16} className="text-primary" /> {t('pages.connectDevice.companionHowTo')}
+                </h2>
+                <div className="mt-4">{renderSteps(COMPANION_STEPS)}</div>
+              </div>
             </>
           )}
         </section>

@@ -140,15 +140,22 @@ describe('ConnectDevicePage', () => {
     )
   })
 
-  it('keeps companion pairing on the USB tab', () => {
+  it('gives companion pairing its own tab', () => {
     renderPage({
       companionPanel: <div data-testid="companion-panel" />,
     })
 
-    fireEvent.click(screen.getByRole('tab', { name: /USB & Companion/ }))
-
-    expect(screen.getByTestId('companion-panel')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: /USB cable/ }))
     expect(screen.getByText('Cable connection')).toBeInTheDocument()
+    expect(screen.queryByTestId('companion-panel')).toBeNull()
+
+    fireEvent.click(screen.getByRole('tab', { name: /Companion app/ }))
+    expect(screen.getByTestId('companion-panel')).toBeInTheDocument()
+  })
+
+  it('hides the companion tab when there is no companion panel', () => {
+    renderPage()
+    expect(screen.queryByRole('tab', { name: /Companion app/ })).toBeNull()
   })
   it('offers Disconnect for wireless devices and Use Wi-Fi for USB devices', async () => {
     const props = renderPage({

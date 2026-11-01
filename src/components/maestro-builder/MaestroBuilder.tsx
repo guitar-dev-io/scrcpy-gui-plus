@@ -880,7 +880,7 @@ export default function MaestroBuilder({ activeDevice, availableDeviceIds = acti
           <MaestroVariablesPanel variables={builder.flow.variables ?? []} onChange={(variables) => builder.updateFlow({ variables })} />
         </div>
         <div className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--border-base)] bg-[var(--bg-surface)]">
-          <MaestroDevicePreviewPanel activeDevice={activeDevice} customPath={customPath} outputDir={outputDir} root={inspector.root} screenshot={inspector.screenshot} selected={inspector.selected} onSelect={handleSelectNode} loading={inspector.loading} error={inspector.error} onRefresh={() => void inspector.refresh()} recording={recording} onRecordNode={handleRecordedNode} />
+          <MaestroDevicePreviewPanel activeDevice={activeDevice} sourceLabel={inspector.source === 'companion' ? `${inspector.sourceName} · Companion` : undefined} customPath={customPath} outputDir={outputDir} root={inspector.root} screenshot={inspector.screenshot} selected={inspector.selected} onSelect={handleSelectNode} loading={inspector.loading} error={inspector.error} onRefresh={() => void inspector.refresh()} recording={recording} onRecordNode={handleRecordedNode} />
         </div>
         <div className="hidden min-h-0 flex-col overflow-hidden rounded-lg border border-[var(--border-base)] bg-[var(--bg-surface)] xl:flex">
           <MaestroElementInspectorPanel root={inspector.root} selected={inspector.selected} onQuickAction={handleQuickAction} />

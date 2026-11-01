@@ -35,6 +35,25 @@ object TrustedStudios {
         save(context, next)
     }
 
+    /**
+     * The studio to reconnect to on launch: the most recently used trusted one that just
+     * answered discovery. Matches the desktop's stable studio id, or its address for
+     * studios trusted before ids existed.
+     */
+    fun pickAutoConnect(
+        found: List<DiscoveredStudio>,
+        trusted: List<TrustedStudio>,
+    ): DiscoveredStudio? {
+        for (studio in trusted.sortedByDescending { it.lastConnectedAt }) {
+            val match = found.firstOrNull { candidate ->
+                (candidate.studioId != null && candidate.studioId == studio.studioId) ||
+                    studio.studioId == "host:${candidate.replyHost}"
+            }
+            if (match != null) return match
+        }
+        return null
+    }
+
     fun forget(context: Context, studioId: String) {
         save(context, list(context).filterNot { it.studioId == studioId })
     }

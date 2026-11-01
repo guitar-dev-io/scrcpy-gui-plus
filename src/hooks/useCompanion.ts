@@ -6,6 +6,8 @@ import {
   disconnectCompanion,
   onCompanionRemoteStatus,
   onCompanionScreenStatus,
+  forgetCompanionTrustedAgents,
+  getCompanionTrustedAgents,
   onCompanionPairingApproval,
   onCompanionStatus,
   onCompanionTelemetry,
@@ -31,8 +33,14 @@ import {
   type CompanionScreenStatusEvent,
   type CompanionStatusEvent,
   type CompanionTelemetryEvent,
+  type CompanionTrustedAgent,
 } from '../types/companion'
-import { getOrCreateStudioId, getStudioName } from '../utils/studioIdentity'
+import {
+  getCompanionAutoConnect,
+  getOrCreateStudioId,
+  getStudioName,
+  setCompanionAutoConnect,
+} from '../utils/studioIdentity'
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -411,6 +419,7 @@ export function useCompanion() {
         const offer = await startCompanionLanPairing(
           getOrCreateStudioId(),
           getStudioName(),
+          getCompanionAutoConnect(),
         )
         if (generation !== pairingGenerationRef.current) return null
         backendPairingGenerationRef.current = Math.max(
@@ -428,6 +437,65 @@ export function useCompanion() {
         return null
       }
     }, [resetRemoteState, resetScreenState])
+
+  const [autoConnect, setAutoConnectState] = useState(getCompanionAutoConnect)
+  const [trustedAgents, setTrustedAgents] = useState<CompanionTrustedAgent[]>([])
+  const lastAutoListenRef = useRef(0)
+
+  const refreshTrustedAgents = useCallback(async () => {
+    if (!isTauri()) return
+    try {
+      setTrustedAgents(await getCompanionTrustedAgents())
+    } catch (trustedError) {
+      console.warn('Could not load remembered phones', trustedError)
+    }
+  }, [])
+
+  useEffect(() => {
+    void refreshTrustedAgents()
+  }, [refreshTrustedAgents])
+
+  // A newly approved phone is written to the remembered list on the Rust side.
+  useEffect(() => {
+    if (devices.length > 0) void refreshTrustedAgents()
+  }, [devices.length, refreshTrustedAgents])
+
+  const setAutoConnect = useCallback((enabled: boolean) => {
+    setCompanionAutoConnect(enabled)
+    setAutoConnectState(enabled)
+  }, [])
+
+  const forgetTrustedAgents = useCallback(async () => {
+    if (!isTauri()) return
+    await forgetCompanionTrustedAgents()
+    setTrustedAgents([])
+  }, [])
+
+  // Auto-connect: while a remembered phone exists and none is connected, keep a
+  // LAN listener up so the phone can find this desktop and walk straight in.
+  // A listener lasts 30 minutes, so it is renewed when its offer expires.
+  useEffect(() => {
+    if (!isTauri() || !autoConnect || trustedAgents.length === 0) return
+    if (devices.length > 0 || isPairing || isScanning) return
+    const now = Date.now()
+    const delay =
+      lanOffer && lanOffer.expiresAt > now
+        ? lanOffer.expiresAt - now + 500
+        : Math.max(0, lastAutoListenRef.current + 30_000 - now)
+    const timer = window.setTimeout(() => {
+      lastAutoListenRef.current = Date.now()
+      void startLanPairing()
+    }, delay)
+    return () => window.clearTimeout(timer)
+  }, [
+    autoConnect,
+    trustedAgents.length,
+    devices.length,
+    isPairing,
+    isScanning,
+    lanOffer,
+    startLanPairing,
+  ])
 
   const request = useCallback(
     async <T = unknown>(
@@ -826,6 +894,10 @@ export function useCompanion() {
     isRemoteActive,
     scan,
     startLanPairing,
+    autoConnect,
+    setAutoConnect,
+    trustedAgents,
+    forgetTrustedAgents,
     request,
     startScreen,
     stopScreen,

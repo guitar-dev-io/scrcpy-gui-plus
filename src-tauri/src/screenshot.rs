@@ -1167,6 +1167,88 @@ pub async fn save_external_screenshot(
     }
 }
 
+const MAX_EXTERNAL_RECORDING_BYTES: usize = 2 * 1024 * 1024 * 1024;
+
+/// Undoes the webview's `encodeURIComponent` on a header value (headers are ASCII-only).
+fn decode_header_component(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' && index + 2 < bytes.len() && value.is_char_boundary(index + 3) {
+            if let Ok(byte) = u8::from_str_radix(&value[index + 1..index + 3], 16) {
+                out.push(byte);
+                index += 3;
+                continue;
+            }
+        }
+        out.push(bytes[index]);
+        index += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn recording_extension(raw: &str) -> Option<&'static str> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "mp4" => Some("mp4"),
+        "webm" => Some("webm"),
+        "mov" => Some("mov"),
+        _ => None,
+    }
+}
+
+/// Save a video recorded in the webview from a non-ADB live source (the Android
+/// Companion stream). The bytes travel as the raw IPC body; metadata comes in
+/// `x-recording-*` headers so a long recording is never JSON-encoded.
+#[tauri::command]
+pub async fn save_external_recording(
+    app_handle: tauri::AppHandle,
+    request: tauri::ipc::Request<'_>,
+) -> Result<String, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("Recording data must be sent as raw bytes".to_string());
+    };
+    if bytes.is_empty() {
+        return Err("The recording is empty".to_string());
+    }
+    if bytes.len() > MAX_EXTERNAL_RECORDING_BYTES {
+        return Err("The recording is larger than 2 GB".to_string());
+    }
+    let header = |name: &str| {
+        request
+            .headers()
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .map(decode_header_component)
+            .filter(|value| !value.trim().is_empty())
+    };
+    let extension = header("x-recording-ext")
+        .as_deref()
+        .and_then(recording_extension)
+        .ok_or_else(|| "Unsupported recording format".to_string())?;
+    let device_name = header("x-recording-device").unwrap_or_else(|| "companion".to_string());
+
+    let directory = match header("x-recording-dir") {
+        Some(dir) => PathBuf::from(dir),
+        None => app_handle
+            .path()
+            .video_dir()
+            .or_else(|_| app_handle.path().home_dir())
+            .map_err(|error| error.to_string())?,
+    };
+    std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+
+    let filename = format!(
+        "companion_{}_{}.{}",
+        sanitize_filename_component(&device_name),
+        now_timestamp(),
+        extension
+    );
+    let (full_path, _) = write_unique_file_atomically(&directory, &filename, bytes)
+        .map_err(|(_, message)| message)?;
+    Ok(full_path.to_string_lossy().to_string())
+}
+
 /// Capture a single frame for the in-app live preview.
 ///
 /// Reuses the same `adb exec-out screencap -p` path as the screenshot feature
@@ -1198,6 +1280,18 @@ pub async fn delete_screenshot_file(path: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decodes_uri_encoded_headers_and_checks_extensions() {
+        assert_eq!(decode_header_component("Pixel%207%20Pro"), "Pixel 7 Pro");
+        assert_eq!(
+            decode_header_component("%E0%B8%A1%E0%B8%B7%E0%B8%AD%E0%B8%96%E0%B8%B7%E0%B8%AD"),
+            "มือถือ"
+        );
+        assert_eq!(decode_header_component("100%"), "100%");
+        assert_eq!(recording_extension("MP4"), Some("mp4"));
+        assert_eq!(recording_extension("exe"), None);
+    }
 
     #[test]
     fn sanitize_replaces_invalid_chars() {

@@ -36,6 +36,8 @@ class AgentActions(
     val onCheckUsbAccessory: () -> Unit,
     val onForgetStudio: (String) -> Unit,
     val onDisconnect: () -> Unit,
+    val onOpenDeviceControlSettings: () -> Unit,
+    val onDisconnectStudio: () -> Unit,
 )
 
 /**
@@ -103,6 +105,9 @@ fun MobileStudioApp(state: AgentUiState, actions: AgentActions) {
                     deviceInfo = state.deviceInfo.value,
                     wirelessDebuggingEnabled = state.wirelessDebuggingEnabled.value,
                     adbConnected = state.adbConnected.value,
+                    deviceControlEnabled = state.deviceControlEnabled.value,
+                    onAllowDeviceControl = actions.onOpenDeviceControlSettings,
+                    onDisconnectStudio = actions.onDisconnectStudio,
                     onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                     onSetupWirelessDebugging = { navController.navigate(Routes.SETUP_DEVICE_CONTROL) },
                 )
