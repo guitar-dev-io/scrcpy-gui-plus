@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useI18n } from '../../i18n'
 import type { DeviceInfo } from '../../hooks/useDeviceInfo'
+import { isWirelessSerial } from '../../utils/adbSerial'
 
 interface DeviceInfoPanelProps {
   serial: string
@@ -29,7 +30,7 @@ export default function DeviceInfoPanel({
 }: DeviceInfoPanelProps) {
   const { t } = useI18n()
 
-  const isWireless = serial.includes(':')
+  const isWireless = isWirelessSerial(serial)
   const resolution =
     info?.resolution ||
     (liveResolution ? `${liveResolution.width}x${liveResolution.height}` : '-')

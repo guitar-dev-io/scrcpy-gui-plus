@@ -171,6 +171,8 @@ pub fn run() {
             commands::get_mdns_devices,
             commands::scan_lan_adb,
             commands::adb_pair,
+            commands::adb_disconnect,
+            commands::adb_enable_wireless,
             commands::adb_shell,
             commands::push_file,
             commands::install_apk,

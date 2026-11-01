@@ -29,6 +29,7 @@ import type {
   DeviceAction,
   EmbeddedSessionState,
 } from '../../hooks/useEmbeddedSession'
+import { isWirelessSerial } from '../../utils/adbSerial'
 
 type NotifyKind = 'success' | 'error' | 'info' | 'warning'
 type Notify = (title: string, message: string, kind: NotifyKind) => void
@@ -223,7 +224,7 @@ function DeviceGridCellContent({
     }
   }
 
-  const isWireless = serial.includes(':')
+  const isWireless = isWirelessSerial(serial)
   const ctrlBtn =
     'flex h-7 w-7 items-center justify-center rounded-md border border-zinc-800 bg-zinc-950/50 text-zinc-300 transition-all hover:border-primary/50 hover:text-primary disabled:opacity-30'
 

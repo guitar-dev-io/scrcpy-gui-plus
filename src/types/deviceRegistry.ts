@@ -1,4 +1,5 @@
 import type { ConnectionType, DeviceStatus } from './deviceStatus'
+import { hostFromNetworkSerial, isWirelessSerial } from '../utils/adbSerial'
 
 export const DEVICE_REGISTRY_STORAGE_KEY = 'scrcpy_device_registry_v1'
 
@@ -130,7 +131,7 @@ export function normalizeAdbState(value: string): AdbDeviceState {
 }
 
 function connectionTypeFromSerial(serial: string): ConnectionType {
-  return serial.includes(':') ? 'wifi' : 'usb'
+  return isWirelessSerial(serial) ? 'wifi' : 'usb'
 }
 
 export function discoveryRecordsFromResponse(value: unknown): DiscoveredDeviceRecord[] {
@@ -165,7 +166,7 @@ export function onlineRecordsFromSerials(serials: unknown): DiscoveredDeviceReco
       serial,
       adbState: 'device',
       connectionType:
-        typeof serial === 'string' && serial.includes(':') ? 'wifi' : 'usb',
+        typeof serial === 'string' && isWirelessSerial(serial) ? 'wifi' : 'usb',
     })),
   )
 }
@@ -192,7 +193,7 @@ export function mergeDiscoveryRecords(
     const adbState = normalizeAdbState(record.adbState)
     const ipAddress =
       record.connectionType === 'wifi'
-        ? serial.split(':')[0] || previous?.ipAddress
+        ? hostFromNetworkSerial(serial) || previous?.ipAddress
         : previous?.ipAddress
 
     // Auto-match an Agent-only placeholder onto this real ADB serial once we
@@ -400,7 +401,7 @@ function physicalIdentity(device: RegisteredDevice): string | undefined {
   const hardwareSerial = device.health?.hardwareSerial?.trim()
   if (hardwareSerial) return `hw:${hardwareSerial}`
   if (device.connectionType !== 'wifi') return undefined
-  const host = device.ipAddress || device.serial.split(':')[0]
+  const host = device.ipAddress || hostFromNetworkSerial(device.serial)
   return host ? `host:${host}` : undefined
 }
 

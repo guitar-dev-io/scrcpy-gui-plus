@@ -1,6 +1,8 @@
 // Device status types shared across the DeviceStatus UI, Device Workspace,
 // hook and service layer. Mirrors the Rust `DeviceStatus` model (camelCase).
 
+import { isWirelessSerial } from '../utils/adbSerial';
+
 export type AndroidScreenState = 'on' | 'off' | 'dozing';
 
 export interface DeviceStatus {
@@ -49,7 +51,7 @@ export type ConnectionType = 'wifi' | 'usb';
 
 /** Derive the connection type purely from the serial shape. */
 export function connectionTypeOf(serial: string): ConnectionType {
-    return serial.includes(':') || serial.includes('.') ? 'wifi' : 'usb';
+    return isWirelessSerial(serial) || serial.includes('.') ? 'wifi' : 'usb';
 }
 
 /** Format a KiB value into a friendly GB/MB string. */

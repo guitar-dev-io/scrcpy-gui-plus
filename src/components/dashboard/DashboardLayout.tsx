@@ -35,6 +35,7 @@ import type {
 } from './DashboardEmbeddedStage'
 import DeviceStagePanel from './DeviceStagePanel'
 import DeviceHeader from './DeviceHeader'
+import WirelessToggleButton from './WirelessToggleButton'
 import { openMirrorWindow } from '../../windows/mirrorWindow'
 import SessionControlPanel from './SessionControlPanel'
 import ScreenSharePanel from '../simulators/ScreenSharePanel'
@@ -74,6 +75,9 @@ interface DashboardLayoutProps {
     kind: 'success' | 'error' | 'info' | 'warning',
   ) => void
   onScreenshot: () => void
+  /** Wireless adb controls in the device header; hidden when omitted. */
+  onEnableWireless?: (serial: string) => Promise<any>
+  onDisconnectWireless?: (serial: string) => Promise<any>
   /** Captures a screenshot for a specific serial; used by the pinned secondary device. */
   onScreenshotSecondary?: (serial: string) => void
   screenshotBusy?: boolean
@@ -260,6 +264,7 @@ export default function DashboardLayout({
   outputDir,
   config,
   setConfig,
+  onSelectDevice,
   onAddDevice,
   onInstallApk,
   onOpenSettings,
@@ -276,6 +281,8 @@ export default function DashboardLayout({
   advancedTools,
   notify,
   onScreenshot,
+  onEnableWireless,
+  onDisconnectWireless,
   screenshotBusy = false,
   onEmbeddedSessionChange,
   embeddedSessionCommand,
@@ -597,6 +604,16 @@ export default function DashboardLayout({
   // beside the screen.
   const deviceHeaderActions = (
     <>
+      {activeDevice && onEnableWireless && onDisconnectWireless && (
+        <WirelessToggleButton
+          serial={activeDevice}
+          onEnableWireless={onEnableWireless}
+          onDisconnect={onDisconnectWireless}
+          onWirelessReady={onSelectDevice}
+          notify={notify}
+          className={focusRing}
+        />
+      )}
       <div
         role="group"
         aria-label="Session mode"

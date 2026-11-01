@@ -816,6 +816,51 @@ export function useScrcpy() {
     }
   }
 
+  /** Drops a wireless adb transport (`host:port` or mDNS serial). */
+  const disconnectDevice = async (serial: string, customPath?: string) => {
+    const path = customPath || config.scrcpyPath
+    try {
+      const res: any = await invoke('adb_disconnect', {
+        serial,
+        customPath: path,
+      })
+      await refreshDevices(path, true, true)
+      return res
+    } catch (e: any) {
+      return { success: false, message: String(e) }
+    }
+  }
+
+  /**
+   * Switches a USB-attached device to wireless adb (`adb tcpip 5555` + connect
+   * to its Wi-Fi IP) so the cable can be unplugged afterwards.
+   */
+  const enableWirelessDevice = async (
+    serial: string,
+    port = 5555,
+    customPath?: string,
+  ) => {
+    const path = customPath || config.scrcpyPath
+    setIsRefreshing(true)
+    try {
+      const res: any = await invoke('adb_enable_wireless', {
+        serial,
+        port,
+        customPath: path,
+      })
+      if (res?.success && typeof res.address === 'string') {
+        addToHistory(res.address)
+      }
+      setIsRefreshing(false)
+      await refreshDevices(path, true, true)
+      return res
+    } catch (e: any) {
+      return { success: false, message: String(e) }
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
+
   const listScrcpyOptions = async (
     device: string,
     arg: string,
@@ -1007,6 +1052,8 @@ export function useScrcpy() {
     scrcpyStatus,
     pairDevice,
     connectDevice,
+    disconnectDevice,
+    enableWirelessDevice,
     discoverConnectAddress,
     listScrcpyOptions,
     runTerminalCommand,

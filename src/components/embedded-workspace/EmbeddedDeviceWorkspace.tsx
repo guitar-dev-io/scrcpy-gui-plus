@@ -28,6 +28,7 @@ import DeviceStatusOverlay from './DeviceStatusOverlay'
 import FullscreenDeviceView from './FullscreenDeviceView'
 import WorkspaceLog from './WorkspaceLog'
 import DeviceGrid from './DeviceGrid'
+import { isWirelessSerial } from '../../utils/adbSerial'
 
 const VIEW_STORAGE_KEY = 'scrcpy_embed_workspace_view'
 
@@ -322,7 +323,7 @@ function DeviceListItem({
   onSelect: () => void
 }) {
   const { t } = useI18n()
-  const isWireless = serial.includes(':')
+  const isWireless = isWirelessSerial(serial)
   return (
     <button
       onClick={onSelect}

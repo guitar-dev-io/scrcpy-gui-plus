@@ -73,7 +73,15 @@ describe('ConnectDevicePage', () => {
     renderPage({ devices: ['192.168.1.10:41234'] })
 
     fireEvent.click(screen.getByRole('tab', { name: /Wireless ADB/ }))
-    const row = (await screen.findByText('192.168.1.10:41234')).closest('button')
+    // The serial also shows in the "Connected devices" card; the scan row is the button.
+    const row = await waitFor(() => {
+      const button = screen
+        .getAllByText('192.168.1.10:41234')
+        .map((node) => node.closest('button'))
+        .find(Boolean)
+      expect(button).toBeTruthy()
+      return button
+    })
 
     expect(row).toBeDisabled()
     expect(row).toHaveTextContent('Connected')
@@ -141,5 +149,41 @@ describe('ConnectDevicePage', () => {
 
     expect(screen.getByTestId('companion-panel')).toBeInTheDocument()
     expect(screen.getByText('Cable connection')).toBeInTheDocument()
+  })
+  it('offers Disconnect for wireless devices and Use Wi-Fi for USB devices', async () => {
+    const props = renderPage({
+      devices: ['R58M123ABC', '192.168.1.10:5555'],
+      disconnectDevice: vi.fn().mockResolvedValue({ success: true }),
+      enableWirelessDevice: vi
+        .fn()
+        .mockResolvedValue({ success: true, address: '192.168.1.20:5555' }),
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /Disconnect/i }))
+    await waitFor(() =>
+      expect(props.disconnectDevice).toHaveBeenCalledWith('192.168.1.10:5555'),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /Use Wi-Fi/i }))
+    await waitFor(() =>
+      expect(props.enableWirelessDevice).toHaveBeenCalledWith('R58M123ABC'),
+    )
+    await waitFor(() =>
+      expect(props.notify).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.stringContaining('192.168.1.20:5555'),
+        'success',
+      ),
+    )
+  })
+
+  it('treats mDNS auto-connected serials as wireless', () => {
+    renderPage({
+      devices: ['adb-R58M._adb-tls-connect._tcp'],
+      disconnectDevice: vi.fn(),
+      enableWirelessDevice: vi.fn(),
+    })
+    expect(screen.getByRole('button', { name: /Disconnect/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Use Wi-Fi/i })).toBeNull()
   })
 })
