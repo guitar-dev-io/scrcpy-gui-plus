@@ -139,6 +139,9 @@ const ClipboardHistory = lazy(() => import('./components/clipboard-history'))
 const InputControlPage = lazy(
   () => import('./components/pages/InputControlPage'),
 )
+const DeviceConditionsPage = lazy(
+  () => import('./components/pages/DeviceConditionsPage'),
+)
 const QrStudioPage = lazy(() => import('./components/pages/QrStudioPage'))
 const AutomationPage = lazy(() => import('./components/pages/AutomationPage'))
 const ScriptManagerPage = lazy(
@@ -2798,6 +2801,19 @@ function AppContent() {
                     customPath={config.scrcpyPath}
                     notify={notify}
                   />
+                }
+                deviceConditions={
+                  activeIosUdid || activeCompanionWorkspaceId ? (
+                    viewOnlyToolUnavailable
+                  ) : (
+                    <DeviceConditionsPage
+                      activeDevice={activeAndroidWorkspaceDevice}
+                      customPath={config.scrcpyPath}
+                      notify={notify}
+                      selectedDeviceIds={selectedOnlineDeviceIds}
+                      confirmAction={confirmAction}
+                    />
+                  )
                 }
                 qrStudio={
                   <QrStudioPage

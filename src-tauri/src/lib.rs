@@ -12,6 +12,7 @@ mod commands;
 mod companion;
 mod custom_command;
 mod deep_link;
+mod device_conditions;
 mod device_control;
 mod device_status;
 mod device_tracker;
@@ -207,6 +208,8 @@ pub fn run() {
             system::open_path,
             system::reveal_in_folder,
             system::copy_image_to_clipboard,
+            device_conditions::get_device_conditions,
+            device_conditions::set_device_condition,
             device_control::device_action,
             device_control::start_recording,
             device_control::stop_recording,

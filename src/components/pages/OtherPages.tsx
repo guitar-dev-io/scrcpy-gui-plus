@@ -18,6 +18,7 @@ interface OtherPagesProps {
   simulators: ReactNode
   logcatViewer: ReactNode
   inputControl: ReactNode
+  deviceConditions: ReactNode
   qrStudio: ReactNode
   automation: ReactNode
   scriptManager: ReactNode
@@ -39,6 +40,7 @@ export default function OtherPages({
   simulators,
   logcatViewer,
   inputControl,
+  deviceConditions,
   qrStudio,
   automation,
   scriptManager,
@@ -57,7 +59,8 @@ export default function OtherPages({
     'apk-toolkit': apkToolkit,
     simulators,
     'logcat-viewer': logcatViewer,
-      'input-control': inputControl,
+    'input-control': inputControl,
+    'device-conditions': deviceConditions,
     'qr-studio': qrStudio,
     automation,
     'script-manager': scriptManager,

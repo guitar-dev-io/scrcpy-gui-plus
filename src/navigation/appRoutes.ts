@@ -12,6 +12,7 @@ export type AppRouteId =
   | 'simulators'
   | 'logcat-viewer'
   | 'input-control'
+  | 'device-conditions'
   | 'qr-studio'
   | 'automation'
   | 'script-manager'
@@ -46,6 +47,7 @@ export const APP_ROUTES: readonly AppRouteDefinition[] = [
   { id: 'file-explorer', label: 'File Explorer', path: '/files', group: 'tools' },
   { id: 'logcat-viewer', label: 'Logcat Viewer', path: '/logcat', group: 'tools' },
   { id: 'input-control', label: 'Input Control', path: '/input-control', group: 'tools' },
+  { id: 'device-conditions', label: 'Device Conditions', path: '/device-conditions', group: 'tools' },
   { id: 'qr-studio', label: 'QR Studio', path: '/qr-studio', group: 'tools' },
   { id: 'settings', label: 'Settings', path: '/settings', group: 'system' },
 ]

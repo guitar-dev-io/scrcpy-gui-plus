@@ -28,6 +28,7 @@ describe('app route registry', () => {
       'file-explorer',
       'logcat-viewer',
       'input-control',
+      'device-conditions',
       'qr-studio',
       'settings',
     ])
@@ -61,6 +62,7 @@ describe('app route registry', () => {
       'file-explorer:File Explorer',
       'logcat-viewer:Logcat Viewer',
       'input-control:Input Control',
+      'device-conditions:Device Conditions',
       'qr-studio:QR Studio',
       'settings:Settings',
     ])
