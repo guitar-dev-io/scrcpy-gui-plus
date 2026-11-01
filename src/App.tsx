@@ -142,6 +142,7 @@ const ClipboardHistory = lazy(() => import('./components/clipboard-history'))
 const InputControlPage = lazy(
   () => import('./components/pages/InputControlPage'),
 )
+const AppPerformancePage = lazy(() => import('./components/pages/AppPerformancePage'))
 const NetworkToolsPage = lazy(() => import('./components/pages/NetworkToolsPage'))
 const CrashWatcherPage = lazy(() => import('./components/pages/CrashWatcherPage'))
 const DeviceConditionsPage = lazy(
@@ -2834,6 +2835,17 @@ function AppContent() {
                     }}
                     onRevealPath={(path) => void revealInFolder(path).catch(() => undefined)}
                   />
+                }
+                appPerformance={
+                  activeIosUdid || activeCompanionWorkspaceId ? (
+                    viewOnlyToolUnavailable
+                  ) : (
+                    <AppPerformancePage
+                      activeDevice={activeAndroidWorkspaceDevice}
+                      customPath={config.scrcpyPath}
+                      notify={notify}
+                    />
+                  )
                 }
                 networkTools={
                   activeIosUdid || activeCompanionWorkspaceId ? (

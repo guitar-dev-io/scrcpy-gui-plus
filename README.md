@@ -47,6 +47,7 @@ ScrcpyGUI v4 is a modern, feature-rich GUI for [scrcpy](https://github.com/Genym
 - **🌐 Network**:
   - adb reverse / forward rules with one-click presets (Metro 8081, Vite 5173, …); saved rules are re-applied automatically whenever a device reconnects.
   - Device HTTP proxy for Charles / mitmproxy / Proxyman, with this computer's LAN addresses suggested and a one-click clear.
+- **📈 App Performance**: live CPU, memory (PSS), frames drawn per second and janky-frame charts for any app (or the one on screen), with memory breakdown, P50–P99 frame times and CSV export.
 - **📁 Fluid File Management**:
   - Drag & drop APK installation or file pushing directly to `/sdcard/Download/`.
 - **🖼️ Premium UX**:

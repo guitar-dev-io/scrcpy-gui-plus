@@ -5,6 +5,7 @@ mod apk_backup;
 mod apk_optional_tools;
 mod apk_toolkit;
 mod app_manager;
+mod app_performance;
 mod app_permissions;
 mod auto_capture;
 mod automation_data;
@@ -222,6 +223,8 @@ pub fn run() {
             app_manager::list_packages,
             app_manager::get_package_info,
             app_manager::app_action,
+            app_performance::sample_app_performance,
+            app_performance::reset_app_frame_stats,
             app_permissions::get_app_permissions,
             app_permissions::set_app_permission,
             app_permissions::reset_app_permissions,

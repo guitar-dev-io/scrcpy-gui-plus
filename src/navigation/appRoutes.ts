@@ -12,6 +12,7 @@ export type AppRouteId =
   | 'simulators'
   | 'logcat-viewer'
   | 'crash-watcher'
+  | 'app-performance'
   | 'input-control'
   | 'device-conditions'
   | 'network-tools'
@@ -49,6 +50,7 @@ export const APP_ROUTES: readonly AppRouteDefinition[] = [
   { id: 'file-explorer', label: 'File Explorer', path: '/files', group: 'tools' },
   { id: 'logcat-viewer', label: 'Logcat Viewer', path: '/logcat', group: 'tools' },
   { id: 'crash-watcher', label: 'Crash Watcher', path: '/crash-watcher', group: 'tools' },
+  { id: 'app-performance', label: 'App Performance', path: '/app-performance', group: 'tools' },
   { id: 'input-control', label: 'Input Control', path: '/input-control', group: 'tools' },
   { id: 'device-conditions', label: 'Device Conditions', path: '/device-conditions', group: 'tools' },
   { id: 'network-tools', label: 'Network', path: '/network', group: 'tools' },

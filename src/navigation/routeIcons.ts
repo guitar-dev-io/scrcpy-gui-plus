@@ -1,4 +1,5 @@
 import {
+  Activity,
   AppWindow,
   Bot,
   Braces,
@@ -39,6 +40,7 @@ export const ROUTE_ICONS: Record<AppRouteId, LucideIcon> = {
   simulators: MonitorSmartphone,
   'logcat-viewer': ScrollText,
   'crash-watcher': Bug,
+  'app-performance': Activity,
   'input-control': Keyboard,
   'device-conditions': SlidersHorizontal,
   'network-tools': Network,

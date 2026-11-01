@@ -18,6 +18,7 @@ interface OtherPagesProps {
   simulators: ReactNode
   logcatViewer: ReactNode
   crashWatcher: ReactNode
+  appPerformance: ReactNode
   inputControl: ReactNode
   deviceConditions: ReactNode
   networkTools: ReactNode
@@ -42,6 +43,7 @@ export default function OtherPages({
   simulators,
   logcatViewer,
   crashWatcher,
+  appPerformance,
   inputControl,
   deviceConditions,
   networkTools,
@@ -64,6 +66,7 @@ export default function OtherPages({
     simulators,
     'logcat-viewer': logcatViewer,
     'crash-watcher': crashWatcher,
+    'app-performance': appPerformance,
     'input-control': inputControl,
     'device-conditions': deviceConditions,
     'network-tools': networkTools,
