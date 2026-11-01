@@ -8,6 +8,7 @@ import type {
     PackageInfoResult,
     PackageListResult
 } from '../types/appManager';
+import type { AppPermissionsResult, PermissionChangeResult } from '../types/appPermissions';
 
 export async function listPackages(
     serial: string,
@@ -41,4 +42,36 @@ export async function runAppAction(
         action,
         customPath
     });
+}
+
+export async function getAppPermissions(
+    serial: string,
+    pkg: string,
+    customPath?: string
+): Promise<AppPermissionsResult> {
+    return invoke<AppPermissionsResult>('get_app_permissions', { serial, package: pkg, customPath });
+}
+
+export async function setAppPermission(
+    serial: string,
+    pkg: string,
+    permission: string,
+    granted: boolean,
+    customPath?: string
+): Promise<PermissionChangeResult> {
+    return invoke<PermissionChangeResult>('set_app_permission', {
+        serial,
+        package: pkg,
+        permission,
+        granted,
+        customPath,
+    });
+}
+
+export async function resetAppPermissions(
+    serial: string,
+    pkg: string,
+    customPath?: string
+): Promise<PermissionChangeResult> {
+    return invoke<PermissionChangeResult>('reset_app_permissions', { serial, package: pkg, customPath });
 }

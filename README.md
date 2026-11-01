@@ -43,6 +43,10 @@ ScrcpyGUI v4 is a modern, feature-rich GUI for [scrcpy](https://github.com/Genym
   - Watches devices in the background for Java crashes, native crashes (SIGSEGV etc.) and ANRs, grouping each one with its full stack trace.
   - Notifies once per crash (crash loops do not flood you), keeps a history, and filters to your own packages.
   - One click (or automatically) turns a crash into a bug report ZIP with a fresh screenshot, logcat, device and app info.
+- **🔐 App Permissions** (App Manager): flip any runtime permission on or off, see "Don't ask again" and policy-fixed permissions, and reset an app so it asks like a first launch.
+- **🌐 Network**:
+  - adb reverse / forward rules with one-click presets (Metro 8081, Vite 5173, …); saved rules are re-applied automatically whenever a device reconnects.
+  - Device HTTP proxy for Charles / mitmproxy / Proxyman, with this computer's LAN addresses suggested and a one-click clear.
 - **📁 Fluid File Management**:
   - Drag & drop APK installation or file pushing directly to `/sdcard/Download/`.
 - **🖼️ Premium UX**:

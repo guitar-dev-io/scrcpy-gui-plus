@@ -20,6 +20,7 @@ interface OtherPagesProps {
   crashWatcher: ReactNode
   inputControl: ReactNode
   deviceConditions: ReactNode
+  networkTools: ReactNode
   qrStudio: ReactNode
   automation: ReactNode
   scriptManager: ReactNode
@@ -43,6 +44,7 @@ export default function OtherPages({
   crashWatcher,
   inputControl,
   deviceConditions,
+  networkTools,
   qrStudio,
   automation,
   scriptManager,
@@ -64,6 +66,7 @@ export default function OtherPages({
     'crash-watcher': crashWatcher,
     'input-control': inputControl,
     'device-conditions': deviceConditions,
+    'network-tools': networkTools,
     'qr-studio': qrStudio,
     automation,
     'script-manager': scriptManager,

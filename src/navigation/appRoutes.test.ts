@@ -30,6 +30,7 @@ describe('app route registry', () => {
       'crash-watcher',
       'input-control',
       'device-conditions',
+      'network-tools',
       'qr-studio',
       'settings',
     ])
@@ -65,6 +66,7 @@ describe('app route registry', () => {
       'crash-watcher:Crash Watcher',
       'input-control:Input Control',
       'device-conditions:Device Conditions',
+      'network-tools:Network',
       'qr-studio:QR Studio',
       'settings:Settings',
     ])

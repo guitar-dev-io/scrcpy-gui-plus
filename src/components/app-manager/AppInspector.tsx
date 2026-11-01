@@ -22,6 +22,7 @@ import type { AppActionId, PackageEntry, PackageInfoResult } from '../../types/a
 import { formatPackageBytes, packageDisplayName } from '../../utils/appManagerView'
 import { useI18n } from '../../i18n'
 import { AppIcon } from './AppIcon'
+import { AppPermissions } from './AppPermissions'
 
 interface AppInspectorProps {
   pkg?: PackageEntry
@@ -128,6 +129,8 @@ export function AppInspector({
             <ActionButton icon={Trash2} label={t('appManagerUi.clearData')} danger busy={busy('clear_data')} onClick={() => onAction('clear_data')} />
           </div>
         </InspectorSection>
+
+        <AppPermissions serial={deviceSerial} packageName={pkg.packageName} customPath={customPath} />
 
         <InspectorSection title={t('appManagerUi.developerTools')}>
           <div className="grid grid-cols-2 gap-2">

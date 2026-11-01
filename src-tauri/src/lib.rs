@@ -5,6 +5,7 @@ mod apk_backup;
 mod apk_optional_tools;
 mod apk_toolkit;
 mod app_manager;
+mod app_permissions;
 mod auto_capture;
 mod automation_data;
 mod bug_report;
@@ -25,6 +26,7 @@ mod logcat;
 mod macos_capture;
 mod macro_player;
 mod maestro;
+mod network_tools;
 mod qr_device;
 mod screen_share;
 mod screen_share_video;
@@ -220,6 +222,13 @@ pub fn run() {
             app_manager::list_packages,
             app_manager::get_package_info,
             app_manager::app_action,
+            app_permissions::get_app_permissions,
+            app_permissions::set_app_permission,
+            app_permissions::reset_app_permissions,
+            network_tools::get_network_state,
+            network_tools::add_port_rule,
+            network_tools::remove_port_rule,
+            network_tools::set_device_proxy,
             apk_analyzer::analyze_local_apk,
             apk_analyzer::extract_apk_launcher_icon,
             apk_analyzer::get_package_icon,

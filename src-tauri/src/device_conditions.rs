@@ -425,7 +425,7 @@ fn adb_failure(condition: &str, e: &AdbError) -> ConditionResult {
 /// Shell commands such as `cmd uimode` exit 0 but print an error when the
 /// device refuses them; catch the common forms so the UI does not report a
 /// change that did not happen.
-fn shell_output_error(output: &str) -> Option<String> {
+pub(crate) fn shell_output_error(output: &str) -> Option<String> {
     let trimmed = output.trim();
     let lower = trimmed.to_ascii_lowercase();
     let refused = lower.starts_with("error")

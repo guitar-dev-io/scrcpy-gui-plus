@@ -85,6 +85,7 @@ import {
   type MacScreenshotTarget,
 } from './services/screenshotService'
 import { useCrashWatcher } from './hooks/useCrashWatcher'
+import { useSavedPortRules } from './hooks/useSavedPortRules'
 import { applyQualityMode } from './utils/adaptiveQuality'
 import { persistScrcpyLaunchConfig } from './utils/scrcpyLaunch'
 import { openWorkspaceModal, type WorkspaceModal } from './types/workspaceModal'
@@ -141,6 +142,7 @@ const ClipboardHistory = lazy(() => import('./components/clipboard-history'))
 const InputControlPage = lazy(
   () => import('./components/pages/InputControlPage'),
 )
+const NetworkToolsPage = lazy(() => import('./components/pages/NetworkToolsPage'))
 const CrashWatcherPage = lazy(() => import('./components/pages/CrashWatcherPage'))
 const DeviceConditionsPage = lazy(
   () => import('./components/pages/DeviceConditionsPage'),
@@ -1822,6 +1824,8 @@ function AppContent() {
     outputDir: screenshot.screenshotDir,
     deviceLabels: workspaceDeviceLabels,
   })
+  // Re-applies saved adb forward/reverse rules when a device connects.
+  const savedPortRules = useSavedPortRules(config.scrcpyPath, notify)
 
   const openPackageShell = (packageName: string) => {
     setWorkspaceShellDraft(`shell run-as ${packageName} pwd`)
@@ -2830,6 +2834,18 @@ function AppContent() {
                     }}
                     onRevealPath={(path) => void revealInFolder(path).catch(() => undefined)}
                   />
+                }
+                networkTools={
+                  activeIosUdid || activeCompanionWorkspaceId ? (
+                    viewOnlyToolUnavailable
+                  ) : (
+                    <NetworkToolsPage
+                      activeDevice={activeAndroidWorkspaceDevice}
+                      customPath={config.scrcpyPath}
+                      notify={notify}
+                      savedRules={savedPortRules}
+                    />
+                  )
                 }
                 deviceConditions={
                   activeIosUdid || activeCompanionWorkspaceId ? (
