@@ -27,7 +27,11 @@ describe('app route registry', () => {
       'simulators',
       'file-explorer',
       'logcat-viewer',
+      'crash-watcher',
+      'app-performance',
       'input-control',
+      'device-conditions',
+      'network-tools',
       'qr-studio',
       'settings',
     ])
@@ -60,7 +64,11 @@ describe('app route registry', () => {
       'simulators:Device Lab',
       'file-explorer:File Explorer',
       'logcat-viewer:Logcat Viewer',
+      'crash-watcher:Crash Watcher',
+      'app-performance:App Performance',
       'input-control:Input Control',
+      'device-conditions:Device Conditions',
+      'network-tools:Network',
       'qr-studio:QR Studio',
       'settings:Settings',
     ])

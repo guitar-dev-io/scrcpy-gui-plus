@@ -35,6 +35,19 @@ ScrcpyGUI v4 is a modern, feature-rich GUI for [scrcpy](https://github.com/Genym
   - **Flex Display**: Drag and resize your virtual desktop window dynamically on the fly!
   - **Background Colors**: Customize scrcpy's border and letterbox color with hex values and a live color swatch.
   - **Keep Active**: Periodic user activity simulator preventing device sleep without changing global settings.
+- **🎛️ Device Conditions**:
+  - One-click dark/light mode, font size, display density, simulated battery level/unplugged, animations off, show taps, pointer location and stay awake.
+  - Clean "demo mode" status bar for store screenshots, and **Reset all** to put the device back.
+  - Apply any change to every selected device at once.
+- **🐞 Crash Watcher**:
+  - Watches devices in the background for Java crashes, native crashes (SIGSEGV etc.) and ANRs, grouping each one with its full stack trace.
+  - Notifies once per crash (crash loops do not flood you), keeps a history, and filters to your own packages.
+  - One click (or automatically) turns a crash into a bug report ZIP with a fresh screenshot, logcat, device and app info.
+- **🔐 App Permissions** (App Manager): flip any runtime permission on or off, see "Don't ask again" and policy-fixed permissions, and reset an app so it asks like a first launch.
+- **🌐 Network**:
+  - adb reverse / forward rules with one-click presets (Metro 8081, Vite 5173, …); saved rules are re-applied automatically whenever a device reconnects.
+  - Device HTTP proxy for Charles / mitmproxy / Proxyman, with this computer's LAN addresses suggested and a one-click clear.
+- **📈 App Performance**: live CPU, memory (PSS), frames drawn per second and janky-frame charts for any app (or the one on screen), with memory breakdown, P50–P99 frame times and CSV export.
 - **📁 Fluid File Management**:
   - Drag & drop APK installation or file pushing directly to `/sdcard/Download/`.
 - **🖼️ Premium UX**:

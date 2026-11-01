@@ -81,8 +81,11 @@ import { hasAdbBackend, isTauri } from './utils/tauriEnv'
 import { createBugReport } from './services/bugReportService'
 import {
   capturePreviewFrame,
+  revealInFolder,
   type MacScreenshotTarget,
 } from './services/screenshotService'
+import { useCrashWatcher } from './hooks/useCrashWatcher'
+import { useSavedPortRules } from './hooks/useSavedPortRules'
 import { applyQualityMode } from './utils/adaptiveQuality'
 import { persistScrcpyLaunchConfig } from './utils/scrcpyLaunch'
 import { openWorkspaceModal, type WorkspaceModal } from './types/workspaceModal'
@@ -139,6 +142,12 @@ const PerformancePage = lazy(() => import('./components/pages/PerformancePage'))
 const ClipboardHistory = lazy(() => import('./components/clipboard-history'))
 const InputControlPage = lazy(
   () => import('./components/pages/InputControlPage'),
+)
+const AppPerformancePage = lazy(() => import('./components/pages/AppPerformancePage'))
+const NetworkToolsPage = lazy(() => import('./components/pages/NetworkToolsPage'))
+const CrashWatcherPage = lazy(() => import('./components/pages/CrashWatcherPage'))
+const DeviceConditionsPage = lazy(
+  () => import('./components/pages/DeviceConditionsPage'),
 )
 const QrStudioPage = lazy(() => import('./components/pages/QrStudioPage'))
 const AutomationPage = lazy(() => import('./components/pages/AutomationPage'))
@@ -1811,6 +1820,17 @@ function AppContent() {
     handleNavigate('logcat-viewer')
   }
 
+  // Runs for the whole session so crashes are caught on any page.
+  const crashWatcher = useCrashWatcher({
+    devices,
+    customPath: config.scrcpyPath,
+    notify,
+    outputDir: screenshot.screenshotDir,
+    deviceLabels: workspaceDeviceLabels,
+  })
+  // Re-applies saved adb forward/reverse rules when a device connects.
+  const savedPortRules = useSavedPortRules(config.scrcpyPath, notify)
+
   const openPackageShell = (packageName: string) => {
     setWorkspaceShellDraft(`shell run-as ${packageName} pwd`)
     workspaceShell.addLog(`[Package context] ${packageName}`)
@@ -2805,6 +2825,59 @@ function AppContent() {
                     customPath={config.scrcpyPath}
                     notify={notify}
                   />
+                }
+                crashWatcher={
+                  <CrashWatcherPage
+                    controller={crashWatcher}
+                    devices={devices}
+                    deviceLabels={workspaceDeviceLabels}
+                    outputDir={screenshot.screenshotDir}
+                    notify={notify}
+                    confirmAction={confirmAction}
+                    onOpenLogcat={(serial, packageName) => {
+                      setActiveDevice(serial)
+                      setActiveIosUdid(null)
+                      setActiveCompanionWorkspaceId(null)
+                      openPackageLogcat(packageName)
+                    }}
+                    onRevealPath={(path) => void revealInFolder(path).catch(() => undefined)}
+                  />
+                }
+                appPerformance={
+                  activeIosUdid || activeCompanionWorkspaceId ? (
+                    viewOnlyToolUnavailable
+                  ) : (
+                    <AppPerformancePage
+                      activeDevice={activeAndroidWorkspaceDevice}
+                      customPath={config.scrcpyPath}
+                      notify={notify}
+                    />
+                  )
+                }
+                networkTools={
+                  activeIosUdid || activeCompanionWorkspaceId ? (
+                    viewOnlyToolUnavailable
+                  ) : (
+                    <NetworkToolsPage
+                      activeDevice={activeAndroidWorkspaceDevice}
+                      customPath={config.scrcpyPath}
+                      notify={notify}
+                      savedRules={savedPortRules}
+                    />
+                  )
+                }
+                deviceConditions={
+                  activeIosUdid || activeCompanionWorkspaceId ? (
+                    viewOnlyToolUnavailable
+                  ) : (
+                    <DeviceConditionsPage
+                      activeDevice={activeAndroidWorkspaceDevice}
+                      customPath={config.scrcpyPath}
+                      notify={notify}
+                      selectedDeviceIds={selectedOnlineDeviceIds}
+                      confirmAction={confirmAction}
+                    />
+                  )
                 }
                 qrStudio={
                   <QrStudioPage

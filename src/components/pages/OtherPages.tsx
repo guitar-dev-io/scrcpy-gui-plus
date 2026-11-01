@@ -17,7 +17,11 @@ interface OtherPagesProps {
   apkToolkit: ReactNode
   simulators: ReactNode
   logcatViewer: ReactNode
+  crashWatcher: ReactNode
+  appPerformance: ReactNode
   inputControl: ReactNode
+  deviceConditions: ReactNode
+  networkTools: ReactNode
   qrStudio: ReactNode
   automation: ReactNode
   scriptManager: ReactNode
@@ -38,7 +42,11 @@ export default function OtherPages({
   apkToolkit,
   simulators,
   logcatViewer,
+  crashWatcher,
+  appPerformance,
   inputControl,
+  deviceConditions,
+  networkTools,
   qrStudio,
   automation,
   scriptManager,
@@ -57,7 +65,11 @@ export default function OtherPages({
     'apk-toolkit': apkToolkit,
     simulators,
     'logcat-viewer': logcatViewer,
-      'input-control': inputControl,
+    'crash-watcher': crashWatcher,
+    'app-performance': appPerformance,
+    'input-control': inputControl,
+    'device-conditions': deviceConditions,
+    'network-tools': networkTools,
     'qr-studio': qrStudio,
     automation,
     'script-manager': scriptManager,

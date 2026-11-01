@@ -5,13 +5,17 @@ mod apk_backup;
 mod apk_optional_tools;
 mod apk_toolkit;
 mod app_manager;
+mod app_performance;
+mod app_permissions;
 mod auto_capture;
 mod automation_data;
 mod bug_report;
 mod commands;
 mod companion;
+mod crash_watcher;
 mod custom_command;
 mod deep_link;
+mod device_conditions;
 mod device_control;
 mod device_status;
 mod device_tracker;
@@ -23,6 +27,7 @@ mod logcat;
 mod macos_capture;
 mod macro_player;
 mod maestro;
+mod network_tools;
 mod qr_device;
 mod screen_share;
 mod screen_share_video;
@@ -34,6 +39,7 @@ mod ui_inspector;
 use auto_capture::AutoCaptureState;
 use bug_report::BugReportState;
 use companion::CompanionState;
+use crash_watcher::CrashWatcherState;
 use device_control::RecordingState;
 use device_tracker::DeviceTrackerState;
 use embed_mirror::EmbedMirrorState;
@@ -127,6 +133,8 @@ pub fn run() {
 
             app.manage(LogcatState::default());
 
+            app.manage(CrashWatcherState::default());
+
             app.manage(DeviceTrackerState::default());
 
             app.manage(IosState::default());
@@ -209,12 +217,23 @@ pub fn run() {
             system::open_path,
             system::reveal_in_folder,
             system::copy_image_to_clipboard,
+            device_conditions::get_device_conditions,
+            device_conditions::set_device_condition,
             device_control::device_action,
             device_control::start_recording,
             device_control::stop_recording,
             app_manager::list_packages,
             app_manager::get_package_info,
             app_manager::app_action,
+            app_performance::sample_app_performance,
+            app_performance::reset_app_frame_stats,
+            app_permissions::get_app_permissions,
+            app_permissions::set_app_permission,
+            app_permissions::reset_app_permissions,
+            network_tools::get_network_state,
+            network_tools::add_port_rule,
+            network_tools::remove_port_rule,
+            network_tools::set_device_proxy,
             apk_analyzer::analyze_local_apk,
             apk_analyzer::extract_apk_launcher_icon,
             apk_analyzer::get_package_icon,
@@ -231,6 +250,8 @@ pub fn run() {
             apk_optional_tools::cleanup_apk_optional_tool_job,
             apk_toolkit::apk_discover_splits,
             apk_toolkit::apk_export_package,
+            crash_watcher::start_crash_watcher,
+            crash_watcher::stop_crash_watcher,
             logcat::start_logcat,
             logcat::stop_logcat,
             logcat::clear_logcat,
@@ -314,6 +335,7 @@ pub fn run() {
                 app.state::<EmbedMirrorState>().kill_all_blocking();
                 app.state::<RecordingState>().kill_all_blocking();
                 app.state::<LogcatState>().kill_all_blocking();
+                app.state::<CrashWatcherState>().kill_all_blocking();
                 app.state::<DeviceTrackerState>().kill_all_blocking();
                 app.state::<IosState>().kill_all_blocking();
                 app.state::<maestro::MaestroState>().cancel_all();
