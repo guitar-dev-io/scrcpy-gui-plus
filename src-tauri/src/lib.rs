@@ -10,6 +10,7 @@ mod automation_data;
 mod bug_report;
 mod commands;
 mod companion;
+mod crash_watcher;
 mod custom_command;
 mod deep_link;
 mod device_conditions;
@@ -35,6 +36,7 @@ mod ui_inspector;
 use auto_capture::AutoCaptureState;
 use bug_report::BugReportState;
 use companion::CompanionState;
+use crash_watcher::CrashWatcherState;
 use device_control::RecordingState;
 use device_tracker::DeviceTrackerState;
 use embed_mirror::EmbedMirrorState;
@@ -127,6 +129,8 @@ pub fn run() {
             app.manage(CompanionState::default());
 
             app.manage(LogcatState::default());
+
+            app.manage(CrashWatcherState::default());
 
             app.manage(DeviceTrackerState::default());
 
@@ -232,6 +236,8 @@ pub fn run() {
             apk_optional_tools::cleanup_apk_optional_tool_job,
             apk_toolkit::apk_discover_splits,
             apk_toolkit::apk_export_package,
+            crash_watcher::start_crash_watcher,
+            crash_watcher::stop_crash_watcher,
             logcat::start_logcat,
             logcat::stop_logcat,
             logcat::clear_logcat,
@@ -315,6 +321,7 @@ pub fn run() {
                 app.state::<EmbedMirrorState>().kill_all_blocking();
                 app.state::<RecordingState>().kill_all_blocking();
                 app.state::<LogcatState>().kill_all_blocking();
+                app.state::<CrashWatcherState>().kill_all_blocking();
                 app.state::<DeviceTrackerState>().kill_all_blocking();
                 app.state::<IosState>().kill_all_blocking();
                 app.state::<maestro::MaestroState>().cancel_all();

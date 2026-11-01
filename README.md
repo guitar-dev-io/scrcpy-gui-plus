@@ -39,6 +39,10 @@ ScrcpyGUI v4 is a modern, feature-rich GUI for [scrcpy](https://github.com/Genym
   - One-click dark/light mode, font size, display density, simulated battery level/unplugged, animations off, show taps, pointer location and stay awake.
   - Clean "demo mode" status bar for store screenshots, and **Reset all** to put the device back.
   - Apply any change to every selected device at once.
+- **🐞 Crash Watcher**:
+  - Watches devices in the background for Java crashes, native crashes (SIGSEGV etc.) and ANRs, grouping each one with its full stack trace.
+  - Notifies once per crash (crash loops do not flood you), keeps a history, and filters to your own packages.
+  - One click (or automatically) turns a crash into a bug report ZIP with a fresh screenshot, logcat, device and app info.
 - **📁 Fluid File Management**:
   - Drag & drop APK installation or file pushing directly to `/sdcard/Download/`.
 - **🖼️ Premium UX**:

@@ -81,8 +81,10 @@ import { hasAdbBackend, isTauri } from './utils/tauriEnv'
 import { createBugReport } from './services/bugReportService'
 import {
   capturePreviewFrame,
+  revealInFolder,
   type MacScreenshotTarget,
 } from './services/screenshotService'
+import { useCrashWatcher } from './hooks/useCrashWatcher'
 import { applyQualityMode } from './utils/adaptiveQuality'
 import { persistScrcpyLaunchConfig } from './utils/scrcpyLaunch'
 import { openWorkspaceModal, type WorkspaceModal } from './types/workspaceModal'
@@ -139,6 +141,7 @@ const ClipboardHistory = lazy(() => import('./components/clipboard-history'))
 const InputControlPage = lazy(
   () => import('./components/pages/InputControlPage'),
 )
+const CrashWatcherPage = lazy(() => import('./components/pages/CrashWatcherPage'))
 const DeviceConditionsPage = lazy(
   () => import('./components/pages/DeviceConditionsPage'),
 )
@@ -1811,6 +1814,15 @@ function AppContent() {
     handleNavigate('logcat-viewer')
   }
 
+  // Runs for the whole session so crashes are caught on any page.
+  const crashWatcher = useCrashWatcher({
+    devices,
+    customPath: config.scrcpyPath,
+    notify,
+    outputDir: screenshot.screenshotDir,
+    deviceLabels: workspaceDeviceLabels,
+  })
+
   const openPackageShell = (packageName: string) => {
     setWorkspaceShellDraft(`shell run-as ${packageName} pwd`)
     workspaceShell.addLog(`[Package context] ${packageName}`)
@@ -2800,6 +2812,23 @@ function AppContent() {
                     activeDevice={activeAndroidWorkspaceDevice}
                     customPath={config.scrcpyPath}
                     notify={notify}
+                  />
+                }
+                crashWatcher={
+                  <CrashWatcherPage
+                    controller={crashWatcher}
+                    devices={devices}
+                    deviceLabels={workspaceDeviceLabels}
+                    outputDir={screenshot.screenshotDir}
+                    notify={notify}
+                    confirmAction={confirmAction}
+                    onOpenLogcat={(serial, packageName) => {
+                      setActiveDevice(serial)
+                      setActiveIosUdid(null)
+                      setActiveCompanionWorkspaceId(null)
+                      openPackageLogcat(packageName)
+                    }}
+                    onRevealPath={(path) => void revealInFolder(path).catch(() => undefined)}
                   />
                 }
                 deviceConditions={

@@ -11,6 +11,7 @@ export type AppRouteId =
   | 'apk-toolkit'
   | 'simulators'
   | 'logcat-viewer'
+  | 'crash-watcher'
   | 'input-control'
   | 'device-conditions'
   | 'qr-studio'
@@ -46,6 +47,7 @@ export const APP_ROUTES: readonly AppRouteDefinition[] = [
   { id: 'simulators', label: 'Device Lab', path: '/simulators', group: 'tools' },
   { id: 'file-explorer', label: 'File Explorer', path: '/files', group: 'tools' },
   { id: 'logcat-viewer', label: 'Logcat Viewer', path: '/logcat', group: 'tools' },
+  { id: 'crash-watcher', label: 'Crash Watcher', path: '/crash-watcher', group: 'tools' },
   { id: 'input-control', label: 'Input Control', path: '/input-control', group: 'tools' },
   { id: 'device-conditions', label: 'Device Conditions', path: '/device-conditions', group: 'tools' },
   { id: 'qr-studio', label: 'QR Studio', path: '/qr-studio', group: 'tools' },
